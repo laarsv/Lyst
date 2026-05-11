@@ -7,7 +7,8 @@ import type {
   CopyToListResponse,
   ImportedRecipe,
   ListItem,
-  OllamaSettings,
+  LlmProvider,
+  LlmSettings,
   ListSummary,
   ListType,
   Note,
@@ -62,11 +63,17 @@ export const AdminApi = {
     api.patch<{ data: User }>(`/admin/users/${id}`, payload).then(unwrap),
   resetPassword: (id: number) => api.post(`/admin/users/${id}/reset-password`),
   deleteUser: (id: number) => api.delete(`/admin/users/${id}`),
-  getOllamaSettings: () =>
-    api.get<{ data: OllamaSettings }>('/admin/ollama/models').then(unwrap),
+  getLlmSettings: () =>
+    api.get<{ data: LlmSettings }>('/admin/llm').then(unwrap),
+  setLlmProvider: (provider: LlmProvider) =>
+    api.put<{ data: { provider: LlmProvider } }>('/admin/llm/provider', { provider }).then(unwrap),
   setOllamaModel: (model: string | null) =>
     api
-      .put<{ data: { selected: string; is_override: boolean } }>('/admin/ollama/model', { model })
+      .put<{ data: { selected: string; is_override: boolean } }>('/admin/llm/ollama-model', { model })
+      .then(unwrap),
+  setAnthropicModel: (model: string | null) =>
+    api
+      .put<{ data: { selected: string; is_override: boolean } }>('/admin/llm/anthropic-model', { model })
       .then(unwrap),
   sendTestEmail: (to?: string) =>
     api

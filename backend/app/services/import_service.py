@@ -11,6 +11,7 @@ import logging
 import re
 from typing import Any
 
+import anthropic
 import httpx
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, Field, ValidationError, field_validator
@@ -18,7 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.recipe import RecipeCategory
-from app.services.settings_service import get_ollama_model
+from app.services.settings_service import (
+    get_anthropic_model,
+    get_llm_provider,
+    get_ollama_model,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -195,14 +200,84 @@ async def list_ollama_models() -> list[dict[str, Any]]:
     return list(data.get("models", []))
 
 
+# ---------- Anthropic provider ----------
+
+# Curated list — extending it just means picking a current model id from
+# https://docs.claude.com/en/docs/about-claude/models. Hardcoded over the
+# /v1/models endpoint so admins don't accidentally pick a deprecated id.
+ANTHROPIC_MODELS: list[dict[str, str]] = [
+    {
+        "id": "claude-haiku-4-5",
+        "name": "Claude Haiku 4.5",
+        "description": "Schnell & günstig — für den Rezept-Importer mehr als ausreichend.",
+    },
+    {
+        "id": "claude-sonnet-4-6",
+        "name": "Claude Sonnet 4.6",
+        "description": "Ausgewogene Qualität, etwa 5× teurer als Haiku.",
+    },
+    {
+        "id": "claude-opus-4-7",
+        "name": "Claude Opus 4.7",
+        "description": "Höchste Qualität, deutlich teurer und langsamer.",
+    },
+]
+
+
+async def _call_anthropic(text: str, model: str) -> dict[str, Any]:
+    if not settings.ANTHROPIC_API_KEY:
+        raise RecipeImportError(503, "ANTHROPIC_API_KEY ist nicht gesetzt")
+    client = anthropic.AsyncAnthropic(
+        api_key=settings.ANTHROPIC_API_KEY,
+        timeout=float(settings.ANTHROPIC_TIMEOUT_SECONDS),
+    )
+    try:
+        response = await client.messages.create(
+            model=model,
+            max_tokens=2048,
+            temperature=0.1,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": text}],
+        )
+    except anthropic.APITimeoutError as e:
+        logger.error("Anthropic timeout: %s", e)
+        raise RecipeImportError(504, "KI-Service hat zu lange gebraucht") from e
+    except anthropic.AuthenticationError as e:
+        logger.error("Anthropic auth failed: %s", e)
+        raise RecipeImportError(401, "ANTHROPIC_API_KEY ungültig") from e
+    except anthropic.RateLimitError as e:
+        logger.error("Anthropic rate limit: %s", e)
+        raise RecipeImportError(429, "Anthropic Rate-Limit erreicht") from e
+    except anthropic.NotFoundError as e:
+        logger.error("Anthropic model unknown: %s", e)
+        raise RecipeImportError(400, f"Unbekanntes Anthropic-Modell: {model}") from e
+    except anthropic.APIError as e:
+        logger.error("Anthropic error: %s", e)
+        raise RecipeImportError(502, "KI-Anbieter-Fehler") from e
+
+    # Concatenate any text blocks the model returned
+    parts: list[str] = []
+    for block in response.content:
+        if getattr(block, "type", None) == "text":
+            parts.append(block.text)
+    return _extract_json("".join(parts))
+
+
+# ---------- Provider dispatch ----------
+
 async def import_recipe_from_url(url: str, db: AsyncSession) -> ImportedRecipe:
     html = await _fetch_html(url)
     text = _clean_text(html)
     if not text:
         raise RecipeImportError(400, "Keine lesbaren Inhalte auf der Seite gefunden")
 
-    model = await get_ollama_model(db)
-    parsed = await _call_ollama(text, model)
+    provider = await get_llm_provider(db)
+    if provider == "anthropic":
+        model = await get_anthropic_model(db)
+        parsed = await _call_anthropic(text, model)
+    else:
+        model = await get_ollama_model(db)
+        parsed = await _call_ollama(text, model)
     parsed["source_url"] = url
 
     # Renumber step positions deterministically (LLM may skip or repeat)
@@ -214,5 +289,5 @@ async def import_recipe_from_url(url: str, db: AsyncSession) -> ImportedRecipe:
     try:
         return ImportedRecipe.model_validate(parsed)
     except ValidationError as e:
-        logger.error("Ollama JSON failed validation: %s — payload: %s", e, parsed)
+        logger.error("LLM JSON failed validation (provider=%s): %s — payload: %s", provider, e, parsed)
         raise RecipeImportError(500, "Extrahierte Daten haben unerwartetes Format") from e

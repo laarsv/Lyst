@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     # mini-PC case; bump via env if you have an even slower setup.
     OLLAMA_TIMEOUT_SECONDS: int = 300
 
+    # Anthropic Claude API (alternative LLM provider for the recipe importer).
+    # Empty key = provider not available; admin can still pick it but the call
+    # will return a clear error.
+    ANTHROPIC_API_KEY: str = ""
+    ANTHROPIC_MODEL: str = "claude-haiku-4-5"
+    ANTHROPIC_TIMEOUT_SECONDS: int = 60
+
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.BACKEND_CORS_ORIGINS.split(",") if o.strip()]

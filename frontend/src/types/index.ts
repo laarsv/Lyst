@@ -192,6 +192,8 @@ export interface ImportedStep {
   position: number | null;
 }
 
+export type LlmProvider = 'ollama' | 'anthropic';
+
 export interface OllamaModel {
   name: string;
   model?: string;
@@ -204,12 +206,33 @@ export interface OllamaModel {
   };
 }
 
-export interface OllamaSettings {
+export interface AnthropicModel {
+  id: string;
+  name: string;
+  description: string;
+}
+
+export interface OllamaInfo {
   models: OllamaModel[];
   selected: string;
   is_override: boolean;
   env_default: string;
-  ollama_base_url: string;
+  base_url: string;
+  error: string | null;
+}
+
+export interface AnthropicInfo {
+  models: AnthropicModel[];
+  selected: string;
+  is_override: boolean;
+  env_default: string;
+  has_api_key: boolean;
+}
+
+export interface LlmSettings {
+  provider: LlmProvider;
+  ollama: OllamaInfo;
+  anthropic: AnthropicInfo;
 }
 
 export interface ImportedRecipe {

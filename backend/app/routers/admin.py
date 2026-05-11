@@ -26,8 +26,19 @@ from app.services.admin_service import (
     list_users,
     update_user,
 )
-from app.services.import_service import RecipeImportError, list_ollama_models
-from app.services.settings_service import KEY_OLLAMA_MODEL, get_setting, set_setting
+from app.services.import_service import (
+    ANTHROPIC_MODELS,
+    RecipeImportError,
+    list_ollama_models,
+)
+from app.services.settings_service import (
+    KEY_ANTHROPIC_MODEL,
+    KEY_LLM_PROVIDER,
+    KEY_OLLAMA_MODEL,
+    get_llm_provider,
+    get_setting,
+    set_setting,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -108,39 +119,77 @@ async def del_user(
     return ok({"message": "User deleted"})
 
 
-# ---------- Ollama settings ----------
+# ---------- LLM provider settings (Ollama / Anthropic) ----------
 
-class OllamaModelSetting(BaseModel):
+class ProviderSetting(BaseModel):
+    provider: str = Field(pattern="^(ollama|anthropic)$")
+
+
+class ModelSetting(BaseModel):
     model: str | None = Field(default=None, max_length=128)
 
 
-@router.get("/ollama/models")
-async def get_ollama_models(db: AsyncSession = Depends(get_db)):
-    """List all Ollama models installed on the configured Ollama instance, plus
-    the currently selected one (DB-backed override or env default)."""
+@router.get("/llm")
+async def get_llm_settings(db: AsyncSession = Depends(get_db)):
+    """Unified LLM settings dump: active provider plus per-provider config.
+    Ollama section may carry an `error` field if the Ollama server can't be
+    reached — Anthropic part still works in that case."""
+    provider = await get_llm_provider(db)
+
+    # Ollama section
+    ollama_models: list[dict] = []
+    ollama_error: str | None = None
     try:
-        models = await list_ollama_models()
+        ollama_models = await list_ollama_models()
     except RecipeImportError as e:
-        raise HTTPException(status_code=e.status, detail=e.message)
-    selected_override = await get_setting(db, KEY_OLLAMA_MODEL)
+        ollama_error = e.message
+    ollama_override = await get_setting(db, KEY_OLLAMA_MODEL)
+
+    # Anthropic section
+    anthropic_override = await get_setting(db, KEY_ANTHROPIC_MODEL)
+
     return ok(
         {
-            "models": models,
-            "selected": selected_override or env_settings.OLLAMA_MODEL,
-            "is_override": selected_override is not None,
-            "env_default": env_settings.OLLAMA_MODEL,
-            "ollama_base_url": env_settings.OLLAMA_BASE_URL,
+            "provider": provider,
+            "ollama": {
+                "models": ollama_models,
+                "selected": ollama_override or env_settings.OLLAMA_MODEL,
+                "is_override": ollama_override is not None,
+                "env_default": env_settings.OLLAMA_MODEL,
+                "base_url": env_settings.OLLAMA_BASE_URL,
+                "error": ollama_error,
+            },
+            "anthropic": {
+                "models": ANTHROPIC_MODELS,
+                "selected": anthropic_override or env_settings.ANTHROPIC_MODEL,
+                "is_override": anthropic_override is not None,
+                "env_default": env_settings.ANTHROPIC_MODEL,
+                "has_api_key": bool(env_settings.ANTHROPIC_API_KEY),
+            },
         }
     )
 
 
-@router.put("/ollama/model")
-async def put_ollama_model(payload: OllamaModelSetting, db: AsyncSession = Depends(get_db)):
+@router.put("/llm/provider")
+async def put_llm_provider(payload: ProviderSetting, db: AsyncSession = Depends(get_db)):
+    await set_setting(db, KEY_LLM_PROVIDER, payload.provider)
+    return ok({"provider": payload.provider})
+
+
+@router.put("/llm/ollama-model")
+async def put_ollama_model(payload: ModelSetting, db: AsyncSession = Depends(get_db)):
     """Set (or clear, with model=null) the Ollama model used by the importer.
     Setting null falls back to the env default."""
     value = payload.model.strip() if payload.model and payload.model.strip() else None
     await set_setting(db, KEY_OLLAMA_MODEL, value)
     return ok({"selected": value or env_settings.OLLAMA_MODEL, "is_override": value is not None})
+
+
+@router.put("/llm/anthropic-model")
+async def put_anthropic_model(payload: ModelSetting, db: AsyncSession = Depends(get_db)):
+    value = payload.model.strip() if payload.model and payload.model.strip() else None
+    await set_setting(db, KEY_ANTHROPIC_MODEL, value)
+    return ok({"selected": value or env_settings.ANTHROPIC_MODEL, "is_override": value is not None})
 
 
 # ---------- Mail test ----------

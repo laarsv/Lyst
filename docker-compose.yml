@@ -38,6 +38,8 @@ services:
       INITIAL_ADMIN_NAME: ${INITIAL_ADMIN_NAME:-Admin}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-4-5}
     # Lets the backend reach services that are exposed on the host's published
     # ports (e.g. an Ollama container running on this host) via the hostname
     # `host.docker.internal`. Required on Linux/Proxmox-LXC; on Docker Desktop
