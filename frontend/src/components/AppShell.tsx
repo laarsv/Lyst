@@ -7,6 +7,7 @@ import clsx from 'clsx';
 const USER_LINKS: [string, string][] = [
   ['/', 'Listen'],
   ['/recipes', 'Rezepte'],
+  ['/meal-planner', 'Wochenplan'],
   ['/templates', 'Vorlagen'],
   ['/notes', 'Notizen'],
   ['/settings', 'Konto'],

@@ -5,12 +5,16 @@ import type {
   Collaborator,
   CollaboratorPermission,
   CopyToListResponse,
+  GenerateListResponse,
   ImportedRecipe,
   ListItem,
   LlmProvider,
   LlmSettings,
   ListSummary,
   ListType,
+  MealPlan,
+  MealPlanEntry,
+  MealType,
   Note,
   PublicListData,
   Recipe,
@@ -228,6 +232,35 @@ export const RecipesApi = {
   ) =>
     api
       .post<{ data: CopyToListResponse }>(`/recipes/${recipeId}/copy-to-list`, payload)
+      .then(unwrap),
+};
+
+export const MealPlansApi = {
+  /** Returns the plan for the week containing `weekStart` (auto-creates if missing). */
+  forWeek: (weekStart: string) =>
+    api
+      .get<{ data: MealPlan }>('/meal-plans', { params: { week_start: weekStart } })
+      .then(unwrap),
+  addEntry: (
+    planId: number,
+    payload: { recipe_id: number; day_of_week: number; meal_type: MealType; servings: number },
+  ) =>
+    api
+      .post<{ data: MealPlanEntry }>(`/meal-plans/${planId}/entries`, payload)
+      .then(unwrap),
+  updateEntry: (
+    planId: number,
+    entryId: number,
+    payload: Partial<{ day_of_week: number; meal_type: MealType; servings: number }>,
+  ) =>
+    api
+      .patch<{ data: MealPlanEntry }>(`/meal-plans/${planId}/entries/${entryId}`, payload)
+      .then(unwrap),
+  removeEntry: (planId: number, entryId: number) =>
+    api.delete(`/meal-plans/${planId}/entries/${entryId}`),
+  generateList: (planId: number) =>
+    api
+      .post<{ data: GenerateListResponse }>(`/meal-plans/${planId}/generate-shopping-list`)
       .then(unwrap),
 };
 

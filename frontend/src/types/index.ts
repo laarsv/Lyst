@@ -235,6 +235,37 @@ export interface LlmSettings {
   anthropic: AnthropicInfo;
 }
 
+export type MealType = 'BREAKFAST' | 'LUNCH' | 'DINNER' | 'SNACK';
+
+export interface MealPlanEntry {
+  id: number;
+  meal_plan_id: number;
+  recipe_id: number;
+  day_of_week: number; // 0=Monday..6=Sunday
+  meal_type: MealType;
+  servings: number;
+  recipe_title: string;
+  recipe_category: RecipeCategory;
+  recipe_image_url: string | null;
+  recipe_servings: number;
+  recipe_prep_time_minutes: number | null;
+  recipe_cook_time_minutes: number | null;
+}
+
+export interface MealPlan {
+  id: number;
+  owner_id: number;
+  week_start: string; // ISO date
+  created_at: string;
+  entries: MealPlanEntry[];
+}
+
+export interface GenerateListResponse {
+  list_id: number;
+  list_title: string;
+  items_added: number;
+}
+
 export interface ImportedRecipe {
   title: string;
   description: string | null;
