@@ -36,8 +36,10 @@ services:
       INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL}
       INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD}
       INITIAL_ADMIN_NAME: ${INITIAL_ADMIN_NAME:-Admin}
-    ports:
-      - "8000:8000"
+    # Backend is reached via the frontend container's nginx (`/api/` → backend:8000)
+    # over the internal Docker network. No external port mapping is needed.
+    # If you want to debug the API directly from the host, add:
+    #   ports: ["127.0.0.1:8000:8000"]
 
   frontend:
     build: ./frontend
