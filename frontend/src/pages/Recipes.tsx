@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { RecipesApi } from '@/api/endpoints';
 import type { RecipeCategory, RecipeSummary } from '@/types';
 import { RecipeCard, CATEGORY_LABEL } from '@/components/recipes/RecipeCard';
+import { ImportRecipeModal } from '@/components/recipes/ImportRecipeModal';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
 
@@ -15,6 +16,7 @@ export function RecipesPage() {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState<'ALL' | RecipeCategory>('ALL');
+  const [importOpen, setImportOpen] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -48,7 +50,12 @@ export function RecipesPage() {
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h1 className="text-2xl font-semibold">Rezepte</h1>
-        <Link to="/recipes/new" className="btn-primary">+ Neues Rezept</Link>
+        <div className="flex gap-2">
+          <button className="btn-secondary" onClick={() => setImportOpen(true)}>
+            Importieren
+          </button>
+          <Link to="/recipes/new" className="btn-primary">+ Neues Rezept</Link>
+        </div>
       </div>
       <div className="flex flex-wrap items-center gap-2 mb-6">
         <input
@@ -86,6 +93,7 @@ export function RecipesPage() {
           ))}
         </div>
       )}
+      <ImportRecipeModal open={importOpen} onClose={() => setImportOpen(false)} />
     </div>
   );
 }

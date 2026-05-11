@@ -9,6 +9,7 @@ from app.models.user import User
 from app.schemas.recipe import (
     CopyToListRequest,
     CopyToListResponse,
+    ImportUrlRequest,
     IngredientCreate,
     IngredientOut,
     IngredientUpdate,
@@ -22,6 +23,7 @@ from app.schemas.recipe import (
     StepOut,
     StepUpdate,
 )
+from app.services.import_service import RecipeImportError, import_recipe_from_url
 from app.services.recipe_service import (
     add_ingredient,
     add_step,
@@ -275,6 +277,20 @@ async def del_step(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Step not found")
     await delete_step(db, step)
     return ok({"message": "Deleted"})
+
+
+# ---------- Import from URL via Ollama ----------
+
+@router.post("/import-url")
+async def post_import_url(
+    payload: ImportUrlRequest,
+    user: User = Depends(require_user),
+):
+    try:
+        result = await import_recipe_from_url(payload.url)
+    except RecipeImportError as e:
+        raise HTTPException(status_code=e.status, detail=e.message)
+    return ok(result.model_dump(mode="json"))
 
 
 # ---------- Copy to shopping list (the killer feature) ----------

@@ -131,3 +131,9 @@ class CopyToListResponse(BaseModel):
     list_id: int
     list_title: str
     items_added: int
+
+
+# --- URL import ---
+
+class ImportUrlRequest(BaseModel):
+    url: str = Field(min_length=1, max_length=2048)

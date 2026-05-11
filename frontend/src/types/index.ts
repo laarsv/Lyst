@@ -180,3 +180,26 @@ export interface CopyToListResponse {
   list_title: string;
   items_added: number;
 }
+
+export interface ImportedIngredient {
+  name: string;
+  quantity: number | null;
+  unit: string | null;
+}
+
+export interface ImportedStep {
+  description: string;
+  position: number | null;
+}
+
+export interface ImportedRecipe {
+  title: string;
+  description: string | null;
+  servings: number | null;
+  prep_time_minutes: number | null;
+  cook_time_minutes: number | null;
+  category: RecipeCategory;
+  source_url: string | null;
+  ingredients: ImportedIngredient[];
+  steps: ImportedStep[];
+}

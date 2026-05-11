@@ -5,6 +5,7 @@ import type {
   Collaborator,
   CollaboratorPermission,
   CopyToListResponse,
+  ImportedRecipe,
   ListItem,
   ListSummary,
   ListType,
@@ -191,6 +192,11 @@ export const RecipesApi = {
     api.delete(`/recipes/${recipeId}/steps/${stepId}`),
   reorderSteps: (recipeId: number, items: { id: number; position: number }[]) =>
     api.patch(`/recipes/${recipeId}/steps/reorder`, { items }),
+
+  importFromUrl: (url: string) =>
+    api
+      .post<{ data: ImportedRecipe }>('/recipes/import-url', { url })
+      .then(unwrap),
 
   // killer feature
   copyToList: (

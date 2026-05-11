@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     INITIAL_ADMIN_PASSWORD: str = "ChangeMe123!"
     INITIAL_ADMIN_NAME: str = "Admin"
 
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = "llama3"
+    OLLAMA_TIMEOUT_SECONDS: int = 30
+
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.BACKEND_CORS_ORIGINS.split(",") if o.strip()]

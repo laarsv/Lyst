@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   DndContext,
   PointerSensor,
@@ -10,7 +10,7 @@ import {
 } from '@dnd-kit/core';
 import { SortableContext, arrayMove, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { RecipesApi } from '@/api/endpoints';
-import type { Recipe, RecipeCategory, RecipeIngredient, RecipeStep } from '@/types';
+import type { ImportedRecipe, RecipeCategory, RecipeIngredient, RecipeStep } from '@/types';
 import { SortableEditRow } from '@/components/recipes/SortableEditRow';
 import { CATEGORY_LABEL } from '@/components/recipes/RecipeCard';
 import { toast } from '@/components/Toast';
@@ -40,23 +40,41 @@ export function RecipeEditPage() {
   const isNew = !id;
   const recipeId = id ? Number(id) : null;
   const nav = useNavigate();
+  const loc = useLocation() as { state?: { prefill?: ImportedRecipe } };
+  const prefill = isNew ? loc.state?.prefill ?? null : null;
 
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
 
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [servings, setServings] = useState(2);
-  const [prep, setPrep] = useState<number | ''>('');
-  const [cook, setCook] = useState<number | ''>('');
-  const [category, setCategory] = useState<RecipeCategory>('OTHER');
+  const [title, setTitle] = useState(prefill?.title ?? '');
+  const [description, setDescription] = useState(prefill?.description ?? '');
+  const [servings, setServings] = useState(prefill?.servings ?? 2);
+  const [prep, setPrep] = useState<number | ''>(prefill?.prep_time_minutes ?? '');
+  const [cook, setCook] = useState<number | ''>(prefill?.cook_time_minutes ?? '');
+  const [category, setCategory] = useState<RecipeCategory>(prefill?.category ?? 'OTHER');
   const [imageUrl, setImageUrl] = useState('');
-  const [sourceUrl, setSourceUrl] = useState('');
+  const [sourceUrl, setSourceUrl] = useState(prefill?.source_url ?? '');
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
 
-  const [ingredients, setIngredients] = useState<DraftIngredient[]>([]);
-  const [steps, setSteps] = useState<DraftStep[]>([]);
+  const [ingredients, setIngredients] = useState<DraftIngredient[]>(
+    prefill
+      ? prefill.ingredients.map((i) => ({
+          id: tempId(),
+          persisted: false,
+          name: i.name,
+          quantity: i.quantity,
+          unit: i.unit,
+        }))
+      : [],
+  );
+  const [steps, setSteps] = useState<DraftStep[]>(
+    prefill
+      ? [...prefill.steps]
+          .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+          .map((s) => ({ id: tempId(), persisted: false, description: s.description }))
+      : [],
+  );
 
   // Load existing recipe
   useEffect(() => {
