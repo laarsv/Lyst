@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AdminApi } from '@/api/endpoints';
-import type { OllamaSettings } from '@/types';
+import type { LlmProvider, LlmSettings } from '@/types';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
 import { useAuthStore } from '@/store/auth';
@@ -14,18 +14,16 @@ function fmtSize(bytes?: number): string {
 }
 
 export function AdminSettingsPage() {
-  const [data, setData] = useState<OllamaSettings | null>(null);
+  const [data, setData] = useState<LlmSettings | null>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const load = async () => {
     setLoading(true);
-    setError(null);
     try {
-      setData(await AdminApi.getOllamaSettings());
+      setData(await AdminApi.getLlmSettings());
     } catch (e) {
-      setError(getApiError(e));
+      toast.error(getApiError(e));
     } finally {
       setLoading(false);
     }
@@ -35,18 +33,43 @@ export function AdminSettingsPage() {
     void load();
   }, []);
 
-  const select = async (model: string | null) => {
-    setSaving(model ?? '__reset__');
+  const switchProvider = async (provider: LlmProvider) => {
+    if (!data || data.provider === provider) return;
+    setBusy(true);
     try {
-      const r = await AdminApi.setOllamaModel(model);
-      toast.success(
-        model ? `Modell auf „${r.selected}" gesetzt` : `Auf Standard zurückgesetzt: „${r.selected}"`,
-      );
+      await AdminApi.setLlmProvider(provider);
+      toast.success(provider === 'ollama' ? 'Ollama (lokal) aktiv' : 'Claude (Cloud) aktiv');
       await load();
     } catch (e) {
       toast.error(getApiError(e));
     } finally {
-      setSaving(null);
+      setBusy(false);
+    }
+  };
+
+  const setOllama = async (model: string | null) => {
+    setBusy(true);
+    try {
+      await AdminApi.setOllamaModel(model);
+      toast.success(model ? `Ollama-Modell: ${model}` : 'Ollama auf Standard zurückgesetzt');
+      await load();
+    } catch (e) {
+      toast.error(getApiError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const setAnthropic = async (model: string | null) => {
+    setBusy(true);
+    try {
+      await AdminApi.setAnthropicModel(model);
+      toast.success(model ? `Claude-Modell: ${model}` : 'Claude auf Standard zurückgesetzt');
+      await load();
+    } catch (e) {
+      toast.error(getApiError(e));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -58,91 +81,196 @@ export function AdminSettingsPage() {
       </div>
 
       <section className="card p-6">
-        <div className="flex items-start justify-between mb-4 flex-wrap gap-3">
-          <div>
-            <h2 className="font-semibold">KI-Modell für Rezept-Import</h2>
-            <p className="text-sm text-zinc-500">
-              Bestimmt welches Ollama-Modell der Rezept-Importer nutzt.
-              Wird automatisch von <code className="bg-zinc-100 px-1.5 py-0.5 rounded text-xs">{data?.ollama_base_url ?? '—'}</code> abgefragt.
-            </p>
-          </div>
-          <button className="btn-secondary text-sm" onClick={load} disabled={loading}>
-            Neu laden
-          </button>
+        <div className="mb-4">
+          <h2 className="font-semibold">KI für Rezept-Import</h2>
+          <p className="text-sm text-zinc-500">
+            Wähle den Anbieter und das Modell für den URL-Importer. Änderungen wirken sofort.
+          </p>
         </div>
 
-        {error && (
-          <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg p-3 mb-4">
-            {error}
-            <div className="text-xs mt-1 text-red-500">
-              Prüfe ob Ollama erreichbar ist und mindestens ein Modell installiert ist.
-            </div>
-          </div>
-        )}
-
         {loading ? (
-          <div className="text-zinc-400 py-6 text-center">Lade Modelle…</div>
-        ) : data && data.models.length > 0 ? (
+          <div className="text-zinc-400 py-6 text-center">Lade…</div>
+        ) : data ? (
           <>
-            <ul className="divide-y divide-zinc-100 border border-zinc-100 rounded-xl">
-              {data.models.map((m) => {
-                const isSelected = data.selected === m.name;
-                return (
-                  <li
-                    key={m.name}
-                    className={`p-3 flex items-center gap-3 ${isSelected ? 'bg-brand-50' : ''}`}
-                  >
-                    <input
-                      type="radio"
-                      name="ollama-model"
-                      checked={isSelected}
-                      onChange={() => !isSelected && select(m.name)}
-                      disabled={saving !== null}
-                      className="size-4 accent-brand"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium">{m.name}</div>
-                      <div className="text-xs text-zinc-500 flex flex-wrap gap-x-3">
-                        {m.details?.parameter_size && <span>{m.details.parameter_size} Parameter</span>}
-                        {m.details?.quantization_level && <span>{m.details.quantization_level}</span>}
-                        {m.details?.family && <span>{m.details.family}</span>}
-                        {m.size && <span>{fmtSize(m.size)}</span>}
-                      </div>
-                    </div>
-                    {isSelected && (
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-brand text-white shrink-0">
-                        Aktiv
-                      </span>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-zinc-500">
-              <span>
-                Standard aus <code className="bg-zinc-100 px-1.5 py-0.5 rounded">.env</code>:{' '}
-                <code className="bg-zinc-100 px-1.5 py-0.5 rounded">{data.env_default}</code>
-              </span>
-              {data.is_override && (
-                <button
-                  type="button"
-                  className="text-brand hover:underline"
-                  onClick={() => select(null)}
-                  disabled={saving !== null}
-                >
-                  Auf Standard zurücksetzen
-                </button>
-              )}
+            <div className="flex gap-1 bg-zinc-100 rounded-xl p-1 mb-5">
+              <button
+                onClick={() => switchProvider('ollama')}
+                disabled={busy}
+                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition ${
+                  data.provider === 'ollama' ? 'bg-white shadow-sm' : 'text-zinc-600 hover:bg-white/60'
+                }`}
+              >
+                Ollama (lokal)
+              </button>
+              <button
+                onClick={() => switchProvider('anthropic')}
+                disabled={busy}
+                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition ${
+                  data.provider === 'anthropic' ? 'bg-white shadow-sm' : 'text-zinc-600 hover:bg-white/60'
+                }`}
+              >
+                Claude (Cloud)
+              </button>
             </div>
+
+            {data.provider === 'ollama' ? (
+              <OllamaSection data={data.ollama} onSelect={setOllama} busy={busy} onReload={load} />
+            ) : (
+              <AnthropicSection data={data.anthropic} onSelect={setAnthropic} busy={busy} />
+            )}
           </>
-        ) : (
-          <div className="text-zinc-400 py-6 text-center">
-            Keine Modelle installiert. Per <code className="bg-zinc-100 px-1.5 py-0.5 rounded">ollama pull &lt;modell&gt;</code> auf dem Ollama-Host eines installieren.
-          </div>
-        )}
+        ) : null}
       </section>
 
       <TestEmailSection />
+    </div>
+  );
+}
+
+function OllamaSection({
+  data,
+  onSelect,
+  busy,
+  onReload,
+}: {
+  data: LlmSettings['ollama'];
+  onSelect: (model: string | null) => Promise<void>;
+  busy: boolean;
+  onReload: () => Promise<void>;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 text-xs text-zinc-500 flex-wrap gap-2">
+        <span>
+          Server: <code className="bg-zinc-100 px-1.5 py-0.5 rounded">{data.base_url}</code>
+        </span>
+        <button className="text-brand hover:underline" onClick={onReload} disabled={busy}>
+          Liste neu laden
+        </button>
+      </div>
+      {data.error ? (
+        <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg p-3">
+          {data.error}
+          <div className="text-xs mt-1 text-red-500">
+            Prüfe ob Ollama läuft und über die konfigurierte URL erreichbar ist.
+          </div>
+        </div>
+      ) : data.models.length === 0 ? (
+        <div className="text-zinc-400 py-6 text-center">
+          Keine Modelle installiert. Per <code className="bg-zinc-100 px-1.5 py-0.5 rounded">ollama pull &lt;modell&gt;</code> auf dem Ollama-Host eines installieren.
+        </div>
+      ) : (
+        <>
+          <ul className="divide-y divide-zinc-100 border border-zinc-100 rounded-xl">
+            {data.models.map((m) => {
+              const isSelected = data.selected === m.name;
+              return (
+                <li key={m.name} className={`p-3 flex items-center gap-3 ${isSelected ? 'bg-brand-50' : ''}`}>
+                  <input
+                    type="radio"
+                    name="ollama-model"
+                    checked={isSelected}
+                    onChange={() => !isSelected && onSelect(m.name)}
+                    disabled={busy}
+                    className="size-4 accent-brand"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium">{m.name}</div>
+                    <div className="text-xs text-zinc-500 flex flex-wrap gap-x-3">
+                      {m.details?.parameter_size && <span>{m.details.parameter_size} Parameter</span>}
+                      {m.details?.quantization_level && <span>{m.details.quantization_level}</span>}
+                      {m.details?.family && <span>{m.details.family}</span>}
+                      {m.size && <span>{fmtSize(m.size)}</span>}
+                    </div>
+                  </div>
+                  {isSelected && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-brand text-white shrink-0">Aktiv</span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-zinc-500">
+            <span>
+              Standard aus <code className="bg-zinc-100 px-1.5 py-0.5 rounded">.env</code>:{' '}
+              <code className="bg-zinc-100 px-1.5 py-0.5 rounded">{data.env_default}</code>
+            </span>
+            {data.is_override && (
+              <button
+                type="button"
+                className="text-brand hover:underline"
+                onClick={() => onSelect(null)}
+                disabled={busy}
+              >
+                Auf Standard zurücksetzen
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function AnthropicSection({
+  data,
+  onSelect,
+  busy,
+}: {
+  data: LlmSettings['anthropic'];
+  onSelect: (model: string | null) => Promise<void>;
+  busy: boolean;
+}) {
+  return (
+    <div>
+      {!data.has_api_key && (
+        <div className="text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-3 mb-3">
+          <strong>ANTHROPIC_API_KEY ist nicht gesetzt.</strong> Du kannst hier ein Modell auswählen,
+          aber der Importer wird einen Fehler zurückgeben bis der Key in <code className="bg-amber-100 px-1 py-0.5 rounded">.env</code> ergänzt
+          und das Backend neu gestartet ist.
+        </div>
+      )}
+      <ul className="divide-y divide-zinc-100 border border-zinc-100 rounded-xl">
+        {data.models.map((m) => {
+          const isSelected = data.selected === m.id;
+          return (
+            <li key={m.id} className={`p-3 flex items-center gap-3 ${isSelected ? 'bg-brand-50' : ''}`}>
+              <input
+                type="radio"
+                name="anthropic-model"
+                checked={isSelected}
+                onChange={() => !isSelected && onSelect(m.id)}
+                disabled={busy}
+                className="size-4 accent-brand"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="font-medium">{m.name}</div>
+                <div className="text-xs text-zinc-500">{m.description}</div>
+                <code className="text-[10px] text-zinc-400">{m.id}</code>
+              </div>
+              {isSelected && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-brand text-white shrink-0">Aktiv</span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-zinc-500">
+        <span>
+          Standard aus <code className="bg-zinc-100 px-1.5 py-0.5 rounded">.env</code>:{' '}
+          <code className="bg-zinc-100 px-1.5 py-0.5 rounded">{data.env_default}</code>
+        </span>
+        {data.is_override && (
+          <button
+            type="button"
+            className="text-brand hover:underline"
+            onClick={() => onSelect(null)}
+            disabled={busy}
+          >
+            Auf Standard zurücksetzen
+          </button>
+        )}
+      </div>
     </div>
   );
 }
