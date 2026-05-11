@@ -4,11 +4,17 @@ import type {
   AuthResponse,
   Collaborator,
   CollaboratorPermission,
+  CopyToListResponse,
   ListItem,
   ListSummary,
   ListType,
   Note,
   PublicListData,
+  Recipe,
+  RecipeCategory,
+  RecipeIngredient,
+  RecipeStep,
+  RecipeSummary,
   Reminder,
   ShareInfo,
   Tag,
@@ -121,6 +127,84 @@ export const NotesApi = {
   update: (id: number, payload: Partial<{ title: string; content: string; tags: string[] }>) =>
     api.patch<{ data: Note }>(`/notes/${id}`, payload).then(unwrap),
   remove: (id: number) => api.delete(`/notes/${id}`),
+};
+
+export const RecipesApi = {
+  list: (params?: { q?: string; category?: RecipeCategory }) =>
+    api.get<{ data: RecipeSummary[] }>('/recipes', { params }).then(unwrap),
+  get: (id: number) => api.get<{ data: Recipe }>(`/recipes/${id}`).then(unwrap),
+  create: (payload: {
+    title: string;
+    description?: string | null;
+    servings: number;
+    prep_time_minutes?: number | null;
+    cook_time_minutes?: number | null;
+    category: RecipeCategory;
+    image_url?: string | null;
+    source_url?: string | null;
+    tags?: string[];
+    ingredients?: Array<{ name: string; quantity?: number | null; unit?: string | null }>;
+    steps?: Array<{ description: string }>;
+  }) => api.post<{ data: Recipe }>('/recipes', payload).then(unwrap),
+  update: (
+    id: number,
+    payload: Partial<{
+      title: string;
+      description: string | null;
+      servings: number;
+      prep_time_minutes: number | null;
+      cook_time_minutes: number | null;
+      category: RecipeCategory;
+      image_url: string | null;
+      source_url: string | null;
+      tags: string[];
+    }>,
+  ) => api.patch<{ data: Recipe }>(`/recipes/${id}`, payload).then(unwrap),
+  remove: (id: number) => api.delete(`/recipes/${id}`),
+  duplicate: (id: number, title?: string) =>
+    api.post<{ data: Recipe }>(`/recipes/${id}/duplicate`, { title }).then(unwrap),
+
+  // ingredients
+  addIngredient: (recipeId: number, payload: { name: string; quantity?: number | null; unit?: string | null }) =>
+    api.post<{ data: RecipeIngredient }>(`/recipes/${recipeId}/ingredients`, payload).then(unwrap),
+  updateIngredient: (
+    recipeId: number,
+    ingId: number,
+    payload: Partial<{ name: string; quantity: number | null; unit: string | null }>,
+  ) =>
+    api
+      .patch<{ data: RecipeIngredient }>(`/recipes/${recipeId}/ingredients/${ingId}`, payload)
+      .then(unwrap),
+  removeIngredient: (recipeId: number, ingId: number) =>
+    api.delete(`/recipes/${recipeId}/ingredients/${ingId}`),
+  reorderIngredients: (recipeId: number, items: { id: number; position: number }[]) =>
+    api.patch(`/recipes/${recipeId}/ingredients/reorder`, { items }),
+
+  // steps
+  addStep: (recipeId: number, description: string) =>
+    api.post<{ data: RecipeStep }>(`/recipes/${recipeId}/steps`, { description }).then(unwrap),
+  updateStep: (recipeId: number, stepId: number, description: string) =>
+    api
+      .patch<{ data: RecipeStep }>(`/recipes/${recipeId}/steps/${stepId}`, { description })
+      .then(unwrap),
+  removeStep: (recipeId: number, stepId: number) =>
+    api.delete(`/recipes/${recipeId}/steps/${stepId}`),
+  reorderSteps: (recipeId: number, items: { id: number; position: number }[]) =>
+    api.patch(`/recipes/${recipeId}/steps/reorder`, { items }),
+
+  // killer feature
+  copyToList: (
+    recipeId: number,
+    payload: {
+      list_id: number | null;
+      new_list_title?: string;
+      servings: number;
+      ingredient_ids?: number[];
+    },
+  ) =>
+    api
+      .post<{ data: CopyToListResponse }>(`/recipes/${recipeId}/copy-to-list`, payload)
+      .then(unwrap),
 };
 
 export const TagsApi = {

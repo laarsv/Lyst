@@ -1,0 +1,133 @@
+from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.models.recipe import RecipeCategory
+
+
+# --- Ingredients ---
+
+class IngredientBase(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    quantity: float | None = None
+    unit: str | None = Field(default=None, max_length=32)
+
+
+class IngredientCreate(IngredientBase):
+    pass
+
+
+class IngredientUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    quantity: float | None = None
+    unit: str | None = Field(default=None, max_length=32)
+
+
+class IngredientOut(IngredientBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    recipe_id: int
+    position: int
+
+
+# --- Steps ---
+
+class StepBase(BaseModel):
+    description: str = Field(min_length=1)
+
+
+class StepCreate(StepBase):
+    pass
+
+
+class StepUpdate(BaseModel):
+    description: str | None = Field(default=None, min_length=1)
+
+
+class StepOut(StepBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    recipe_id: int
+    position: int
+
+
+# --- Reorder ---
+
+class ReorderItem(BaseModel):
+    id: int
+    position: int
+
+
+class ReorderRequest(BaseModel):
+    items: list[ReorderItem]
+
+
+# --- Recipe ---
+
+class RecipeBase(BaseModel):
+    title: str = Field(min_length=1, max_length=255)
+    description: str | None = None
+    servings: int = Field(default=2, ge=1, le=999)
+    prep_time_minutes: int | None = Field(default=None, ge=0)
+    cook_time_minutes: int | None = Field(default=None, ge=0)
+    category: RecipeCategory = RecipeCategory.OTHER
+    image_url: str | None = Field(default=None, max_length=1024)
+    source_url: str | None = Field(default=None, max_length=1024)
+    tags: list[str] = Field(default_factory=list)
+
+
+class RecipeCreate(RecipeBase):
+    ingredients: list[IngredientCreate] = Field(default_factory=list)
+    steps: list[StepCreate] = Field(default_factory=list)
+
+
+class RecipeUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = None
+    servings: int | None = Field(default=None, ge=1, le=999)
+    prep_time_minutes: int | None = Field(default=None, ge=0)
+    cook_time_minutes: int | None = Field(default=None, ge=0)
+    category: RecipeCategory | None = None
+    image_url: str | None = Field(default=None, max_length=1024)
+    source_url: str | None = Field(default=None, max_length=1024)
+    tags: list[str] | None = None
+
+
+class RecipeSummary(RecipeBase):
+    """List view — without ingredients/steps."""
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    owner_id: int
+    created_at: datetime
+    updated_at: datetime
+    ingredient_count: int = 0
+
+
+class RecipeOut(RecipeBase):
+    """Detail view — with ingredients and steps."""
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    owner_id: int
+    created_at: datetime
+    updated_at: datetime
+    ingredients: list[IngredientOut] = Field(default_factory=list)
+    steps: list[StepOut] = Field(default_factory=list)
+
+
+class RecipeDuplicate(BaseModel):
+    title: str | None = None
+
+
+# --- Copy to shopping list ---
+
+class CopyToListRequest(BaseModel):
+    list_id: int | None = None
+    new_list_title: str | None = Field(default=None, max_length=255)
+    servings: int = Field(ge=1, le=999)
+    ingredient_ids: list[int] | None = None
+
+
+class CopyToListResponse(BaseModel):
+    list_id: int
+    list_title: str
+    items_added: int

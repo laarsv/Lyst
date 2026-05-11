@@ -7,6 +7,9 @@ import { DashboardPage } from '@/pages/Dashboard';
 import { ListDetailPage } from '@/pages/ListDetail';
 import { TemplatesPage } from '@/pages/Templates';
 import { NotesPage } from '@/pages/Notes';
+import { RecipesPage } from '@/pages/Recipes';
+import { RecipeDetailPage } from '@/pages/RecipeDetail';
+import { RecipeEditPage } from '@/pages/RecipeEdit';
 import { SettingsPage } from '@/pages/Settings';
 import { PublicSharePage } from '@/pages/PublicShare';
 import { AdminUsersPage } from '@/pages/admin/AdminUsers';
@@ -41,6 +44,10 @@ export default function App() {
           <Route path="/lists/:id" element={<ListDetailPage />} />
           <Route path="/templates" element={<TemplatesPage />} />
           <Route path="/notes" element={<NotesPage />} />
+          <Route path="/recipes" element={<RecipesPage />} />
+          <Route path="/recipes/new" element={<RecipeEditPage />} />
+          <Route path="/recipes/:id" element={<RecipeDetailPage />} />
+          <Route path="/recipes/:id/edit" element={<RecipeEditPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
 

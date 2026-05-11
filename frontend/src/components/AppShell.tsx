@@ -27,6 +27,7 @@ export function AppShell() {
             <nav className="flex gap-1">
               {[
                 ['/', 'Listen'],
+                ['/recipes', 'Rezepte'],
                 ['/templates', 'Vorlagen'],
                 ['/notes', 'Notizen'],
                 ['/settings', 'Konto'],

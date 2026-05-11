@@ -9,7 +9,7 @@ from slowapi.errors import RateLimitExceeded
 
 from app.core.config import settings
 from app.core.limiter import limiter
-from app.routers import admin, auth, items, lists, me, notes, reminders, share, tags
+from app.routers import admin, auth, items, lists, me, notes, recipes, reminders, share, tags
 from app.services.scheduler import start_scheduler, stop_scheduler
 
 logging.basicConfig(
@@ -67,3 +67,4 @@ app.include_router(share.router, prefix=PREFIX)
 app.include_router(reminders.router, prefix=PREFIX)
 app.include_router(notes.router, prefix=PREFIX)
 app.include_router(tags.router, prefix=PREFIX)
+app.include_router(recipes.router, prefix=PREFIX)

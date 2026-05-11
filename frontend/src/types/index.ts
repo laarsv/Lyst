@@ -120,3 +120,63 @@ export interface ApiEnvelope<T> {
   data: T | null;
   error: string | null;
 }
+
+export type RecipeCategory =
+  | 'BREAKFAST'
+  | 'LUNCH'
+  | 'DINNER'
+  | 'SNACK'
+  | 'DESSERT'
+  | 'DRINK'
+  | 'OTHER';
+
+export interface RecipeIngredient {
+  id: number;
+  recipe_id: number;
+  name: string;
+  quantity: number | null;
+  unit: string | null;
+  position: number;
+}
+
+export interface RecipeStep {
+  id: number;
+  recipe_id: number;
+  description: string;
+  position: number;
+}
+
+export interface RecipeBase {
+  title: string;
+  description: string | null;
+  servings: number;
+  prep_time_minutes: number | null;
+  cook_time_minutes: number | null;
+  category: RecipeCategory;
+  image_url: string | null;
+  source_url: string | null;
+  tags: string[];
+}
+
+export interface RecipeSummary extends RecipeBase {
+  id: number;
+  owner_id: number;
+  created_at: string;
+  updated_at: string;
+  ingredient_count: number;
+}
+
+export interface Recipe extends RecipeBase {
+  id: number;
+  owner_id: number;
+  created_at: string;
+  updated_at: string;
+  ingredients: RecipeIngredient[];
+  steps: RecipeStep[];
+}
+
+export interface CopyToListResponse {
+  list_id: number;
+  list_title: string;
+  items_added: number;
+}
