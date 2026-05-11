@@ -57,9 +57,16 @@ export function AppShell() {
 
           <Link
             to={role === 'admin' ? '/admin' : '/'}
-            className="wordmark text-xl"
+            className="flex items-center gap-2"
           >
-            lyst
+            <img
+              src="/logo.png"
+              alt=""
+              width="32"
+              height="32"
+              className="size-8 rounded-md"
+            />
+            <span className="wordmark text-xl">lyst</span>
           </Link>
 
           {/* Desktop nav */}

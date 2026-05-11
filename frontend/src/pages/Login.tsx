@@ -39,7 +39,14 @@ export function LoginPage() {
     <div className="min-h-full flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-md card p-8">
         <div className="text-center mb-6">
-          <div className="wordmark text-4xl">lyst</div>
+          <img
+            src="/logo.png"
+            alt=""
+            width="64"
+            height="64"
+            className="size-16 mx-auto rounded-xl"
+          />
+          <div className="wordmark text-2xl mt-3">lyst</div>
           <div className="text-muted mt-2">Bei deinem Konto anmelden</div>
         </div>
         <form onSubmit={onSubmit} className="space-y-4">
