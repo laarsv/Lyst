@@ -13,6 +13,7 @@ import { RecipeEditPage } from '@/pages/RecipeEdit';
 import { SettingsPage } from '@/pages/Settings';
 import { PublicSharePage } from '@/pages/PublicShare';
 import { AdminUsersPage } from '@/pages/admin/AdminUsers';
+import { AdminSettingsPage } from '@/pages/admin/AdminSettings';
 import { AppShell } from '@/components/AppShell';
 import { RequireAuth } from '@/components/RequireAuth';
 import { ToastHost } from '@/components/Toast';
@@ -59,6 +60,7 @@ export default function App() {
           }
         >
           <Route path="/admin" element={<AdminUsersPage />} />
+          <Route path="/admin/settings" element={<AdminSettingsPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

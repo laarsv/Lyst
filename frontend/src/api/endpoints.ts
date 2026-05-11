@@ -7,6 +7,7 @@ import type {
   CopyToListResponse,
   ImportedRecipe,
   ListItem,
+  OllamaSettings,
   ListSummary,
   ListType,
   Note,
@@ -61,6 +62,12 @@ export const AdminApi = {
     api.patch<{ data: User }>(`/admin/users/${id}`, payload).then(unwrap),
   resetPassword: (id: number) => api.post(`/admin/users/${id}/reset-password`),
   deleteUser: (id: number) => api.delete(`/admin/users/${id}`),
+  getOllamaSettings: () =>
+    api.get<{ data: OllamaSettings }>('/admin/ollama/models').then(unwrap),
+  setOllamaModel: (model: string | null) =>
+    api
+      .put<{ data: { selected: string; is_override: boolean } }>('/admin/ollama/model', { model })
+      .then(unwrap),
 };
 
 export const ListsApi = {

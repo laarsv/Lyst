@@ -14,9 +14,11 @@ from typing import Any
 import httpx
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, Field, ValidationError, field_validator
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.recipe import RecipeCategory
+from app.services.settings_service import get_ollama_model
 
 logger = logging.getLogger(__name__)
 
@@ -154,9 +156,9 @@ def _extract_json(raw: str) -> dict[str, Any]:
         raise RecipeImportError(500, "Rezept konnte nicht extrahiert werden") from e
 
 
-async def _call_ollama(text: str) -> dict[str, Any]:
+async def _call_ollama(text: str, model: str) -> dict[str, Any]:
     body = {
-        "model": settings.OLLAMA_MODEL,
+        "model": model,
         "system": SYSTEM_PROMPT,
         "prompt": text,
         "stream": False,
@@ -179,13 +181,28 @@ async def _call_ollama(text: str) -> dict[str, Any]:
     return _extract_json(response_text)
 
 
-async def import_recipe_from_url(url: str) -> ImportedRecipe:
+async def list_ollama_models() -> list[dict[str, Any]]:
+    """Query Ollama for installed models. Returns the raw `models` list from
+    /api/tags (each entry has at least `name`, often `size` and `details`)."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(f"{settings.OLLAMA_BASE_URL}/api/tags")
+            r.raise_for_status()
+            data = r.json()
+    except httpx.HTTPError as e:
+        logger.error("Ollama tags fetch failed: %s", e)
+        raise RecipeImportError(503, "KI-Service nicht erreichbar") from e
+    return list(data.get("models", []))
+
+
+async def import_recipe_from_url(url: str, db: AsyncSession) -> ImportedRecipe:
     html = await _fetch_html(url)
     text = _clean_text(html)
     if not text:
         raise RecipeImportError(400, "Keine lesbaren Inhalte auf der Seite gefunden")
 
-    parsed = await _call_ollama(text)
+    model = await get_ollama_model(db)
+    parsed = await _call_ollama(text, model)
     parsed["source_url"] = url
 
     # Renumber step positions deterministically (LLM may skip or repeat)

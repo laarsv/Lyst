@@ -192,6 +192,26 @@ export interface ImportedStep {
   position: number | null;
 }
 
+export interface OllamaModel {
+  name: string;
+  model?: string;
+  size?: number;
+  modified_at?: string;
+  details?: {
+    parameter_size?: string;
+    quantization_level?: string;
+    family?: string;
+  };
+}
+
+export interface OllamaSettings {
+  models: OllamaModel[];
+  selected: string;
+  is_override: boolean;
+  env_default: string;
+  ollama_base_url: string;
+}
+
 export interface ImportedRecipe {
   title: string;
   description: string | null;

@@ -285,9 +285,10 @@ async def del_step(
 async def post_import_url(
     payload: ImportUrlRequest,
     user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
 ):
     try:
-        result = await import_recipe_from_url(payload.url)
+        result = await import_recipe_from_url(payload.url, db)
     except RecipeImportError as e:
         raise HTTPException(status_code=e.status, detail=e.message)
     return ok(result.model_dump(mode="json"))

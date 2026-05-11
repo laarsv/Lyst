@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Modal } from '@/components/Modal';
 import { RecipesApi } from '@/api/endpoints';
@@ -9,11 +9,27 @@ interface Props {
   onClose: () => void;
 }
 
+function fmtElapsed(s: number): string {
+  if (s < 60) return `${s}s`;
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} min`;
+}
+
 export function ImportRecipeModal({ open, onClose }: Props) {
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [elapsed, setElapsed] = useState(0);
   const nav = useNavigate();
+
+  // Live elapsed-time counter so the user sees the request is alive,
+  // not stuck — Ollama on a CPU mini-PC can take 60+ seconds.
+  useEffect(() => {
+    if (!loading) return;
+    setElapsed(0);
+    const start = Date.now();
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, [loading]);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -66,10 +82,15 @@ export function ImportRecipeModal({ open, onClose }: Props) {
         {loading && (
           <div className="flex items-center gap-3 bg-brand-50 text-brand-700 rounded-lg p-3 text-sm">
             <span
-              className="size-4 rounded-full border-2 border-brand-700 border-t-transparent animate-spin"
+              className="size-4 rounded-full border-2 border-brand-700 border-t-transparent animate-spin shrink-0"
               aria-hidden
             />
-            <span>KI analysiert Rezept… (je nach Hardware bis zu 1–2 Minuten)</span>
+            <span className="flex-1">
+              KI analysiert Rezept… (je nach Hardware bis zu 1–2 Minuten)
+            </span>
+            <span className="tabular-nums font-mono text-brand-700/70 shrink-0">
+              {fmtElapsed(elapsed)}
+            </span>
           </div>
         )}
         <div className="flex justify-end gap-2 pt-1">

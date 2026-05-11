@@ -48,6 +48,28 @@ export function AppShell() {
               ))}
             </nav>
           )}
+          {role === 'admin' && (
+            <nav className="flex gap-1">
+              {[
+                ['/admin', 'Benutzer'],
+                ['/admin/settings', 'Einstellungen'],
+              ].map(([to, label]) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  end
+                  className={({ isActive }) =>
+                    clsx(
+                      'px-3 py-1.5 rounded-lg text-sm font-medium',
+                      isActive ? 'bg-brand-50 text-brand-700' : 'text-zinc-600 hover:bg-zinc-100',
+                    )
+                  }
+                >
+                  {label}
+                </NavLink>
+              ))}
+            </nav>
+          )}
           <div className="flex items-center gap-3">
             <span className="text-sm text-zinc-600 hidden sm:inline">{name}</span>
             <button onClick={onLogout} className="btn-ghost text-sm">
