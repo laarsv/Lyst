@@ -18,6 +18,7 @@ from app.schemas.user import (
     UserUpdate,
 )
 from app.services.admin_service import (
+    MailDeliveryError,
     admin_reset_password,
     create_user,
     delete_user,
@@ -74,6 +75,8 @@ async def post_invite(payload: UserInvite, db: AsyncSession = Depends(get_db)):
         user = await invite_user(db, payload.email, payload.name, payload.role)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except MailDeliveryError as e:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
     return ok(UserOut.model_validate(user).model_dump(mode="json"))
 
 
@@ -99,6 +102,8 @@ async def post_reset(user_id: int, db: AsyncSession = Depends(get_db)):
         await admin_reset_password(db, user_id)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except MailDeliveryError as e:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
     return ok({"message": "Reset email sent"})
 
 
