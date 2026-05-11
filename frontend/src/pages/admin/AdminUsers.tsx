@@ -86,7 +86,51 @@ export function AdminUsersPage() {
         <button className="btn-secondary" onClick={refresh}>Suchen</button>
       </div>
 
-      <div className="card overflow-hidden">
+      {/* Mobile: card list */}
+      <div className="md:hidden space-y-3">
+        {loading && <div className="card p-6 text-center text-zinc-400">Lade…</div>}
+        {!loading && filtered.length === 0 && (
+          <div className="card p-6 text-center text-zinc-400">Keine Benutzer.</div>
+        )}
+        {filtered.map((u) => (
+          <div key={u.id} className="card p-4">
+            <div className="flex items-start justify-between gap-3 mb-2">
+              <div className="min-w-0">
+                <div className="font-medium truncate">{u.name}</div>
+                <div className="text-xs text-zinc-500 truncate">{u.email}</div>
+              </div>
+              <div className="flex flex-col items-end gap-1 shrink-0">
+                <span className={`text-xs px-2 py-0.5 rounded font-medium ${u.role === 'admin' ? 'bg-violet-50 text-violet-700' : 'bg-zinc-100 text-zinc-700'}`}>
+                  {u.role === 'admin' ? 'Admin' : 'Nutzer'}
+                </span>
+                <span className={`text-xs px-2 py-0.5 rounded font-medium ${u.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-zinc-100 text-zinc-500'}`}>
+                  {u.is_active ? 'Aktiv' : 'Deaktiviert'}
+                </span>
+              </div>
+            </div>
+            <div className="text-xs text-zinc-500 mb-3 flex flex-wrap gap-x-3 gap-y-1">
+              <span>{u.list_count} Listen</span>
+              <span>
+                Login: {u.last_login ? new Date(u.last_login).toLocaleString('de-DE') : '—'}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1 -mx-1">
+              <button className="btn-ghost text-xs" onClick={() => onResetPw(u)}>Passwort</button>
+              <button className="btn-ghost text-xs" onClick={() => onToggleActive(u)}>
+                {u.is_active ? 'Deaktivieren' : 'Aktivieren'}
+              </button>
+              {u.id !== myId && (
+                <button className="btn-ghost text-xs text-red-600" onClick={() => onDelete(u)}>
+                  Löschen
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Desktop: table */}
+      <div className="card overflow-hidden hidden md:block">
         <table className="w-full text-sm">
           <thead className="bg-zinc-50 text-zinc-600">
             <tr>

@@ -4,7 +4,15 @@
 
 @layer base {
   html, body, #root { height: 100%; }
-  body { -webkit-tap-highlight-color: transparent; }
+  body {
+    -webkit-tap-highlight-color: transparent;
+    /* Honour iOS notch / home-indicator areas in standalone PWA mode. */
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  /* Prevent zoom-on-focus on iOS Safari for inputs (16px = no zoom trigger).
+     We already use text-base which is 16px on most defaults. */
+  input, select, textarea { font-size: 16px; }
 }
 
 @layer components {
