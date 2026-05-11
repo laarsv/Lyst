@@ -40,8 +40,45 @@ async function tryRefresh(): Promise<string | null> {
   return refreshPromise;
 }
 
+/** Invalidate Service Worker cache entries for a given API path family.
+ * After a mutation (POST/PATCH/DELETE) the stale-while-revalidate cache
+ * would otherwise hand stale rows to the next GET on the same collection,
+ * making deletions/edits "stick" only after a manual reload.
+ */
+async function invalidateSwCacheFor(url: string): Promise<void> {
+  if (typeof caches === 'undefined') return;
+  // Anchor on the collection prefix: /api/lists/123 -> /api/lists, /api/notes/4 -> /api/notes
+  const m = url.match(/^(\/api\/[^/?#]+)/);
+  if (!m) return;
+  const prefix = m[1];
+  try {
+    const names = await caches.keys();
+    await Promise.all(
+      names
+        .filter((n) => n.startsWith('lyst-'))
+        .map(async (name) => {
+          const cache = await caches.open(name);
+          const keys = await cache.keys();
+          await Promise.all(
+            keys
+              .filter((req) => new URL(req.url).pathname.startsWith(prefix))
+              .map((req) => cache.delete(req)),
+          );
+        }),
+    );
+  } catch {
+    // Cache invalidation is a best-effort optimization.
+  }
+}
+
 api.interceptors.response.use(
-  (r) => r,
+  (r) => {
+    const method = r.config.method?.toUpperCase();
+    if (method && method !== 'GET' && r.config.url) {
+      void invalidateSwCacheFor(r.config.url);
+    }
+    return r;
+  },
   async (error: AxiosError) => {
     const cfg: any = error.config;
     if (
