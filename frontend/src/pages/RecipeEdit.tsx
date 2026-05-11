@@ -13,6 +13,7 @@ import { RecipesApi } from '@/api/endpoints';
 import type { ImportedRecipe, RecipeCategory, RecipeIngredient, RecipeStep } from '@/types';
 import { SortableEditRow } from '@/components/recipes/SortableEditRow';
 import { CATEGORY_LABEL } from '@/components/recipes/RecipeCard';
+import { UnitSelect } from '@/components/UnitSelect';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
 
@@ -474,11 +475,10 @@ export function RecipeEditPage() {
                             })
                           }
                         />
-                        <input
-                          className="input w-24 py-1.5"
-                          placeholder="Einheit"
-                          value={ing.unit ?? ''}
-                          onChange={(e) => updateIngredient(ing.id, { unit: e.target.value })}
+                        <UnitSelect
+                          className="w-32"
+                          value={ing.unit}
+                          onChange={(v) => updateIngredient(ing.id, { unit: v })}
                         />
                         <button
                           type="button"
