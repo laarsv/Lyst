@@ -248,6 +248,22 @@ export const RecipesApi = {
     api
       .post<{ data: ImportedRecipe }>('/recipes/import-url', { url })
       .then(unwrap),
+  importFromPhoto: (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return api
+      .post<{ data: ImportedRecipe }>('/recipes/import-photo', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      .then(unwrap);
+  },
+  suggest: (available_ingredients: string[]) =>
+    api
+      .post<{ data: { suggestions: Array<{ recipe_id: number; title: string; reason: string }> } }>(
+        '/recipes/suggest',
+        { available_ingredients },
+      )
+      .then(unwrap),
 
   // killer feature
   copyToList: (

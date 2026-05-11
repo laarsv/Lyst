@@ -247,6 +247,19 @@ export interface LlmSettings {
   anthropic: AnthropicInfo;
 }
 
+export interface ListSnapshot {
+  id: number;
+  list_id: number;
+  created_at: string;
+  item_count: number;
+  checked_count: number;
+}
+
+export interface RestoreSnapshotResponse {
+  list_id: number;
+  list_title: string;
+}
+
 export type MealType = 'BREAKFAST' | 'LUNCH' | 'DINNER' | 'SNACK';
 
 export interface MealPlanEntry {
