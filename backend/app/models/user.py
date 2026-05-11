@@ -26,7 +26,17 @@ class User(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[UserRole] = mapped_column(
-        Enum(UserRole, name="user_role"), nullable=False, default=UserRole.USER
+        # values_callable: store the enum *value* ("admin"/"user") in PG instead of
+        # the enum *name* ("ADMIN"/"USER"). The Postgres enum type was created with
+        # lowercase labels in migration 0001, and the wire format used by Pydantic
+        # in API responses is also lowercase, so this keeps everything consistent.
+        Enum(
+            UserRole,
+            name="user_role",
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+        ),
+        nullable=False,
+        default=UserRole.USER,
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
