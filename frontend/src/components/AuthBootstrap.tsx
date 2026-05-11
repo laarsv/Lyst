@@ -37,7 +37,7 @@ export function AuthBootstrap({ children }: { children: ReactNode }) {
 
   if (!ready) {
     return (
-      <div className="min-h-full flex items-center justify-center text-zinc-400">
+      <div className="min-h-full flex items-center justify-center text-muted/70">
         Lade…
       </div>
     );

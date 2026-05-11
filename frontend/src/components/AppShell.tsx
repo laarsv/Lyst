@@ -42,12 +42,12 @@ export function AppShell() {
 
   return (
     <div className="min-h-full flex flex-col">
-      <header className="sticky top-0 z-30 bg-white/90 backdrop-blur border-b border-zinc-100">
+      <header className="sticky top-0 z-30 bg-white/90 backdrop-blur border-b border-line">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center gap-3">
           {/* Burger — only visible on small screens */}
           <button
             type="button"
-            className="md:hidden -ml-2 p-2 rounded-lg hover:bg-zinc-100 active:bg-zinc-200"
+            className="md:hidden -ml-2 p-2 rounded-lg hover:bg-page active:bg-line"
             aria-label={menuOpen ? 'Menü schließen' : 'Menü öffnen'}
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((o) => !o)}
@@ -57,9 +57,9 @@ export function AppShell() {
 
           <Link
             to={role === 'admin' ? '/admin' : '/'}
-            className="text-xl font-semibold text-brand"
+            className="wordmark text-xl"
           >
-            Lyst
+            lyst
           </Link>
 
           {/* Desktop nav */}
@@ -72,7 +72,7 @@ export function AppShell() {
                 className={({ isActive }) =>
                   clsx(
                     'px-3 py-1.5 rounded-lg text-sm font-medium',
-                    isActive ? 'bg-brand-50 text-brand-700' : 'text-zinc-600 hover:bg-zinc-100',
+                    isActive ? 'bg-brand-50 text-brand-700' : 'text-muted hover:bg-page',
                   )
                 }
               >
@@ -82,7 +82,7 @@ export function AppShell() {
           </nav>
 
           <div className="flex items-center gap-2 ml-auto">
-            <span className="text-sm text-zinc-600 hidden sm:inline truncate max-w-[140px]">
+            <span className="text-sm text-muted hidden sm:inline truncate max-w-[140px]">
               {name}
             </span>
             <button onClick={onLogout} className="btn-ghost text-sm">
@@ -93,7 +93,7 @@ export function AppShell() {
 
         {/* Mobile dropdown */}
         {menuOpen && (
-          <div className="md:hidden border-t border-zinc-100 bg-white">
+          <div className="md:hidden border-t border-line bg-white">
             <nav className="max-w-5xl mx-auto px-2 py-2 flex flex-col">
               {links.map(([to, label]) => (
                 <NavLink
@@ -105,7 +105,7 @@ export function AppShell() {
                       'px-3 py-3 rounded-lg text-base font-medium',
                       isActive
                         ? 'bg-brand-50 text-brand-700'
-                        : 'text-zinc-700 active:bg-zinc-100',
+                        : 'text-ink active:bg-page',
                     )
                   }
                 >
@@ -113,8 +113,8 @@ export function AppShell() {
                 </NavLink>
               ))}
               {name && (
-                <div className="px-3 pt-3 mt-1 border-t border-zinc-100 text-xs text-zinc-500">
-                  Angemeldet als <span className="text-zinc-700 font-medium">{name}</span>
+                <div className="px-3 pt-3 mt-1 border-t border-line text-xs text-muted">
+                  Angemeldet als <span className="text-ink font-medium">{name}</span>
                 </div>
               )}
             </nav>
@@ -128,7 +128,7 @@ export function AppShell() {
           type="button"
           aria-hidden
           tabIndex={-1}
-          className="md:hidden fixed inset-0 top-[60px] z-20 bg-black/20"
+          className="md:hidden fixed inset-0 top-[60px] z-20 bg-ink/20"
           onClick={() => setMenuOpen(false)}
         />
       )}

@@ -65,13 +65,13 @@ export function RecipesPage() {
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && load()}
         />
-        <div className="flex gap-1 bg-zinc-100 rounded-xl p-1 overflow-x-auto">
+        <div className="flex gap-1 bg-surface border border-line rounded-xl p-1 overflow-x-auto">
           {CATEGORIES.map((c) => (
             <button
               key={c}
               onClick={() => setFilter(c)}
               className={`px-3 py-1.5 rounded-lg text-sm transition whitespace-nowrap ${
-                filter === c ? 'bg-white shadow-sm font-medium' : 'text-zinc-600'
+                filter === c ? 'bg-white shadow-sm font-medium' : 'text-muted'
               }`}
             >
               {c === 'ALL' ? 'Alle' : CATEGORY_LABEL[c]}
@@ -80,9 +80,9 @@ export function RecipesPage() {
         </div>
       </div>
       {loading ? (
-        <div className="text-zinc-400">Lade…</div>
+        <div className="text-muted/70">Lade…</div>
       ) : visible.length === 0 ? (
-        <div className="card p-12 text-center text-zinc-500">
+        <div className="card p-12 text-center text-muted">
           Noch keine Rezepte.{' '}
           <Link to="/recipes/new" className="text-brand hover:underline">Erstes Rezept anlegen</Link>
         </div>

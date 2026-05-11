@@ -1,24 +1,32 @@
 """HTML email templates. Plain string formatting; trivially extendable."""
 
-_BASE = """<!DOCTYPE html>
+# Brand tokens kept in sync with the frontend tailwind config.
+_BRAND = "#00c896"
+_BRAND_HOVER = "#00b386"
+_BG = "#f5f5f0"
+_INK = "#1a1a1a"
+_MUTED = "#888884"
+_LINE = "#e5e5e3"
+
+_BASE = f"""<!DOCTYPE html>
 <html lang="de">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{title}</title>
+<title>{{title}}</title>
 </head>
-<body style="margin:0;padding:0;background:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c1c1e;">
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f5f5f7;padding:32px 0;">
+<body style="margin:0;padding:0;background:{_BG};font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:{_INK};">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:{_BG};padding:32px 0;">
 <tr><td align="center">
-<table role="presentation" width="560" cellspacing="0" cellpadding="0" style="max-width:560px;width:100%;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+<table role="presentation" width="560" cellspacing="0" cellpadding="0" style="max-width:560px;width:100%;background:#ffffff;border:1px solid {_LINE};border-radius:10px;overflow:hidden;">
 <tr><td style="padding:32px 40px 16px 40px;">
-<div style="font-size:24px;font-weight:600;color:#0a84ff;letter-spacing:-0.5px;">Lyst</div>
+<div style="font-size:28px;font-weight:500;color:{_BRAND};letter-spacing:-0.5px;">lyst</div>
 </td></tr>
-<tr><td style="padding:8px 40px 32px 40px;font-size:16px;line-height:1.5;color:#1c1c1e;">
-{body}
+<tr><td style="padding:8px 40px 32px 40px;font-size:16px;line-height:1.55;color:{_INK};">
+{{body}}
 </td></tr>
-<tr><td style="padding:24px 40px;background:#fafafa;color:#8e8e93;font-size:13px;text-align:center;">
-Diese E-Mail wurde automatisch von Lyst gesendet.
+<tr><td style="padding:20px 40px;background:{_BG};color:{_MUTED};font-size:13px;text-align:center;border-top:1px solid {_LINE};">
+Diese E-Mail wurde automatisch von lyst gesendet.
 </td></tr>
 </table>
 </td></tr>
@@ -30,8 +38,8 @@ Diese E-Mail wurde automatisch von Lyst gesendet.
 def _btn(url: str, label: str) -> str:
     return (
         f'<p style="margin:24px 0;">'
-        f'<a href="{url}" style="display:inline-block;background:#0a84ff;color:#fff;'
-        f'text-decoration:none;padding:12px 24px;border-radius:10px;font-weight:600;">'
+        f'<a href="{url}" style="display:inline-block;background:{_BRAND};color:#ffffff;'
+        f'text-decoration:none;padding:10px 20px;border-radius:8px;font-weight:500;">'
         f"{label}</a></p>"
     )
 
@@ -39,58 +47,58 @@ def _btn(url: str, label: str) -> str:
 def invite_email(name: str, invite_url: str) -> tuple[str, str]:
     body = (
         f"<p>Hallo {name},</p>"
-        f"<p>du wurdest zu <strong>Lyst</strong> eingeladen – der modernen App für deine Listen, "
-        f"Einkäufe und Notizen.</p>"
+        f"<p>du wurdest zu <strong>lyst</strong> eingeladen — der App für deine Listen, "
+        f"Rezepte und Notizen.</p>"
         f"<p>Klicke auf den Button, um dein Konto einzurichten:</p>"
         f"{_btn(invite_url, 'Konto einrichten')}"
-        f"<p style='color:#8e8e93;font-size:14px;'>Der Link ist 48 Stunden gültig.</p>"
+        f"<p style='color:{_MUTED};font-size:14px;'>Der Link ist 48 Stunden gültig.</p>"
     )
-    return "Du wurdest zu Lyst eingeladen", _BASE.format(title="Lyst Einladung", body=body)
+    return "Du wurdest zu lyst eingeladen", _BASE.format(title="lyst Einladung", body=body)
 
 
 def password_reset_email(name: str, reset_url: str) -> tuple[str, str]:
     body = (
         f"<p>Hallo {name},</p>"
-        f"<p>du hast eine neues Passwort für dein Lyst-Konto angefordert. "
+        f"<p>du hast ein neues Passwort für dein lyst-Konto angefordert. "
         f"Klicke auf den Button, um ein neues Passwort zu setzen:</p>"
         f"{_btn(reset_url, 'Passwort zurücksetzen')}"
-        f"<p style='color:#8e8e93;font-size:14px;'>Der Link ist 1 Stunde gültig. "
+        f"<p style='color:{_MUTED};font-size:14px;'>Der Link ist 1 Stunde gültig. "
         f"Falls du diese E-Mail nicht angefordert hast, kannst du sie ignorieren.</p>"
     )
-    return "Lyst – Passwort zurücksetzen", _BASE.format(title="Passwort zurücksetzen", body=body)
+    return "lyst – Passwort zurücksetzen", _BASE.format(title="Passwort zurücksetzen", body=body)
 
 
 def reminder_email(list_title: str, message: str | None, app_url: str) -> tuple[str, str]:
     msg_html = f"<p><em>{message}</em></p>" if message else ""
     body = (
         f"<p>Erinnerung an deine Liste:</p>"
-        f"<h2 style='font-size:22px;margin:8px 0 16px 0;'>{list_title}</h2>"
+        f"<h2 style='font-size:22px;margin:8px 0 16px 0;font-weight:500;letter-spacing:-0.01em;'>{list_title}</h2>"
         f"{msg_html}"
         f"{_btn(app_url, 'Liste öffnen')}"
     )
-    return f"Lyst erinnert: {list_title}", _BASE.format(title=f"Erinnerung: {list_title}", body=body)
+    return f"lyst erinnert: {list_title}", _BASE.format(title=f"Erinnerung: {list_title}", body=body)
 
 
 def welcome_email(name: str, app_url: str) -> tuple[str, str]:
     body = (
         f"<p>Hallo {name},</p>"
-        f"<p>willkommen bei <strong>Lyst</strong>! Dein Konto ist jetzt einsatzbereit.</p>"
+        f"<p>willkommen bei <strong>lyst</strong>! Dein Konto ist jetzt einsatzbereit.</p>"
         f"<p>Erstelle deine erste Einkaufsliste, Packliste oder Notiz:</p>"
-        f"{_btn(app_url, 'Lyst öffnen')}"
+        f"{_btn(app_url, 'lyst öffnen')}"
         f"<p>Viel Spaß!</p>"
     )
-    return "Willkommen bei Lyst", _BASE.format(title="Willkommen bei Lyst", body=body)
+    return "Willkommen bei lyst", _BASE.format(title="Willkommen bei lyst", body=body)
 
 
 def test_email(triggered_by: str, recipient: str) -> tuple[str, str]:
     body = (
-        f"<p>Das ist eine Test-E-Mail von <strong>Lyst</strong>.</p>"
+        f"<p>Das ist eine Test-E-Mail von <strong>lyst</strong>.</p>"
         f"<p>Wenn du diese Nachricht erhältst, ist der Mailversand über Resend "
-        f"korrekt konfiguriert und Lyst kann Einladungen, Passwort-Resets und "
+        f"korrekt konfiguriert und lyst kann Einladungen, Passwort-Resets und "
         f"Erinnerungen verschicken.</p>"
-        f"<p style='color:#8e8e93;font-size:14px;margin-top:32px;'>"
+        f"<p style='color:{_MUTED};font-size:14px;margin-top:32px;'>"
         f"Empfänger: <code>{recipient}</code><br>"
         f"Ausgelöst von: {triggered_by}"
         f"</p>"
     )
-    return "Lyst — Test-E-Mail", _BASE.format(title="Test-E-Mail", body=body)
+    return "lyst — Test-E-Mail", _BASE.format(title="Test-E-Mail", body=body)

@@ -67,7 +67,7 @@ export function AdminUsersPage() {
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-semibold">Benutzerverwaltung</h1>
-          <p className="text-sm text-zinc-500">Verwalte Konten, lade Personen ein und setze Passwörter zurück.</p>
+          <p className="text-sm text-muted">Verwalte Konten, lade Personen ein und setze Passwörter zurück.</p>
         </div>
         <div className="flex gap-2">
           <button className="btn-secondary" onClick={() => setInviteOpen(true)}>Einladen</button>
@@ -88,27 +88,27 @@ export function AdminUsersPage() {
 
       {/* Mobile: card list */}
       <div className="md:hidden space-y-3">
-        {loading && <div className="card p-6 text-center text-zinc-400">Lade…</div>}
+        {loading && <div className="card p-6 text-center text-muted/70">Lade…</div>}
         {!loading && filtered.length === 0 && (
-          <div className="card p-6 text-center text-zinc-400">Keine Benutzer.</div>
+          <div className="card p-6 text-center text-muted/70">Keine Benutzer.</div>
         )}
         {filtered.map((u) => (
           <div key={u.id} className="card p-4">
             <div className="flex items-start justify-between gap-3 mb-2">
               <div className="min-w-0">
                 <div className="font-medium truncate">{u.name}</div>
-                <div className="text-xs text-zinc-500 truncate">{u.email}</div>
+                <div className="text-xs text-muted truncate">{u.email}</div>
               </div>
               <div className="flex flex-col items-end gap-1 shrink-0">
-                <span className={`text-xs px-2 py-0.5 rounded font-medium ${u.role === 'admin' ? 'bg-violet-50 text-violet-700' : 'bg-zinc-100 text-zinc-700'}`}>
+                <span className={`text-xs px-2 py-0.5 rounded font-medium ${u.role === 'admin' ? 'bg-brand-50 text-brand-700' : 'bg-page text-muted'}`}>
                   {u.role === 'admin' ? 'Admin' : 'Nutzer'}
                 </span>
-                <span className={`text-xs px-2 py-0.5 rounded font-medium ${u.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-zinc-100 text-zinc-500'}`}>
+                <span className={`text-xs px-2 py-0.5 rounded font-medium ${u.is_active ? 'bg-brand-50 text-brand-700' : 'bg-page text-muted'}`}>
                   {u.is_active ? 'Aktiv' : 'Deaktiviert'}
                 </span>
               </div>
             </div>
-            <div className="text-xs text-zinc-500 mb-3 flex flex-wrap gap-x-3 gap-y-1">
+            <div className="text-xs text-muted mb-3 flex flex-wrap gap-x-3 gap-y-1">
               <span>{u.list_count} Listen</span>
               <span>
                 Login: {u.last_login ? new Date(u.last_login).toLocaleString('de-DE') : '—'}
@@ -120,7 +120,7 @@ export function AdminUsersPage() {
                 {u.is_active ? 'Deaktivieren' : 'Aktivieren'}
               </button>
               {u.id !== myId && (
-                <button className="btn-ghost text-xs text-red-600" onClick={() => onDelete(u)}>
+                <button className="btn-ghost text-xs text-danger" onClick={() => onDelete(u)}>
                   Löschen
                 </button>
               )}
@@ -132,7 +132,7 @@ export function AdminUsersPage() {
       {/* Desktop: table */}
       <div className="card overflow-hidden hidden md:block">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-zinc-600">
+          <thead className="bg-page text-muted">
             <tr>
               <th className="text-left px-4 py-3 font-medium">Name</th>
               <th className="text-left px-4 py-3 font-medium">E-Mail</th>
@@ -143,28 +143,28 @@ export function AdminUsersPage() {
               <th></th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-zinc-100">
+          <tbody className="divide-y divide-line">
             {loading && (
-              <tr><td colSpan={7} className="px-4 py-6 text-center text-zinc-400">Lade…</td></tr>
+              <tr><td colSpan={7} className="px-4 py-6 text-center text-muted/70">Lade…</td></tr>
             )}
             {!loading && filtered.length === 0 && (
-              <tr><td colSpan={7} className="px-4 py-6 text-center text-zinc-400">Keine Benutzer.</td></tr>
+              <tr><td colSpan={7} className="px-4 py-6 text-center text-muted/70">Keine Benutzer.</td></tr>
             )}
             {filtered.map((u) => (
-              <tr key={u.id} className="hover:bg-zinc-50">
+              <tr key={u.id} className="hover:bg-page">
                 <td className="px-4 py-3 font-medium">{u.name}</td>
-                <td className="px-4 py-3 text-zinc-600">{u.email}</td>
+                <td className="px-4 py-3 text-muted">{u.email}</td>
                 <td className="px-4 py-3">
-                  <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${u.role === 'admin' ? 'bg-violet-50 text-violet-700' : 'bg-zinc-100 text-zinc-700'}`}>
+                  <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${u.role === 'admin' ? 'bg-brand-50 text-brand-700' : 'bg-page text-muted'}`}>
                     {u.role === 'admin' ? 'Admin' : 'Nutzer'}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-zinc-600">{u.list_count}</td>
-                <td className="px-4 py-3 text-zinc-600">
+                <td className="px-4 py-3 text-muted">{u.list_count}</td>
+                <td className="px-4 py-3 text-muted">
                   {u.last_login ? new Date(u.last_login).toLocaleString('de-DE') : '—'}
                 </td>
                 <td className="px-4 py-3">
-                  <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${u.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-zinc-100 text-zinc-500'}`}>
+                  <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${u.is_active ? 'bg-brand-50 text-brand-700' : 'bg-page text-muted'}`}>
                     {u.is_active ? 'Aktiv' : 'Deaktiviert'}
                   </span>
                 </td>
@@ -174,7 +174,7 @@ export function AdminUsersPage() {
                     {u.is_active ? 'Deaktivieren' : 'Aktivieren'}
                   </button>
                   {u.id !== myId && (
-                    <button className="btn-ghost text-xs text-red-600" onClick={() => onDelete(u)}>Löschen</button>
+                    <button className="btn-ghost text-xs text-danger" onClick={() => onDelete(u)}>Löschen</button>
                   )}
                 </td>
               </tr>
@@ -208,7 +208,7 @@ export function AdminUsersPage() {
               Konto für <strong>{tempPwInfo.email}</strong> wurde angelegt. Teile das temporäre
               Passwort sicher mit:
             </p>
-            <pre className="bg-zinc-50 border border-zinc-100 rounded-lg px-3 py-2 font-mono text-sm">
+            <pre className="bg-page border border-line rounded-lg px-3 py-2 font-mono text-sm">
               {tempPwInfo.temp}
             </pre>
             <div className="flex justify-end">
@@ -273,7 +273,7 @@ function CreateUserModal({
             <option value="admin">Admin</option>
           </select>
         </div>
-        {error && <div className="text-sm text-red-600">{error}</div>}
+        {error && <div className="text-sm text-danger">{error}</div>}
         <div className="flex justify-end gap-2">
           <button className="btn-secondary" onClick={onClose}>Abbrechen</button>
           <button className="btn-primary" disabled={loading} onClick={submit}>
@@ -332,8 +332,8 @@ function InviteUserModal({
             <option value="admin">Admin</option>
           </select>
         </div>
-        {error && <div className="text-sm text-red-600">{error}</div>}
-        <p className="text-xs text-zinc-500">Die eingeladene Person erhält eine E-Mail mit Link (gültig 48h).</p>
+        {error && <div className="text-sm text-danger">{error}</div>}
+        <p className="text-xs text-muted">Die eingeladene Person erhält eine E-Mail mit Link (gültig 48h).</p>
         <div className="flex justify-end gap-2">
           <button className="btn-secondary" onClick={onClose}>Abbrechen</button>
           <button className="btn-primary" disabled={loading} onClick={submit}>

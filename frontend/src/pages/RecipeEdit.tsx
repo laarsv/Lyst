@@ -274,7 +274,7 @@ export function RecipeEditPage() {
     if (reorderSt.length) await RecipesApi.reorderSteps(rid, reorderSt);
   };
 
-  if (loading) return <div className="text-zinc-400">Lade…</div>;
+  if (loading) return <div className="text-muted/70">Lade…</div>;
 
   return (
     <form onSubmit={save} className="space-y-6 max-w-3xl mx-auto">
@@ -365,12 +365,12 @@ export function RecipeEditPage() {
           <label className="label">Tags</label>
           <div className="flex flex-wrap items-center gap-1 input min-h-[42px] py-2">
             {tags.map((t) => (
-              <span key={t} className="inline-flex items-center gap-1 text-xs bg-zinc-100 px-2 py-1 rounded-full">
+              <span key={t} className="inline-flex items-center gap-1 text-xs bg-page px-2 py-1 rounded-full">
                 #{t}
                 <button
                   type="button"
                   onClick={() => setTags(tags.filter((x) => x !== t))}
-                  className="text-zinc-400 hover:text-red-500"
+                  className="text-muted/70 hover:text-danger"
                 >
                   ×
                 </button>
@@ -401,7 +401,7 @@ export function RecipeEditPage() {
           </button>
         </div>
         {ingredients.length === 0 ? (
-          <p className="text-sm text-zinc-400">Noch keine Zutaten.</p>
+          <p className="text-sm text-muted/70">Noch keine Zutaten.</p>
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd(setIngredients)}>
             <SortableContext items={ingredientItems} strategy={verticalListSortingStrategy}>
@@ -449,7 +449,7 @@ export function RecipeEditPage() {
           </button>
         </div>
         {steps.length === 0 ? (
-          <p className="text-sm text-zinc-400">Noch keine Schritte.</p>
+          <p className="text-sm text-muted/70">Noch keine Schritte.</p>
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd(setSteps)}>
             <SortableContext items={stepItems} strategy={verticalListSortingStrategy}>

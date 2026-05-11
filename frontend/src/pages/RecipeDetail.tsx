@@ -51,7 +51,7 @@ export function RecipeDetailPage() {
     }
   };
 
-  if (loading || !recipe) return <div className="text-zinc-400">Lade…</div>;
+  if (loading || !recipe) return <div className="text-muted/70">Lade…</div>;
 
   const totalTime = (recipe.prep_time_minutes ?? 0) + (recipe.cook_time_minutes ?? 0);
 
@@ -70,8 +70,8 @@ export function RecipeDetailPage() {
                   {CATEGORY_LABEL[recipe.category]}
                 </span>
               </div>
-              {recipe.description && <p className="text-zinc-600 mt-2">{recipe.description}</p>}
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-zinc-500 mt-3">
+              {recipe.description && <p className="text-muted mt-2">{recipe.description}</p>}
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted mt-3">
                 <span>🍴 {recipe.servings} Pers.</span>
                 {recipe.prep_time_minutes !== null && <span>Vorbereitung: {recipe.prep_time_minutes} Min</span>}
                 {recipe.cook_time_minutes !== null && <span>Kochen: {recipe.cook_time_minutes} Min</span>}
@@ -80,7 +80,7 @@ export function RecipeDetailPage() {
               {recipe.tags.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-1">
                   {recipe.tags.map((t) => (
-                    <span key={t} className="text-xs px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600">#{t}</span>
+                    <span key={t} className="text-xs px-2 py-0.5 rounded-chip bg-line text-muted">#{t}</span>
                   ))}
                 </div>
               )}
@@ -99,7 +99,7 @@ export function RecipeDetailPage() {
               <button className="btn-primary" onClick={() => setCopyOpen(true)}>Zu Einkaufsliste</button>
               <Link to={`/recipes/${recipe.id}/edit`} className="btn-secondary">Bearbeiten</Link>
               <button className="btn-secondary" onClick={duplicate}>Duplizieren</button>
-              <button className="btn-ghost text-red-600" onClick={remove}>Löschen</button>
+              <button className="btn-ghost text-danger" onClick={remove}>Löschen</button>
             </div>
           </div>
         </div>
@@ -109,12 +109,12 @@ export function RecipeDetailPage() {
         <section className="card p-5">
           <h2 className="font-semibold mb-3">Zutaten</h2>
           {recipe.ingredients.length === 0 ? (
-            <div className="text-sm text-zinc-400">Keine Zutaten erfasst.</div>
+            <div className="text-sm text-muted/70">Keine Zutaten erfasst.</div>
           ) : (
-            <ul className="divide-y divide-zinc-100">
+            <ul className="divide-y divide-line">
               {recipe.ingredients.map((ing) => (
                 <li key={ing.id} className="py-2 flex items-baseline gap-2">
-                  <span className="text-sm text-zinc-500 tabular-nums w-20 shrink-0">
+                  <span className="text-sm text-muted tabular-nums w-20 shrink-0">
                     {fmtQty(ing.quantity)} {ing.unit ?? ''}
                   </span>
                   <span className="text-sm">{ing.name}</span>
@@ -127,7 +127,7 @@ export function RecipeDetailPage() {
         <section className="card p-5">
           <h2 className="font-semibold mb-3">Zubereitung</h2>
           {recipe.steps.length === 0 ? (
-            <div className="text-sm text-zinc-400">Keine Schritte erfasst.</div>
+            <div className="text-sm text-muted/70">Keine Schritte erfasst.</div>
           ) : (
             <ol className="space-y-3">
               {recipe.steps.map((s, i) => (
@@ -135,7 +135,7 @@ export function RecipeDetailPage() {
                   <span className="size-7 rounded-full bg-brand-50 text-brand-700 font-semibold text-sm flex items-center justify-center shrink-0">
                     {i + 1}
                   </span>
-                  <p className="text-zinc-700 whitespace-pre-wrap leading-relaxed pt-0.5">{s.description}</p>
+                  <p className="text-ink whitespace-pre-wrap leading-relaxed pt-0.5">{s.description}</p>
                 </li>
               ))}
             </ol>

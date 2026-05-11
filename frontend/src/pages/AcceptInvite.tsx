@@ -33,9 +33,9 @@ export function AcceptInvitePage() {
     <div className="min-h-full flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-md card p-8">
         <h1 className="text-2xl font-semibold mb-2">Willkommen bei Lyst</h1>
-        <p className="text-zinc-500 mb-6 text-sm">Richte dein Konto ein.</p>
+        <p className="text-muted mb-6 text-sm">Richte dein Konto ein.</p>
         {!token ? (
-          <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg p-3">
+          <div className="text-sm text-danger bg-danger-50 border border-danger/30 rounded-lg p-3">
             Ungültiger oder abgelaufener Einladungslink.
           </div>
         ) : (
@@ -73,7 +73,7 @@ export function AcceptInvitePage() {
               />
             </div>
             {error && (
-              <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg p-3">
+              <div className="text-sm text-danger bg-danger-50 border border-danger/30 rounded-lg p-3">
                 {error}
               </div>
             )}

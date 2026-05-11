@@ -27,11 +27,11 @@ export function ForgotPasswordPage() {
     <div className="min-h-full flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-md card p-8">
         <h1 className="text-2xl font-semibold mb-2">Passwort zurücksetzen</h1>
-        <p className="text-zinc-500 mb-6 text-sm">
+        <p className="text-muted mb-6 text-sm">
           Wir senden dir einen Link zum Zurücksetzen, falls die E-Mail-Adresse bei uns registriert ist.
         </p>
         {done ? (
-          <div className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg p-3">
+          <div className="text-sm text-brand-700 bg-brand-50 border border-brand-100 rounded-lg p-3">
             Falls die E-Mail-Adresse bei uns registriert ist, hast du gleich eine E-Mail im Postfach.
           </div>
         ) : (
@@ -47,7 +47,7 @@ export function ForgotPasswordPage() {
               />
             </div>
             {error && (
-              <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg p-3">
+              <div className="text-sm text-danger bg-danger-50 border border-danger/30 rounded-lg p-3">
                 {error}
               </div>
             )}

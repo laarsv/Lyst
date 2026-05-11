@@ -61,8 +61,8 @@ export function InstallPrompt() {
     >
       {evt ? (
         <>
-          <div className="text-sm text-zinc-700">
-            Installiere <strong>Lyst</strong> auf deinem Gerät für schnelleren Zugriff und Offline-Modus.
+          <div className="text-sm text-ink">
+            Installiere <strong>lyst</strong> auf deinem Gerät für schnelleren Zugriff und Offline-Modus.
           </div>
           <div className="flex gap-2 justify-end">
             <button className="btn-ghost text-sm" onClick={dismiss}>
@@ -82,9 +82,9 @@ export function InstallPrompt() {
         </>
       ) : (
         <>
-          <div className="text-sm text-zinc-700">
-            <strong>Lyst zum Home-Bildschirm hinzufügen:</strong> tippe in Safari unten auf{' '}
-            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-zinc-100">
+          <div className="text-sm text-ink">
+            <strong>lyst zum Home-Bildschirm hinzufügen:</strong> tippe in Safari unten auf{' '}
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-page">
               Teilen
             </span>{' '}
             und dann <em>„Zum Home-Bildschirm"</em>.

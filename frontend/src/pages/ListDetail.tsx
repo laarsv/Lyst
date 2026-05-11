@@ -157,7 +157,7 @@ export function ListDetailPage() {
     }
   };
 
-  if (loading || !list) return <div className="text-zinc-400">Lade…</div>;
+  if (loading || !list) return <div className="text-muted/70">Lade…</div>;
 
   const checkedCount = items.filter((i) => i.is_checked).length;
   const pct = items.length ? Math.round((checkedCount / items.length) * 100) : 0;
@@ -166,7 +166,7 @@ export function ListDetailPage() {
     <div className="space-y-6">
       <div
         className="card p-6"
-        style={{ borderTopColor: list.color || '#0a84ff', borderTopWidth: 4 }}
+        style={{ borderTopColor: list.color || '#00c896', borderTopWidth: 4 }}
       >
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3 min-w-0">
@@ -174,12 +174,12 @@ export function ListDetailPage() {
             <div className="min-w-0">
               <h1 className="text-2xl font-semibold truncate">{list.title}</h1>
               {!list.is_owner && (
-                <div className="text-xs text-zinc-500">
+                <div className="text-xs text-muted">
                   geteilt – {list.permission === 'EDIT' ? 'Bearbeiten erlaubt' : 'nur Lesen'}
                 </div>
               )}
               {list.description && (
-                <div className="text-sm text-zinc-500 mt-1">{list.description}</div>
+                <div className="text-sm text-muted mt-1">{list.description}</div>
               )}
             </div>
           </div>
@@ -205,21 +205,21 @@ export function ListDetailPage() {
               </button>
             )}
             {list.is_owner && (
-              <button className="btn-ghost text-sm text-red-600" onClick={removeList}>
+              <button className="btn-ghost text-sm text-danger" onClick={removeList}>
                 Löschen
               </button>
             )}
           </div>
         </div>
         <div className="mt-4">
-          <div className="flex items-center justify-between text-sm text-zinc-500 mb-1">
+          <div className="flex items-center justify-between text-sm text-muted mb-1">
             <span>Fortschritt</span>
             <span>{checkedCount} / {items.length}</span>
           </div>
-          <div className="h-2 rounded-full bg-zinc-100 overflow-hidden">
+          <div className="h-2 rounded-full bg-page overflow-hidden">
             <div
               className="h-full transition-all"
-              style={{ width: `${pct}%`, background: list.color || '#0a84ff' }}
+              style={{ width: `${pct}%`, background: list.color || '#00c896' }}
             />
           </div>
         </div>
@@ -241,7 +241,7 @@ export function ListDetailPage() {
 
       <div className="card p-3 sm:p-4">
         {items.length === 0 ? (
-          <div className="text-center text-zinc-400 py-8">Noch keine Einträge.</div>
+          <div className="text-center text-muted/70 py-8">Noch keine Einträge.</div>
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
             <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
@@ -319,7 +319,7 @@ function BulkModal({
   return (
     <Modal open={open} onClose={onClose} title="Mehrere Einträge">
       <div className="space-y-3">
-        <p className="text-sm text-zinc-500">Eine Zeile = ein Eintrag.</p>
+        <p className="text-sm text-muted">Eine Zeile = ein Eintrag.</p>
         <textarea
           ref={ref}
           className="input min-h-[180px] font-mono text-sm"
@@ -357,7 +357,7 @@ function EditListModal({
   const [title, setTitle] = useState(list.title);
   const [description, setDescription] = useState(list.description ?? '');
   const [icon, setIcon] = useState(list.icon ?? '');
-  const [color, setColor] = useState(list.color ?? '#0a84ff');
+  const [color, setColor] = useState(list.color ?? '#00c896');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -365,7 +365,7 @@ function EditListModal({
       setTitle(list.title);
       setDescription(list.description ?? '');
       setIcon(list.icon ?? '');
-      setColor(list.color ?? '#0a84ff');
+      setColor(list.color ?? '#00c896');
     }
   }, [open, list]);
 
@@ -405,7 +405,7 @@ function EditListModal({
             <label className="label">Farbe</label>
             <input
               type="color"
-              className="h-[42px] w-16 rounded-xl border border-zinc-200 cursor-pointer"
+              className="h-[42px] w-16 rounded-xl border border-line cursor-pointer"
               value={color}
               onChange={(e) => setColor(e.target.value)}
             />

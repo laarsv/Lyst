@@ -68,20 +68,20 @@ export function CollaboratorsPanel({ listId }: { listId: number }) {
         </button>
       </div>
       {items.length === 0 ? (
-        <div className="text-sm text-zinc-500">Noch keine Mitnutzer.</div>
+        <div className="text-sm text-muted">Noch keine Mitnutzer.</div>
       ) : (
-        <ul className="divide-y divide-zinc-100">
+        <ul className="divide-y divide-line">
           {items.map((c) => (
             <li key={c.user_id} className="py-2 flex items-center justify-between">
               <div className="min-w-0">
                 <div className="font-medium truncate">{c.name}</div>
-                <div className="text-xs text-zinc-500 truncate">{c.email}</div>
+                <div className="text-xs text-muted truncate">{c.email}</div>
               </div>
               <div className="flex items-center gap-2">
-                <span className={`text-xs px-2 py-0.5 rounded ${c.permission === 'EDIT' ? 'bg-emerald-50 text-emerald-700' : 'bg-zinc-100 text-zinc-600'}`}>
+                <span className={`text-xs px-2 py-0.5 rounded ${c.permission === 'EDIT' ? 'bg-brand-50 text-brand-700' : 'bg-page text-muted'}`}>
                   {c.permission === 'EDIT' ? 'Bearbeiten' : 'Lesen'}
                 </span>
-                <button className="text-xs text-red-500 hover:underline" onClick={() => remove(c)}>
+                <button className="text-xs text-danger hover:underline" onClick={() => remove(c)}>
                   Entfernen
                 </button>
               </div>

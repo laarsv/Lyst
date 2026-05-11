@@ -8,10 +8,10 @@ import { getApiError } from '@/api/client';
 import { useNavigate } from 'react-router-dom';
 
 const TYPES: { v: ListType; label: string; icon: string; color: string }[] = [
-  { v: 'SHOPPING', label: 'Einkauf', icon: '🛒', color: '#10b981' },
+  { v: 'SHOPPING', label: 'Einkauf', icon: '🛒', color: '#00c896' },
   { v: 'PACKING', label: 'Packliste', icon: '🧳', color: '#f59e0b' },
-  { v: 'CHECKLIST', label: 'Checkliste', icon: '✅', color: '#0a84ff' },
-  { v: 'CUSTOM', label: 'Eigene', icon: '📋', color: '#8b5cf6' },
+  { v: 'CHECKLIST', label: 'Checkliste', icon: '✅', color: '#1a1a1a' },
+  { v: 'CUSTOM', label: 'Eigene', icon: '📋', color: '#888884' },
 ];
 
 export function DashboardPage() {
@@ -54,13 +54,13 @@ export function DashboardPage() {
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
-        <div className="flex gap-1 bg-zinc-100 rounded-xl p-1">
+        <div className="flex gap-1 bg-surface border border-line rounded-xl p-1">
           {(['ALL', ...TYPES.map((t) => t.v)] as const).map((t) => (
             <button
               key={t}
               onClick={() => setFilter(t as any)}
               className={`px-3 py-1.5 rounded-lg text-sm transition ${
-                filter === t ? 'bg-white shadow-sm font-medium' : 'text-zinc-600'
+                filter === t ? 'bg-white shadow-sm font-medium' : 'text-muted'
               }`}
             >
               {t === 'ALL' ? 'Alle' : TYPES.find((x) => x.v === t)?.label}
@@ -70,9 +70,9 @@ export function DashboardPage() {
       </div>
 
       {loading ? (
-        <div className="text-zinc-400">Lade…</div>
+        <div className="text-muted/70">Lade…</div>
       ) : filtered.length === 0 ? (
-        <div className="card p-12 text-center text-zinc-500">
+        <div className="card p-12 text-center text-muted">
           Noch keine Listen.{' '}
           <button className="text-brand hover:underline" onClick={() => setCreateOpen(true)}>
             Erste Liste erstellen
@@ -110,7 +110,7 @@ function CreateListModal({
   const [title, setTitle] = useState('');
   const [type, setType] = useState<ListType>('SHOPPING');
   const [icon, setIcon] = useState('🛒');
-  const [color, setColor] = useState('#10b981');
+  const [color, setColor] = useState('#00c896');
   const [loading, setLoading] = useState(false);
   const nav = useNavigate();
 
@@ -156,7 +156,7 @@ function CreateListModal({
                   setColor(t.color);
                 }}
                 className={`p-3 rounded-xl border text-left transition ${
-                  type === t.v ? 'border-brand bg-brand-50' : 'border-zinc-200 hover:bg-zinc-50'
+                  type === t.v ? 'border-brand bg-brand-50' : 'border-line hover:bg-page'
                 }`}
               >
                 <div className="text-2xl mb-1">{t.icon}</div>
@@ -174,7 +174,7 @@ function CreateListModal({
             <label className="label">Farbe</label>
             <input
               type="color"
-              className="h-[42px] w-16 rounded-xl border border-zinc-200 cursor-pointer"
+              className="h-[42px] w-16 rounded-xl border border-line cursor-pointer"
               value={color}
               onChange={(e) => setColor(e.target.value)}
             />

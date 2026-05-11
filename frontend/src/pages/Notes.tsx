@@ -83,7 +83,7 @@ export function NotesPage() {
         <div className="flex flex-wrap gap-1">
           <button
             onClick={() => setTagFilter(null)}
-            className={`text-xs px-2 py-1 rounded-full ${tagFilter === null ? 'bg-brand text-white' : 'bg-zinc-100 text-zinc-600'}`}
+            className={`text-xs px-2 py-1 rounded-full ${tagFilter === null ? 'bg-brand text-white' : 'bg-page text-muted'}`}
           >
             alle
           </button>
@@ -91,37 +91,37 @@ export function NotesPage() {
             <button
               key={t.id}
               onClick={() => setTagFilter(tagFilter === t.name ? null : t.name)}
-              className={`text-xs px-2 py-1 rounded-full ${tagFilter === t.name ? 'text-white' : 'bg-zinc-100 text-zinc-600'}`}
-              style={tagFilter === t.name ? { background: t.color || '#0a84ff' } : undefined}
+              className={`text-xs px-2 py-1 rounded-full ${tagFilter === t.name ? 'text-white' : 'bg-page text-muted'}`}
+              style={tagFilter === t.name ? { background: t.color || '#00c896' } : undefined}
             >
               #{t.name}
             </button>
           ))}
-          <button onClick={() => setTagsOpen(true)} className="text-xs px-2 py-1 rounded-full bg-zinc-100 text-zinc-500 hover:bg-zinc-200">
+          <button onClick={() => setTagsOpen(true)} className="text-xs px-2 py-1 rounded-full bg-page text-muted hover:bg-line">
             ⚙
           </button>
         </div>
         <div className="flex-1 overflow-auto -mx-1 px-1">
           {loading ? (
-            <div className="text-zinc-400 text-sm">Lade…</div>
+            <div className="text-muted/70 text-sm">Lade…</div>
           ) : notes.length === 0 ? (
-            <div className="text-zinc-400 text-sm py-6 text-center">Noch keine Notizen.</div>
+            <div className="text-muted/70 text-sm py-6 text-center">Noch keine Notizen.</div>
           ) : (
             <ul className="space-y-1">
               {notes.map((n) => (
                 <li key={n.id}>
                   <button
                     onClick={() => setActiveId(n.id)}
-                    className={`w-full text-left p-2 rounded-lg ${activeId === n.id ? 'bg-brand-50' : 'hover:bg-zinc-50'}`}
+                    className={`w-full text-left p-2 rounded-lg ${activeId === n.id ? 'bg-brand-50' : 'hover:bg-page'}`}
                   >
                     <div className="font-medium truncate">{n.title || '(ohne Titel)'}</div>
-                    <div className="text-xs text-zinc-500 truncate">
+                    <div className="text-xs text-muted truncate">
                       {n.content.replace(/[#*_>`-]/g, '').slice(0, 60) || 'leer'}
                     </div>
                     {n.tags.length > 0 && (
                       <div className="mt-1 flex flex-wrap gap-1">
                         {n.tags.map((t) => (
-                          <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-600">
+                          <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-page text-muted">
                             #{t}
                           </span>
                         ))}
@@ -145,7 +145,7 @@ export function NotesPage() {
             onDelete={() => removeNote(active)}
           />
         ) : (
-          <div className="flex-1 flex items-center justify-center text-zinc-400">
+          <div className="flex-1 flex items-center justify-center text-muted/70">
             Wähle eine Notiz oder lege eine neue an.
           </div>
         )}
@@ -201,18 +201,18 @@ function NoteEditor({
           value={title}
           onChange={(e) => setTitle(e.target.value)}
         />
-        <button className="btn-ghost text-sm text-red-600" onClick={onDelete}>Löschen</button>
+        <button className="btn-ghost text-sm text-danger" onClick={onDelete}>Löschen</button>
       </div>
       <div className="flex flex-wrap items-center gap-1">
         {tags.map((t) => (
-          <span key={t} className="inline-flex items-center gap-1 text-xs bg-zinc-100 px-2 py-1 rounded-full">
+          <span key={t} className="inline-flex items-center gap-1 text-xs bg-page px-2 py-1 rounded-full">
             #{t}
-            <button onClick={() => setTags(tags.filter((x) => x !== t))} className="text-zinc-400 hover:text-red-500">×</button>
+            <button onClick={() => setTags(tags.filter((x) => x !== t))} className="text-muted/70 hover:text-danger">×</button>
           </span>
         ))}
         <input
           list="tag-suggestions"
-          className="px-2 py-1 text-xs border border-zinc-200 rounded-full bg-white outline-none focus:border-brand"
+          className="px-2 py-1 text-xs border border-line rounded-full bg-white outline-none focus:border-brand"
           placeholder="+ tag"
           value={tagInput}
           onChange={(e) => setTagInput(e.target.value)}
@@ -250,7 +250,7 @@ function ManageTagsModal({
   onChange: (t: Tag[]) => void;
 }) {
   const [name, setName] = useState('');
-  const [color, setColor] = useState('#0a84ff');
+  const [color, setColor] = useState('#00c896');
 
   const create = async () => {
     if (!name.trim()) return;
@@ -277,20 +277,20 @@ function ManageTagsModal({
       <div className="space-y-3">
         <div className="flex gap-2">
           <input className="input flex-1" placeholder="Neuer Tag" value={name} onChange={(e) => setName(e.target.value)} />
-          <input type="color" className="h-[42px] w-14 rounded-xl border border-zinc-200" value={color} onChange={(e) => setColor(e.target.value)} />
+          <input type="color" className="h-[42px] w-14 rounded-xl border border-line" value={color} onChange={(e) => setColor(e.target.value)} />
           <button className="btn-primary" onClick={create}>+</button>
         </div>
         {tags.length === 0 ? (
-          <div className="text-sm text-zinc-500">Keine Tags.</div>
+          <div className="text-sm text-muted">Keine Tags.</div>
         ) : (
-          <ul className="divide-y divide-zinc-100">
+          <ul className="divide-y divide-line">
             {tags.map((t) => (
               <li key={t.id} className="py-2 flex items-center justify-between">
                 <span className="inline-flex items-center gap-2">
-                  <span className="size-3 rounded-full" style={{ background: t.color || '#0a84ff' }} />
+                  <span className="size-3 rounded-full" style={{ background: t.color || '#00c896' }} />
                   #{t.name}
                 </span>
-                <button className="text-xs text-red-500 hover:underline" onClick={() => remove(t)}>Löschen</button>
+                <button className="text-xs text-danger hover:underline" onClick={() => remove(t)}>Löschen</button>
               </li>
             ))}
           </ul>

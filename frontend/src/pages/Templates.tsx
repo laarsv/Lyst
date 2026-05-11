@@ -36,9 +36,9 @@ export function TemplatesPage() {
     <div>
       <h1 className="text-2xl font-semibold mb-4">Vorlagen</h1>
       {loading ? (
-        <div className="text-zinc-400">Lade…</div>
+        <div className="text-muted/70">Lade…</div>
       ) : templates.length === 0 ? (
-        <div className="card p-12 text-center text-zinc-500">
+        <div className="card p-12 text-center text-muted">
           Noch keine Vorlagen. Du kannst eine Liste in der Detailansicht als Vorlage speichern.
         </div>
       ) : (
@@ -47,13 +47,13 @@ export function TemplatesPage() {
             <div
               key={t.id}
               className="card p-5 flex flex-col gap-3"
-              style={{ borderTopColor: t.color || '#0a84ff', borderTopWidth: 4 }}
+              style={{ borderTopColor: t.color || '#00c896', borderTopWidth: 4 }}
             >
               <div className="flex items-center gap-2">
                 {t.icon && <span className="text-2xl">{t.icon}</span>}
                 <div>
                   <div className="font-semibold">{t.template_name || t.title}</div>
-                  <div className="text-xs text-zinc-500">{t.item_count} Einträge</div>
+                  <div className="text-xs text-muted">{t.item_count} Einträge</div>
                 </div>
               </div>
               <div className="flex justify-end gap-2 pt-2">

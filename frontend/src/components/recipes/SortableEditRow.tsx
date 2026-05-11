@@ -19,13 +19,13 @@ export function SortableEditRow({ id, children, onDelete }: Props) {
     <div
       ref={setNodeRef}
       style={style}
-      className="group flex items-start gap-2 p-2 rounded-xl border border-zinc-100 bg-white"
+      className="group flex items-start gap-2 p-2 rounded-xl border border-line bg-white"
     >
       <button
         type="button"
         {...attributes}
         {...listeners}
-        className="cursor-grab text-zinc-300 hover:text-zinc-500 px-1 py-1 select-none"
+        className="cursor-grab text-muted/60 hover:text-muted px-1 py-1 select-none"
         aria-label="Verschieben"
       >
         ⋮⋮
@@ -35,7 +35,7 @@ export function SortableEditRow({ id, children, onDelete }: Props) {
         <button
           type="button"
           onClick={onDelete}
-          className="opacity-0 group-hover:opacity-100 transition text-zinc-400 hover:text-red-500 px-1"
+          className="opacity-0 group-hover:opacity-100 transition text-muted/70 hover:text-danger px-1"
           aria-label="Löschen"
         >
           ×

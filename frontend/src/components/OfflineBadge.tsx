@@ -14,7 +14,7 @@ export function OfflineBadge() {
   }, []);
   if (!offline) return null;
   return (
-    <div className="fixed top-2 left-1/2 -translate-x-1/2 z-50 rounded-full bg-zinc-900 text-white text-xs px-3 py-1 shadow">
+    <div className="fixed top-2 left-1/2 -translate-x-1/2 z-50 rounded-full bg-ink text-white text-xs px-3 py-1 shadow">
       Offline-Modus
     </div>
   );

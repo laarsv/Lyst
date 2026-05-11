@@ -77,27 +77,27 @@ export function AdminSettingsPage() {
     <div>
       <div className="mb-6">
         <h1 className="text-2xl font-semibold">Einstellungen</h1>
-        <p className="text-sm text-zinc-500">Globale System-Einstellungen für alle Nutzer.</p>
+        <p className="text-sm text-muted">Globale System-Einstellungen für alle Nutzer.</p>
       </div>
 
       <section className="card p-6">
         <div className="mb-4">
           <h2 className="font-semibold">KI für Rezept-Import</h2>
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm text-muted">
             Wähle den Anbieter und das Modell für den URL-Importer. Änderungen wirken sofort.
           </p>
         </div>
 
         {loading ? (
-          <div className="text-zinc-400 py-6 text-center">Lade…</div>
+          <div className="text-muted/70 py-6 text-center">Lade…</div>
         ) : data ? (
           <>
-            <div className="flex gap-1 bg-zinc-100 rounded-xl p-1 mb-5">
+            <div className="flex gap-1 bg-surface border border-line rounded-xl p-1 mb-5">
               <button
                 onClick={() => switchProvider('ollama')}
                 disabled={busy}
                 className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition ${
-                  data.provider === 'ollama' ? 'bg-white shadow-sm' : 'text-zinc-600 hover:bg-white/60'
+                  data.provider === 'ollama' ? 'bg-white shadow-sm' : 'text-muted hover:bg-white/60'
                 }`}
               >
                 Ollama (lokal)
@@ -106,7 +106,7 @@ export function AdminSettingsPage() {
                 onClick={() => switchProvider('anthropic')}
                 disabled={busy}
                 className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition ${
-                  data.provider === 'anthropic' ? 'bg-white shadow-sm' : 'text-zinc-600 hover:bg-white/60'
+                  data.provider === 'anthropic' ? 'bg-white shadow-sm' : 'text-muted hover:bg-white/60'
                 }`}
               >
                 Claude (Cloud)
@@ -140,28 +140,28 @@ function OllamaSection({
 }) {
   return (
     <div>
-      <div className="flex items-center justify-between mb-3 text-xs text-zinc-500 flex-wrap gap-2">
+      <div className="flex items-center justify-between mb-3 text-xs text-muted flex-wrap gap-2">
         <span>
-          Server: <code className="bg-zinc-100 px-1.5 py-0.5 rounded">{data.base_url}</code>
+          Server: <code className="bg-page px-1.5 py-0.5 rounded">{data.base_url}</code>
         </span>
         <button className="text-brand hover:underline" onClick={onReload} disabled={busy}>
           Liste neu laden
         </button>
       </div>
       {data.error ? (
-        <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg p-3">
+        <div className="text-sm text-danger bg-danger-50 border border-danger/30 rounded-lg p-3">
           {data.error}
-          <div className="text-xs mt-1 text-red-500">
+          <div className="text-xs mt-1 text-danger">
             Prüfe ob Ollama läuft und über die konfigurierte URL erreichbar ist.
           </div>
         </div>
       ) : data.models.length === 0 ? (
-        <div className="text-zinc-400 py-6 text-center">
-          Keine Modelle installiert. Per <code className="bg-zinc-100 px-1.5 py-0.5 rounded">ollama pull &lt;modell&gt;</code> auf dem Ollama-Host eines installieren.
+        <div className="text-muted/70 py-6 text-center">
+          Keine Modelle installiert. Per <code className="bg-page px-1.5 py-0.5 rounded">ollama pull &lt;modell&gt;</code> auf dem Ollama-Host eines installieren.
         </div>
       ) : (
         <>
-          <ul className="divide-y divide-zinc-100 border border-zinc-100 rounded-xl">
+          <ul className="divide-y divide-line border border-line rounded-xl">
             {data.models.map((m) => {
               const isSelected = data.selected === m.name;
               return (
@@ -176,7 +176,7 @@ function OllamaSection({
                   />
                   <div className="flex-1 min-w-0">
                     <div className="font-medium">{m.name}</div>
-                    <div className="text-xs text-zinc-500 flex flex-wrap gap-x-3">
+                    <div className="text-xs text-muted flex flex-wrap gap-x-3">
                       {m.details?.parameter_size && <span>{m.details.parameter_size} Parameter</span>}
                       {m.details?.quantization_level && <span>{m.details.quantization_level}</span>}
                       {m.details?.family && <span>{m.details.family}</span>}
@@ -190,10 +190,10 @@ function OllamaSection({
               );
             })}
           </ul>
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-zinc-500">
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-muted">
             <span>
-              Standard aus <code className="bg-zinc-100 px-1.5 py-0.5 rounded">.env</code>:{' '}
-              <code className="bg-zinc-100 px-1.5 py-0.5 rounded">{data.env_default}</code>
+              Standard aus <code className="bg-page px-1.5 py-0.5 rounded">.env</code>:{' '}
+              <code className="bg-page px-1.5 py-0.5 rounded">{data.env_default}</code>
             </span>
             {data.is_override && (
               <button
@@ -230,7 +230,7 @@ function AnthropicSection({
           und das Backend neu gestartet ist.
         </div>
       )}
-      <ul className="divide-y divide-zinc-100 border border-zinc-100 rounded-xl">
+      <ul className="divide-y divide-line border border-line rounded-xl">
         {data.models.map((m) => {
           const isSelected = data.selected === m.id;
           return (
@@ -245,8 +245,8 @@ function AnthropicSection({
               />
               <div className="flex-1 min-w-0">
                 <div className="font-medium">{m.name}</div>
-                <div className="text-xs text-zinc-500">{m.description}</div>
-                <code className="text-[10px] text-zinc-400">{m.id}</code>
+                <div className="text-xs text-muted">{m.description}</div>
+                <code className="text-[10px] text-muted/70">{m.id}</code>
               </div>
               {isSelected && (
                 <span className="text-xs px-2 py-0.5 rounded-full bg-brand text-white shrink-0">Aktiv</span>
@@ -255,10 +255,10 @@ function AnthropicSection({
           );
         })}
       </ul>
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-zinc-500">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-muted">
         <span>
-          Standard aus <code className="bg-zinc-100 px-1.5 py-0.5 rounded">.env</code>:{' '}
-          <code className="bg-zinc-100 px-1.5 py-0.5 rounded">{data.env_default}</code>
+          Standard aus <code className="bg-page px-1.5 py-0.5 rounded">.env</code>:{' '}
+          <code className="bg-page px-1.5 py-0.5 rounded">{data.env_default}</code>
         </span>
         {data.is_override && (
           <button
@@ -306,7 +306,7 @@ function TestEmailSection() {
     <section className="card p-6 mt-6">
       <div className="mb-4">
         <h2 className="font-semibold">E-Mail-Versand testen</h2>
-        <p className="text-sm text-zinc-500">
+        <p className="text-sm text-muted">
           Sendet eine kurze Test-Mail über Resend. Prüft API-Key, Absender-Domain und DNS auf einen Schlag.
         </p>
       </div>
@@ -327,8 +327,8 @@ function TestEmailSection() {
         <div
           className={`mt-3 text-sm rounded-lg border p-3 ${
             lastResult.ok
-              ? 'text-emerald-700 bg-emerald-50 border-emerald-100'
-              : 'text-red-700 bg-red-50 border-red-100'
+              ? 'text-brand-700 bg-brand-50 border-brand-100'
+              : 'text-danger bg-danger-50 border-danger/30'
           }`}
         >
           {lastResult.message}

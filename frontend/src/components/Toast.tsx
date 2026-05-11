@@ -47,9 +47,9 @@ export function ToastHost() {
           onClick={() => remove(t.id)}
           className={clsx(
             'pointer-events-auto rounded-xl px-4 py-2.5 text-sm shadow-lg border cursor-pointer max-w-sm',
-            t.kind === 'success' && 'bg-emerald-50 border-emerald-200 text-emerald-900',
-            t.kind === 'error' && 'bg-red-50 border-red-200 text-red-900',
-            t.kind === 'info' && 'bg-white border-zinc-200 text-zinc-900',
+            t.kind === 'success' && 'bg-brand-50 border-brand-100 text-brand-700',
+            t.kind === 'error' && 'bg-danger-50 border-red-200 text-red-900',
+            t.kind === 'info' && 'bg-white border-line text-ink',
           )}
         >
           {t.text}

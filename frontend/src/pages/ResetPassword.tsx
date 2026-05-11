@@ -33,7 +33,7 @@ export function ResetPasswordPage() {
       <div className="w-full max-w-md card p-8">
         <h1 className="text-2xl font-semibold mb-6">Neues Passwort wählen</h1>
         {!token ? (
-          <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg p-3">
+          <div className="text-sm text-danger bg-danger-50 border border-danger/30 rounded-lg p-3">
             Ungültiger oder abgelaufener Link.
           </div>
         ) : (
@@ -61,7 +61,7 @@ export function ResetPasswordPage() {
               />
             </div>
             {error && (
-              <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg p-3">
+              <div className="text-sm text-danger bg-danger-50 border border-danger/30 rounded-lg p-3">
                 {error}
               </div>
             )}

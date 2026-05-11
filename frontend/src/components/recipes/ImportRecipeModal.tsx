@@ -57,7 +57,7 @@ export function ImportRecipeModal({ open, onClose }: Props) {
       title="Rezept aus URL importieren"
     >
       <form onSubmit={submit} className="space-y-4">
-        <p className="text-sm text-zinc-500">
+        <p className="text-sm text-muted">
           Füge die URL einer Rezept-Webseite ein. Die KI extrahiert Titel, Zutaten und Schritte —
           du kannst danach noch alles anpassen, bevor du speicherst.
         </p>
@@ -75,7 +75,7 @@ export function ImportRecipeModal({ open, onClose }: Props) {
           />
         </div>
         {error && (
-          <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg p-3">
+          <div className="text-sm text-danger bg-danger-50 border border-danger/30 rounded-lg p-3">
             {error}
           </div>
         )}

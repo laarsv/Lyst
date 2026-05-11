@@ -96,7 +96,7 @@ export function CopyToListModal({ open, recipe, onClose }: Props) {
             <button
               type="button"
               onClick={() => setServings((s) => Math.max(1, s - 1))}
-              className="size-8 rounded-lg border border-zinc-200 hover:bg-zinc-50"
+              className="size-8 rounded-lg border border-line hover:bg-page"
             >
               −
             </button>
@@ -111,12 +111,12 @@ export function CopyToListModal({ open, recipe, onClose }: Props) {
             <button
               type="button"
               onClick={() => setServings((s) => Math.min(999, s + 1))}
-              className="size-8 rounded-lg border border-zinc-200 hover:bg-zinc-50"
+              className="size-8 rounded-lg border border-line hover:bg-page"
             >
               +
             </button>
           </div>
-          <span className="text-xs text-zinc-500">
+          <span className="text-xs text-muted">
             Original: {recipe.servings}
             {factor !== 1 && ` · Faktor ${fmtQty(factor)}×`}
           </span>
@@ -134,23 +134,23 @@ export function CopyToListModal({ open, recipe, onClose }: Props) {
               >
                 alle
               </button>
-              <span className="text-zinc-300">|</span>
+              <span className="text-muted/60">|</span>
               <button
                 type="button"
-                className="text-zinc-500 hover:underline"
+                className="text-muted hover:underline"
                 onClick={() => setSelected(new Set())}
               >
                 keine
               </button>
             </div>
           </div>
-          <div className="border border-zinc-100 rounded-xl divide-y divide-zinc-100 max-h-56 overflow-auto">
+          <div className="border border-line rounded-xl divide-y divide-line max-h-56 overflow-auto">
             {recipe.ingredients.map((ing) => {
               const scaled = scaleQty(ing.quantity, factor);
               return (
                 <label
                   key={ing.id}
-                  className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-zinc-50"
+                  className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-page"
                 >
                   <input
                     type="checkbox"
@@ -159,14 +159,14 @@ export function CopyToListModal({ open, recipe, onClose }: Props) {
                     className="size-4 accent-brand"
                   />
                   <span className="flex-1 text-sm">{ing.name}</span>
-                  <span className="text-xs text-zinc-500 tabular-nums">
+                  <span className="text-xs text-muted tabular-nums">
                     {scaled !== null && fmtQty(scaled)} {ing.unit ?? ''}
                   </span>
                 </label>
               );
             })}
             {recipe.ingredients.length === 0 && (
-              <div className="px-3 py-4 text-sm text-zinc-400 text-center">Keine Zutaten</div>
+              <div className="px-3 py-4 text-sm text-muted/70 text-center">Keine Zutaten</div>
             )}
           </div>
         </div>
@@ -174,13 +174,13 @@ export function CopyToListModal({ open, recipe, onClose }: Props) {
         {/* Target list */}
         <div>
           <label className="label">Ziel</label>
-          <div className="flex gap-1 bg-zinc-100 rounded-xl p-1 mb-2">
+          <div className="flex gap-1 bg-surface border border-line rounded-xl p-1 mb-2">
             <button
               type="button"
               onClick={() => setMode('existing')}
               disabled={shoppingLists.length === 0}
               className={`flex-1 px-3 py-1.5 rounded-lg text-sm transition disabled:opacity-50 ${
-                mode === 'existing' ? 'bg-white shadow-sm font-medium' : 'text-zinc-600'
+                mode === 'existing' ? 'bg-white shadow-sm font-medium' : 'text-muted'
               }`}
             >
               Bestehende Liste
@@ -189,7 +189,7 @@ export function CopyToListModal({ open, recipe, onClose }: Props) {
               type="button"
               onClick={() => setMode('new')}
               className={`flex-1 px-3 py-1.5 rounded-lg text-sm transition ${
-                mode === 'new' ? 'bg-white shadow-sm font-medium' : 'text-zinc-600'
+                mode === 'new' ? 'bg-white shadow-sm font-medium' : 'text-muted'
               }`}
             >
               Neue Liste

@@ -74,19 +74,19 @@ export function RemindersPanel({ listId }: { listId: number }) {
         onChange={(e) => setMsg(e.target.value)}
       />
       {items.length === 0 ? (
-        <div className="text-sm text-zinc-500">Keine Erinnerungen.</div>
+        <div className="text-sm text-muted">Keine Erinnerungen.</div>
       ) : (
-        <ul className="divide-y divide-zinc-100">
+        <ul className="divide-y divide-line">
           {items.map((r) => (
             <li key={r.id} className="py-2 flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <div className="text-sm font-medium">
                   {new Date(r.remind_at).toLocaleString('de-DE')}
-                  {r.sent && <span className="ml-2 text-xs text-emerald-600">gesendet</span>}
+                  {r.sent && <span className="ml-2 text-xs text-brand">gesendet</span>}
                 </div>
-                {r.message && <div className="text-xs text-zinc-500 truncate">{r.message}</div>}
+                {r.message && <div className="text-xs text-muted truncate">{r.message}</div>}
               </div>
-              <button className="text-xs text-red-500 hover:underline" onClick={() => remove(r)}>
+              <button className="text-xs text-danger hover:underline" onClick={() => remove(r)}>
                 Löschen
               </button>
             </li>

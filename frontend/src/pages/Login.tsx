@@ -39,8 +39,8 @@ export function LoginPage() {
     <div className="min-h-full flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-md card p-8">
         <div className="text-center mb-6">
-          <div className="text-3xl font-semibold text-brand">Lyst</div>
-          <div className="text-zinc-500 mt-1">Bei deinem Konto anmelden</div>
+          <div className="wordmark text-4xl">lyst</div>
+          <div className="text-muted mt-2">Bei deinem Konto anmelden</div>
         </div>
         <form onSubmit={onSubmit} className="space-y-4">
           <div>
@@ -66,7 +66,7 @@ export function LoginPage() {
             />
           </div>
           {error && (
-            <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg p-3">
+            <div className="text-sm text-danger bg-danger-50 border border-danger/30 rounded-lg p-3">
               {error}
             </div>
           )}

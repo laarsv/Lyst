@@ -10,7 +10,7 @@ const TYPE_LABEL: Record<ListSummary['type'], string> = {
 
 export function ListCard({ list }: { list: ListSummary }) {
   const pct = list.item_count ? Math.round((list.checked_count / list.item_count) * 100) : 0;
-  const color = list.color || '#0a84ff';
+  const color = list.color || '#00c896';
   return (
     <Link
       to={`/lists/${list.id}`}
@@ -21,18 +21,18 @@ export function ListCard({ list }: { list: ListSummary }) {
         <div className="flex items-center gap-2 min-w-0">
           {list.icon && <span className="text-2xl shrink-0">{list.icon}</span>}
           <div className="min-w-0">
-            <div className="font-semibold text-zinc-900 truncate">{list.title}</div>
-            <div className="text-xs text-zinc-500">{TYPE_LABEL[list.type]}</div>
+            <div className="font-semibold text-ink truncate">{list.title}</div>
+            <div className="text-xs text-muted">{TYPE_LABEL[list.type]}</div>
           </div>
         </div>
         {!list.is_owner && (
-          <span className="text-xs px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600">geteilt</span>
+          <span className="text-xs px-2 py-0.5 rounded-chip bg-line text-muted">geteilt</span>
         )}
       </div>
-      <div className="text-sm text-zinc-500">
+      <div className="text-sm text-muted">
         {list.checked_count} / {list.item_count} erledigt
       </div>
-      <div className="h-1.5 rounded-full bg-zinc-100 overflow-hidden">
+      <div className="h-1.5 rounded-full bg-page overflow-hidden">
         <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: color }} />
       </div>
     </Link>

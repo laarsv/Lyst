@@ -49,14 +49,14 @@ export function SortableItem({ item, canEdit, onToggle, onUpdate, onDelete }: Pr
       style={style}
       className={clsx(
         'group flex items-center gap-2 px-3 py-2.5 rounded-xl border transition',
-        item.is_checked ? 'bg-zinc-50 border-zinc-100' : 'bg-white border-zinc-100',
+        item.is_checked ? 'bg-page border-line' : 'bg-white border-line',
       )}
     >
       {canEdit && (
         <button
           {...attributes}
           {...listeners}
-          className="cursor-grab text-zinc-300 hover:text-zinc-500 px-1 select-none"
+          className="cursor-grab text-muted/60 hover:text-muted px-1 select-none"
           aria-label="Verschieben"
         >
           ⋮⋮
@@ -101,13 +101,13 @@ export function SortableItem({ item, canEdit, onToggle, onUpdate, onDelete }: Pr
           <div
             className={clsx(
               'truncate',
-              item.is_checked && 'line-through text-zinc-400',
+              item.is_checked && 'line-through text-muted/70',
             )}
           >
             {item.text}
           </div>
           {(item.quantity !== null || item.unit) && (
-            <div className="text-xs text-zinc-500">
+            <div className="text-xs text-muted">
               {item.quantity !== null && item.quantity}
               {item.unit && ` ${item.unit}`}
             </div>
@@ -116,7 +116,7 @@ export function SortableItem({ item, canEdit, onToggle, onUpdate, onDelete }: Pr
       )}
       {canEdit && !editing && (
         <button
-          className="opacity-0 group-hover:opacity-100 transition text-zinc-400 hover:text-red-500 px-1"
+          className="opacity-0 group-hover:opacity-100 transition text-muted/70 hover:text-danger px-1"
           onClick={() => onDelete(item)}
           aria-label="Löschen"
         >

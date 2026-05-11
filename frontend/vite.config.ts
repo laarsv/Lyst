@@ -13,11 +13,11 @@ export default defineConfig({
       srcDir: 'src',
       filename: 'sw.ts',
       manifest: {
-        name: 'Lyst',
-        short_name: 'Lyst',
-        description: 'Listen, Einkäufe und Notizen.',
-        theme_color: '#0a84ff',
-        background_color: '#ffffff',
+        name: 'lyst',
+        short_name: 'lyst',
+        description: 'Listen, Rezepte und Notizen — minimal und schnell.',
+        theme_color: '#00c896',
+        background_color: '#f5f5f0',
         display: 'standalone',
         start_url: '/',
         icons: [
