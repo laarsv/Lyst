@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import require_user
+from app.core.dependencies import get_client_id, require_user
 from app.core.responses import ok
 from app.models.user import User
 from app.schemas.list_item import (
@@ -22,6 +22,7 @@ from app.services.item_service import (
     update_item,
 )
 from app.services.list_service import get_list_for_user
+from app.services.ws_manager import manager as ws_manager
 
 router = APIRouter(prefix="/lists/{list_id}/items", tags=["items"])
 
@@ -59,10 +60,15 @@ async def post_item(
     payload: ListItemCreate,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ):
     await _ensure_edit(db, list_id, user.id)
     item = await create_item(db, list_id, **payload.model_dump())
-    return ok(_item_out(item))
+    out = _item_out(item)
+    await ws_manager.broadcast(
+        list_id, {"type": "item_created", "payload": out}, exclude_client_id=client_id
+    )
+    return ok(out)
 
 
 @router.post("/bulk", status_code=status.HTTP_201_CREATED)
@@ -71,10 +77,16 @@ async def post_bulk(
     payload: BulkItemsCreate,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ):
     await _ensure_edit(db, list_id, user.id)
     items = await bulk_create_items(db, list_id, payload.lines)
-    return ok([_item_out(it) for it in items])
+    out = [_item_out(it) for it in items]
+    for o in out:
+        await ws_manager.broadcast(
+            list_id, {"type": "item_created", "payload": o}, exclude_client_id=client_id
+        )
+    return ok(out)
 
 
 @router.patch("/reorder")
@@ -83,9 +95,19 @@ async def patch_reorder(
     payload: ReorderRequest,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ):
     await _ensure_edit(db, list_id, user.id)
-    await reorder_items(db, list_id, [(i.id, i.position) for i in payload.items])
+    positions = [(i.id, i.position) for i in payload.items]
+    await reorder_items(db, list_id, positions)
+    await ws_manager.broadcast(
+        list_id,
+        {
+            "type": "item_reordered",
+            "payload": [{"id": i, "position": p} for i, p in positions],
+        },
+        exclude_client_id=client_id,
+    )
     return ok({"message": "Reordered"})
 
 
@@ -96,13 +118,18 @@ async def patch_item(
     payload: ListItemUpdate,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ):
     await _ensure_edit(db, list_id, user.id)
     item = await get_item(db, list_id, item_id)
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
     item = await update_item(db, item, **payload.model_dump(exclude_unset=True))
-    return ok(_item_out(item))
+    out = _item_out(item)
+    await ws_manager.broadcast(
+        list_id, {"type": "item_updated", "payload": out}, exclude_client_id=client_id
+    )
+    return ok(out)
 
 
 @router.delete("/{item_id}")
@@ -111,10 +138,16 @@ async def del_item(
     item_id: int,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ):
     await _ensure_edit(db, list_id, user.id)
     item = await get_item(db, list_id, item_id)
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
     await delete_item(db, item)
+    await ws_manager.broadcast(
+        list_id,
+        {"type": "item_deleted", "payload": {"id": item_id}},
+        exclude_client_id=client_id,
+    )
     return ok({"message": "Deleted"})

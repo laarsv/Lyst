@@ -19,6 +19,8 @@ import { Modal } from '@/components/Modal';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
 import { enqueue } from '@/lib/offlineQueue';
+import { useListWebSocket } from '@/hooks/useListWebSocket';
+import { LiveIndicator } from '@/components/LiveIndicator';
 
 export function ListDetailPage() {
   const { id } = useParams();
@@ -53,6 +55,48 @@ export function ListDetailPage() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Live collab — receive remote changes (skipped for messages we caused
+  // ourselves: backend filters by X-Client-Id header). Polling fallback
+  // simply re-fetches items if the WS stays down.
+  const refreshItems = useCallback(async () => {
+    try {
+      setItems(await ItemsApi.list(listId));
+    } catch {
+      /* swallow — refresh is best-effort while polling */
+    }
+  }, [listId]);
+
+  const wsConnected = useListWebSocket(listId, {
+    onMessage: (msg) => {
+      switch (msg.type) {
+        case 'item_created':
+          setItems((cur) =>
+            cur.some((i) => i.id === msg.payload.id) ? cur : [...cur, msg.payload],
+          );
+          break;
+        case 'item_updated':
+          setItems((cur) => cur.map((i) => (i.id === msg.payload.id ? msg.payload : i)));
+          break;
+        case 'item_deleted':
+          setItems((cur) => cur.filter((i) => i.id !== msg.payload.id));
+          break;
+        case 'item_reordered': {
+          const map = new Map(msg.payload.map((p) => [p.id, p.position]));
+          setItems((cur) =>
+            [...cur]
+              .map((i) => (map.has(i.id) ? { ...i, position: map.get(i.id)! } : i))
+              .sort((a, b) => a.position - b.position),
+          );
+          break;
+        }
+        case 'list_reset':
+          setItems((cur) => cur.map((i) => ({ ...i, is_checked: false })));
+          break;
+      }
+    },
+    onPollWhileDisconnected: refreshItems,
+  });
 
   const addItem = async (e?: FormEvent) => {
     e?.preventDefault();
@@ -172,7 +216,10 @@ export function ListDetailPage() {
           <div className="flex items-center gap-3 min-w-0">
             {list.icon && <span className="text-3xl">{list.icon}</span>}
             <div className="min-w-0">
-              <h1 className="text-2xl font-semibold truncate">{list.title}</h1>
+              <div className="flex items-center gap-3 flex-wrap">
+                <h1 className="text-2xl font-semibold truncate">{list.title}</h1>
+                <LiveIndicator connected={wsConnected} />
+              </div>
               {!list.is_owner && (
                 <div className="text-xs text-muted">
                   geteilt – {list.permission === 'EDIT' ? 'Bearbeiten erlaubt' : 'nur Lesen'}

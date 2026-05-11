@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import require_user
+from app.core.dependencies import get_client_id, require_user
 from app.core.responses import ok
 from app.models.user import User
 from app.schemas.list import ListCreate, ListDuplicate, ListOut, ListUpdate
@@ -16,6 +16,7 @@ from app.services.list_service import (
     reset_list,
     update_list,
 )
+from app.services.ws_manager import manager as ws_manager
 
 router = APIRouter(prefix="/lists", tags=["lists"])
 
@@ -135,6 +136,7 @@ async def post_reset(
     list_id: int,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ):
     try:
         lst, _, _ = await get_list_for_user(db, list_id, user.id, require_edit=True)
@@ -143,4 +145,7 @@ async def post_reset(
     except PermissionError as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     await reset_list(db, lst)
+    await ws_manager.broadcast(
+        list_id, {"type": "list_reset", "payload": {}}, exclude_client_id=client_id
+    )
     return ok({"message": "List reset"})

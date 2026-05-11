@@ -1,5 +1,6 @@
 import axios, { AxiosError, type AxiosInstance } from 'axios';
 import { useAuthStore } from '@/store/auth';
+import { getClientId } from '@/lib/clientId';
 
 const API_BASE = '/api';
 
@@ -13,6 +14,9 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  // Tag every request with this tab's client id so the backend's WebSocket
+  // broadcaster can skip echoing the change back to us.
+  config.headers['X-Client-Id'] = getClientId();
   return config;
 });
 

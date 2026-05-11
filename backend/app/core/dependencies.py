@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,3 +41,10 @@ async def require_user(user: User = Depends(get_current_user)) -> User:
     if user.role != UserRole.USER:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This area is for users only")
     return user
+
+
+def get_client_id(x_client_id: str | None = Header(default=None)) -> str | None:
+    """Per-tab UUID the frontend attaches to mutating REST calls so the
+    WebSocket broadcaster can avoid echoing the change back to the
+    originating tab."""
+    return x_client_id
