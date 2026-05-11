@@ -212,7 +212,7 @@ function NoteEditor({
         ))}
         <input
           list="tag-suggestions"
-          className="px-2 py-1 text-xs border border-line rounded-full bg-white outline-none focus:border-brand"
+          className="px-2 py-1 text-xs border border-line rounded-full bg-surface outline-none focus:border-brand"
           placeholder="+ tag"
           value={tagInput}
           onChange={(e) => setTagInput(e.target.value)}

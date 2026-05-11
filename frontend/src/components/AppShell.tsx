@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/auth';
 import { AuthApi } from '@/api/endpoints';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import clsx from 'clsx';
 
 const USER_LINKS: [string, string][] = [
@@ -43,7 +44,7 @@ export function AppShell() {
 
   return (
     <div className="min-h-full flex flex-col">
-      <header className="sticky top-0 z-30 bg-white/90 backdrop-blur border-b border-line">
+      <header className="sticky top-0 z-30 bg-surface/90 backdrop-blur border-b border-line">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center gap-3">
           {/* Burger — only visible on small screens */}
           <button
@@ -93,6 +94,7 @@ export function AppShell() {
             <span className="text-sm text-muted hidden sm:inline truncate max-w-[140px]">
               {name}
             </span>
+            <ThemeToggle />
             <button onClick={onLogout} className="btn-ghost text-sm">
               Abmelden
             </button>
@@ -101,7 +103,7 @@ export function AppShell() {
 
         {/* Mobile dropdown */}
         {menuOpen && (
-          <div className="md:hidden border-t border-line bg-white">
+          <div className="md:hidden border-t border-line bg-surface">
             <nav className="max-w-5xl mx-auto px-2 py-2 flex flex-col">
               {links.map(([to, label]) => (
                 <NavLink

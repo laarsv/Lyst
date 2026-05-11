@@ -60,7 +60,7 @@ export function DashboardPage() {
               key={t}
               onClick={() => setFilter(t as any)}
               className={`px-3 py-1.5 rounded-lg text-sm transition ${
-                filter === t ? 'bg-white shadow-sm font-medium' : 'text-muted'
+                filter === t ? 'bg-surface shadow-sm font-medium' : 'text-muted'
               }`}
             >
               {t === 'ALL' ? 'Alle' : TYPES.find((x) => x.v === t)?.label}

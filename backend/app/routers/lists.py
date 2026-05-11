@@ -16,6 +16,7 @@ from app.services.list_service import (
     reset_list,
     update_list,
 )
+from app.services.snapshot_service import save_snapshot
 from app.services.ws_manager import manager as ws_manager
 
 router = APIRouter(prefix="/lists", tags=["lists"])
@@ -144,6 +145,10 @@ async def post_reset(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except PermissionError as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    # Snapshot the current state *before* unchecking, so the user can later
+    # restore this session from "Verlauf".
+    if lst.items:
+        await save_snapshot(db, lst)
     await reset_list(db, lst)
     await ws_manager.broadcast(
         list_id, {"type": "list_reset", "payload": {}}, exclude_client_id=client_id

@@ -97,7 +97,7 @@ export function AdminSettingsPage() {
                 onClick={() => switchProvider('ollama')}
                 disabled={busy}
                 className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition ${
-                  data.provider === 'ollama' ? 'bg-white shadow-sm' : 'text-muted hover:bg-white/60'
+                  data.provider === 'ollama' ? 'bg-surface shadow-sm' : 'text-muted hover:bg-surface/60'
                 }`}
               >
                 Ollama (lokal)
@@ -106,7 +106,7 @@ export function AdminSettingsPage() {
                 onClick={() => switchProvider('anthropic')}
                 disabled={busy}
                 className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition ${
-                  data.provider === 'anthropic' ? 'bg-white shadow-sm' : 'text-muted hover:bg-white/60'
+                  data.provider === 'anthropic' ? 'bg-surface shadow-sm' : 'text-muted hover:bg-surface/60'
                 }`}
               >
                 Claude (Cloud)

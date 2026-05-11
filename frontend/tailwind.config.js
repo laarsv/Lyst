@@ -1,26 +1,29 @@
 /** @type {import('tailwindcss').Config} */
+const themed = (cssVar) => `rgb(var(${cssVar}) / <alpha-value>)`;
+
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
+  // Theme switching is driven by `<html data-theme="dark">` (set from JS),
+  // so we don't use Tailwind's own `dark:` selector.
   theme: {
     extend: {
       colors: {
         brand: {
-          DEFAULT: '#00c896',
-          50: '#e6faf5',
-          100: '#ccf5ea',
-          500: '#00c896',
+          DEFAULT: themed('--color-brand'),
+          50:  themed('--color-brand-50'),
+          100: themed('--color-brand-100'),
+          500: themed('--color-brand'),
           600: '#00b386',
-          700: '#009070',
+          700: themed('--color-brand-700'),
         },
-        // Semantic surface/text tokens — used directly via bg-page, text-ink etc.
-        page: '#f5f5f0',
-        surface: '#ffffff',
-        ink: '#1a1a1a',
-        muted: '#888884',
-        line: '#e5e5e3',
+        page: themed('--color-page'),
+        surface: themed('--color-surface'),
+        ink: themed('--color-ink'),
+        muted: themed('--color-muted'),
+        line: themed('--color-line'),
         danger: {
-          DEFAULT: '#e05252',
-          50: '#fdf0f0',
+          DEFAULT: themed('--color-danger'),
+          50: themed('--color-danger-50'),
         },
       },
       fontFamily: {

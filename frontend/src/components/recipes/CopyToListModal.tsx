@@ -180,7 +180,7 @@ export function CopyToListModal({ open, recipe, onClose }: Props) {
               onClick={() => setMode('existing')}
               disabled={shoppingLists.length === 0}
               className={`flex-1 px-3 py-1.5 rounded-lg text-sm transition disabled:opacity-50 ${
-                mode === 'existing' ? 'bg-white shadow-sm font-medium' : 'text-muted'
+                mode === 'existing' ? 'bg-surface shadow-sm font-medium' : 'text-muted'
               }`}
             >
               Bestehende Liste
@@ -189,7 +189,7 @@ export function CopyToListModal({ open, recipe, onClose }: Props) {
               type="button"
               onClick={() => setMode('new')}
               className={`flex-1 px-3 py-1.5 rounded-lg text-sm transition ${
-                mode === 'new' ? 'bg-white shadow-sm font-medium' : 'text-muted'
+                mode === 'new' ? 'bg-surface shadow-sm font-medium' : 'text-muted'
               }`}
             >
               Neue Liste

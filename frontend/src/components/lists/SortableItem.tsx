@@ -49,7 +49,7 @@ export function SortableItem({ item, canEdit, onToggle, onUpdate, onDelete }: Pr
       style={style}
       className={clsx(
         'group flex items-center gap-2 px-3 py-2.5 rounded-xl border transition',
-        item.is_checked ? 'bg-page border-line' : 'bg-white border-line',
+        item.is_checked ? 'bg-page border-line' : 'bg-surface border-line',
       )}
     >
       {canEdit && (

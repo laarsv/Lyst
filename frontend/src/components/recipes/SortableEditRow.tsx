@@ -19,7 +19,7 @@ export function SortableEditRow({ id, children, onDelete }: Props) {
     <div
       ref={setNodeRef}
       style={style}
-      className="group flex items-start gap-2 p-2 rounded-xl border border-line bg-white"
+      className="group flex items-start gap-2 p-2 rounded-xl border border-line bg-surface"
     >
       <button
         type="button"

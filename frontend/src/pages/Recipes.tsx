@@ -76,7 +76,7 @@ export function RecipesPage() {
               key={c}
               onClick={() => setFilter(c)}
               className={`px-3 py-1.5 rounded-lg text-sm transition whitespace-nowrap ${
-                filter === c ? 'bg-white shadow-sm font-medium' : 'text-muted'
+                filter === c ? 'bg-surface shadow-sm font-medium' : 'text-muted'
               }`}
             >
               {c === 'ALL' ? 'Alle' : CATEGORY_LABEL[c]}

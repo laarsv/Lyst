@@ -15,6 +15,7 @@ import { SortableItem } from '@/components/lists/SortableItem';
 import { SharePanel } from '@/components/lists/SharePanel';
 import { CollaboratorsPanel } from '@/components/lists/CollaboratorsPanel';
 import { RemindersPanel } from '@/components/lists/RemindersPanel';
+import { HistoryPanel } from '@/components/lists/HistoryPanel';
 import { Modal } from '@/components/Modal';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
@@ -318,6 +319,9 @@ export function ListDetailPage() {
           <CollaboratorsPanel listId={list.id} />
           <div className="md:col-span-2">
             <RemindersPanel listId={list.id} />
+          </div>
+          <div className="md:col-span-2">
+            <HistoryPanel listId={list.id} />
           </div>
         </div>
       )}

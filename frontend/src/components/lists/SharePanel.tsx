@@ -65,7 +65,7 @@ export function SharePanel({ list, onUpdate }: { list: ListSummary; onUpdate: (l
             onChange={() => (list.share_enabled ? disable() : enable())}
             disabled={loading}
           />
-          <div className="w-11 h-6 bg-line peer-checked:bg-brand rounded-full transition relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-5 after:w-5 after:transition peer-checked:after:translate-x-5" />
+          <div className="w-11 h-6 bg-line peer-checked:bg-brand rounded-full transition relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-[#fff] after:rounded-full after:h-5 after:w-5 after:transition peer-checked:after:translate-x-5" />
         </label>
       </div>
       {info && (

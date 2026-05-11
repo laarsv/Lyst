@@ -8,6 +8,7 @@ import type {
   GenerateListResponse,
   ImportedRecipe,
   ListItem,
+  ListSnapshot,
   LlmProvider,
   LlmSettings,
   ListSummary,
@@ -23,6 +24,7 @@ import type {
   RecipeStep,
   RecipeSummary,
   Reminder,
+  RestoreSnapshotResponse,
   ShareInfo,
   Tag,
   User,
@@ -259,6 +261,15 @@ export const RecipesApi = {
   ) =>
     api
       .post<{ data: CopyToListResponse }>(`/recipes/${recipeId}/copy-to-list`, payload)
+      .then(unwrap),
+};
+
+export const SnapshotsApi = {
+  list: (listId: number) =>
+    api.get<{ data: ListSnapshot[] }>(`/lists/${listId}/snapshots`).then(unwrap),
+  restore: (listId: number, snapshotId: number) =>
+    api
+      .post<{ data: RestoreSnapshotResponse }>(`/lists/${listId}/snapshots/${snapshotId}/restore`)
       .then(unwrap),
 };
 
