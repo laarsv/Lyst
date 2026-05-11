@@ -69,7 +69,7 @@ export function ImportRecipeModal({ open, onClose }: Props) {
               className="size-4 rounded-full border-2 border-brand-700 border-t-transparent animate-spin"
               aria-hidden
             />
-            <span>KI analysiert Rezept… (kann 10–20 Sekunden dauern)</span>
+            <span>KI analysiert Rezept… (je nach Hardware bis zu 1–2 Minuten)</span>
           </div>
         )}
         <div className="flex justify-end gap-2 pt-1">
