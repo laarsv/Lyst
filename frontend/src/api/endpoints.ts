@@ -68,6 +68,10 @@ export const AdminApi = {
     api
       .put<{ data: { selected: string; is_override: boolean } }>('/admin/ollama/model', { model })
       .then(unwrap),
+  sendTestEmail: (to?: string) =>
+    api
+      .post<{ data: { to: string; message: string } }>('/admin/test-email', { to: to || null })
+      .then(unwrap),
 };
 
 export const ListsApi = {

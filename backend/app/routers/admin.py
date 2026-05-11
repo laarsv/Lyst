@@ -1,11 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings as env_settings
 from app.core.database import get_db
 from app.core.dependencies import require_admin
 from app.core.responses import ok
+from app.email.sender import send_email
+from app.email.templates import test_email
 from app.models.user import User
 from app.schemas.user import (
     AdminUserOut,
@@ -139,3 +141,31 @@ async def put_ollama_model(payload: OllamaModelSetting, db: AsyncSession = Depen
     value = payload.model.strip() if payload.model and payload.model.strip() else None
     await set_setting(db, KEY_OLLAMA_MODEL, value)
     return ok({"selected": value or env_settings.OLLAMA_MODEL, "is_override": value is not None})
+
+
+# ---------- Mail test ----------
+
+class TestEmailRequest(BaseModel):
+    to: EmailStr | None = None  # default = current admin's own email
+
+
+@router.post("/test-email")
+async def post_test_email(
+    payload: TestEmailRequest,
+    current: User = Depends(require_admin),
+):
+    """Send a Resend test email — verifies API key, sender, and DNS in one shot."""
+    if not env_settings.RESEND_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="RESEND_API_KEY ist nicht gesetzt — siehe .env",
+        )
+    target = str(payload.to) if payload.to else current.email
+    subject, html = test_email(current.name, target)
+    sent = await send_email(target, subject, html)
+    if not sent:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Resend hat den Versand abgelehnt — Backend-Log prüfen",
+        )
+    return ok({"to": target, "message": "Test-E-Mail gesendet"})

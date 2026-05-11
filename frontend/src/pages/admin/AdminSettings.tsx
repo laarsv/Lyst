@@ -3,6 +3,7 @@ import { AdminApi } from '@/api/endpoints';
 import type { OllamaSettings } from '@/types';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
+import { useAuthStore } from '@/store/auth';
 
 function fmtSize(bytes?: number): string {
   if (!bytes) return '';
@@ -140,6 +141,71 @@ export function AdminSettingsPage() {
           </div>
         )}
       </section>
+
+      <TestEmailSection />
     </div>
+  );
+}
+
+function TestEmailSection() {
+  const myEmail = useAuthStore((s) => s.email);
+  const [to, setTo] = useState('');
+  const [sending, setSending] = useState(false);
+  const [lastResult, setLastResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  useEffect(() => {
+    if (myEmail) setTo(myEmail);
+  }, [myEmail]);
+
+  const send = async () => {
+    if (!to.trim()) return;
+    setSending(true);
+    setLastResult(null);
+    try {
+      const r = await AdminApi.sendTestEmail(to.trim());
+      setLastResult({ ok: true, message: `Test-E-Mail an ${r.to} versendet.` });
+      toast.success('Test-E-Mail versendet');
+    } catch (e) {
+      const msg = getApiError(e);
+      setLastResult({ ok: false, message: msg });
+      toast.error(msg);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <section className="card p-6 mt-6">
+      <div className="mb-4">
+        <h2 className="font-semibold">E-Mail-Versand testen</h2>
+        <p className="text-sm text-zinc-500">
+          Sendet eine kurze Test-Mail über Resend. Prüft API-Key, Absender-Domain und DNS auf einen Schlag.
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <input
+          type="email"
+          className="input flex-1 min-w-[220px]"
+          value={to}
+          onChange={(e) => setTo(e.target.value)}
+          placeholder="empfaenger@example.com"
+          disabled={sending}
+        />
+        <button className="btn-primary" disabled={sending || !to.trim()} onClick={send}>
+          {sending ? 'Sende…' : 'Test senden'}
+        </button>
+      </div>
+      {lastResult && (
+        <div
+          className={`mt-3 text-sm rounded-lg border p-3 ${
+            lastResult.ok
+              ? 'text-emerald-700 bg-emerald-50 border-emerald-100'
+              : 'text-red-700 bg-red-50 border-red-100'
+          }`}
+        >
+          {lastResult.message}
+        </div>
+      )}
+    </section>
   );
 }

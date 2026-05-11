@@ -80,3 +80,17 @@ def welcome_email(name: str, app_url: str) -> tuple[str, str]:
         f"<p>Viel Spaß!</p>"
     )
     return "Willkommen bei Lyst", _BASE.format(title="Willkommen bei Lyst", body=body)
+
+
+def test_email(triggered_by: str, recipient: str) -> tuple[str, str]:
+    body = (
+        f"<p>Das ist eine Test-E-Mail von <strong>Lyst</strong>.</p>"
+        f"<p>Wenn du diese Nachricht erhältst, ist der Mailversand über Resend "
+        f"korrekt konfiguriert und Lyst kann Einladungen, Passwort-Resets und "
+        f"Erinnerungen verschicken.</p>"
+        f"<p style='color:#8e8e93;font-size:14px;margin-top:32px;'>"
+        f"Empfänger: <code>{recipient}</code><br>"
+        f"Ausgelöst von: {triggered_by}"
+        f"</p>"
+    )
+    return "Lyst — Test-E-Mail", _BASE.format(title="Test-E-Mail", body=body)
