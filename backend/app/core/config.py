@@ -26,9 +26,10 @@ class Settings(BaseSettings):
 
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "llama3"
-    # 7B models on CPU-only home servers can need 60–120s for the first call
-    # (model load) and 20–60s for warm inference. 180s gives generous headroom.
-    OLLAMA_TIMEOUT_SECONDS: int = 180
+    # 7B models on CPU-only home servers can need 60–180s for the first call
+    # (model load) and 30–90s for warm inference. 300s gives headroom for the
+    # mini-PC case; bump via env if you have an even slower setup.
+    OLLAMA_TIMEOUT_SECONDS: int = 300
 
     @property
     def cors_origins(self) -> list[str]:
