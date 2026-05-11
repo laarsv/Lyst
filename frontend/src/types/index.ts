@@ -137,6 +137,17 @@ export interface RecipeIngredient {
   quantity: number | null;
   unit: string | null;
   position: number;
+  calories_per_100g: number | null;
+  protein_per_100g: number | null;
+  carbs_per_100g: number | null;
+  fat_per_100g: number | null;
+}
+
+export interface NutritionTotals {
+  calories: number | null;
+  protein: number | null;
+  carbs: number | null;
+  fat: number | null;
 }
 
 export interface RecipeStep {
@@ -173,6 +184,7 @@ export interface Recipe extends RecipeBase {
   updated_at: string;
   ingredients: RecipeIngredient[];
   steps: RecipeStep[];
+  nutrition_per_serving: NutritionTotals;
 }
 
 export interface CopyToListResponse {

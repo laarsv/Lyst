@@ -13,6 +13,7 @@ from app.schemas.recipe import (
     IngredientCreate,
     IngredientOut,
     IngredientUpdate,
+    NutritionTotals,
     RecipeCreate,
     RecipeDuplicate,
     RecipeOut,
@@ -53,8 +54,43 @@ def _summary(rec, ingredient_count: int) -> dict:
     ).model_dump(mode="json")
 
 
+def _nutrition_per_serving(rec) -> NutritionTotals:
+    """Sum each macro = (qty_in_grams / 100) * per100g, then divide by servings.
+    Only ingredients with both `quantity` and a unit that resolves to grams
+    (g, gr, gramm, kg) contribute. ml/EL/Stk are ignored — we'd need a density
+    table to convert them."""
+    GRAM_FACTOR = {"g": 1.0, "gr": 1.0, "gramm": 1.0, "kg": 1000.0}
+    totals = {"calories": None, "protein": None, "carbs": None, "fat": None}
+    fields = (
+        ("calories", "calories_per_100g"),
+        ("protein", "protein_per_100g"),
+        ("carbs", "carbs_per_100g"),
+        ("fat", "fat_per_100g"),
+    )
+    for ing in rec.ingredients:
+        if ing.quantity is None:
+            continue
+        unit_key = (ing.unit or "").strip().lower()
+        factor = GRAM_FACTOR.get(unit_key)
+        if factor is None:
+            continue
+        grams = ing.quantity * factor
+        for key, attr in fields:
+            v = getattr(ing, attr)
+            if v is None:
+                continue
+            contrib = grams / 100.0 * v
+            totals[key] = (totals[key] or 0.0) + contrib
+    servings = max(rec.servings, 1)
+    return NutritionTotals(
+        **{k: round(v / servings, 1) if v is not None else None for k, v in totals.items()}
+    )
+
+
 def _full(rec) -> dict:
-    return RecipeOut.model_validate(rec).model_dump(mode="json")
+    return RecipeOut.model_validate(rec).model_copy(
+        update={"nutrition_per_serving": _nutrition_per_serving(rec)}
+    ).model_dump(mode="json")
 
 
 # ---------- Recipes ----------

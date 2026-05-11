@@ -24,6 +24,12 @@ interface DraftIngredient {
   name: string;
   quantity: number | null;
   unit: string | null;
+  calories_per_100g: number | null;
+  protein_per_100g: number | null;
+  carbs_per_100g: number | null;
+  fat_per_100g: number | null;
+  /** Local-only: whether the optional nutrition row is expanded in the UI */
+  nutritionOpen?: boolean;
 }
 
 interface DraftStep {
@@ -65,6 +71,10 @@ export function RecipeEditPage() {
           name: i.name,
           quantity: i.quantity,
           unit: i.unit,
+          calories_per_100g: null,
+          protein_per_100g: null,
+          carbs_per_100g: null,
+          fat_per_100g: null,
         }))
       : [],
   );
@@ -98,6 +108,10 @@ export function RecipeEditPage() {
             name: i.name,
             quantity: i.quantity,
             unit: i.unit,
+            calories_per_100g: i.calories_per_100g,
+            protein_per_100g: i.protein_per_100g,
+            carbs_per_100g: i.carbs_per_100g,
+            fat_per_100g: i.fat_per_100g,
           })),
         );
         setSteps(r.steps.map((s) => ({ id: s.id, persisted: true, description: s.description })));
@@ -121,7 +135,17 @@ export function RecipeEditPage() {
   const addIngredient = () =>
     setIngredients((cur) => [
       ...cur,
-      { id: tempId(), persisted: false, name: '', quantity: null, unit: null },
+      {
+        id: tempId(),
+        persisted: false,
+        name: '',
+        quantity: null,
+        unit: null,
+        calories_per_100g: null,
+        protein_per_100g: null,
+        carbs_per_100g: null,
+        fat_per_100g: null,
+      },
     ]);
   const updateIngredient = (id: number | string, patch: Partial<DraftIngredient>) =>
     setIngredients((cur) => cur.map((i) => (i.id === id ? { ...i, ...patch } : i)));
@@ -188,6 +212,10 @@ export function RecipeEditPage() {
             name: i.name.trim(),
             quantity: i.quantity,
             unit: i.unit?.trim() || null,
+            calories_per_100g: i.calories_per_100g,
+            protein_per_100g: i.protein_per_100g,
+            carbs_per_100g: i.carbs_per_100g,
+            fat_per_100g: i.fat_per_100g,
           })),
           steps: steps.map((s) => ({ description: s.description.trim() })),
         });
@@ -221,16 +249,25 @@ export function RecipeEditPage() {
         const id = draft.id as number;
         seenIngIds.add(id);
         const orig = origIngs.get(id);
-        if (
-          orig &&
-          (orig.name !== draft.name.trim() ||
-            (orig.quantity ?? null) !== (draft.quantity ?? null) ||
-            (orig.unit ?? null) !== (draft.unit?.trim() || null))
-        ) {
+        const draftUnit = draft.unit?.trim() || null;
+        const changed = !!orig && (
+          orig.name !== draft.name.trim() ||
+          (orig.quantity ?? null) !== (draft.quantity ?? null) ||
+          (orig.unit ?? null) !== draftUnit ||
+          (orig.calories_per_100g ?? null) !== (draft.calories_per_100g ?? null) ||
+          (orig.protein_per_100g ?? null) !== (draft.protein_per_100g ?? null) ||
+          (orig.carbs_per_100g ?? null) !== (draft.carbs_per_100g ?? null) ||
+          (orig.fat_per_100g ?? null) !== (draft.fat_per_100g ?? null)
+        );
+        if (changed) {
           await RecipesApi.updateIngredient(rid, id, {
             name: draft.name.trim(),
             quantity: draft.quantity,
-            unit: draft.unit?.trim() || null,
+            unit: draftUnit,
+            calories_per_100g: draft.calories_per_100g,
+            protein_per_100g: draft.protein_per_100g,
+            carbs_per_100g: draft.carbs_per_100g,
+            fat_per_100g: draft.fat_per_100g,
           });
         }
         reorderIng.push({ id, position: i });
@@ -239,6 +276,10 @@ export function RecipeEditPage() {
           name: draft.name.trim(),
           quantity: draft.quantity,
           unit: draft.unit?.trim() || null,
+          calories_per_100g: draft.calories_per_100g,
+          protein_per_100g: draft.protein_per_100g,
+          carbs_per_100g: draft.carbs_per_100g,
+          fat_per_100g: draft.fat_per_100g,
         });
         reorderIng.push({ id: created.id, position: i });
       }
@@ -406,35 +447,74 @@ export function RecipeEditPage() {
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd(setIngredients)}>
             <SortableContext items={ingredientItems} strategy={verticalListSortingStrategy}>
               <div className="space-y-2">
-                {ingredients.map((ing) => (
-                  <SortableEditRow key={ing.id} id={ing.id} onDelete={() => removeIngredient(ing.id)}>
-                    <div className="flex flex-wrap gap-2">
-                      <input
-                        className="input flex-1 min-w-[160px] py-1.5"
-                        placeholder="z.B. Mehl"
-                        value={ing.name}
-                        onChange={(e) => updateIngredient(ing.id, { name: e.target.value })}
-                      />
-                      <input
-                        className="input w-20 py-1.5"
-                        placeholder="Menge"
-                        inputMode="decimal"
-                        value={ing.quantity ?? ''}
-                        onChange={(e) =>
-                          updateIngredient(ing.id, {
-                            quantity: e.target.value === '' ? null : Number(e.target.value),
-                          })
-                        }
-                      />
-                      <input
-                        className="input w-24 py-1.5"
-                        placeholder="Einheit"
-                        value={ing.unit ?? ''}
-                        onChange={(e) => updateIngredient(ing.id, { unit: e.target.value })}
-                      />
-                    </div>
-                  </SortableEditRow>
-                ))}
+                {ingredients.map((ing) => {
+                  const hasNutrition =
+                    ing.calories_per_100g != null ||
+                    ing.protein_per_100g != null ||
+                    ing.carbs_per_100g != null ||
+                    ing.fat_per_100g != null;
+                  const open = ing.nutritionOpen ?? hasNutrition;
+                  return (
+                    <SortableEditRow key={ing.id} id={ing.id} onDelete={() => removeIngredient(ing.id)}>
+                      <div className="flex flex-wrap gap-2 items-start">
+                        <input
+                          className="input flex-1 min-w-[160px] py-1.5"
+                          placeholder="z.B. Mehl"
+                          value={ing.name}
+                          onChange={(e) => updateIngredient(ing.id, { name: e.target.value })}
+                        />
+                        <input
+                          className="input w-20 py-1.5"
+                          placeholder="Menge"
+                          inputMode="decimal"
+                          value={ing.quantity ?? ''}
+                          onChange={(e) =>
+                            updateIngredient(ing.id, {
+                              quantity: e.target.value === '' ? null : Number(e.target.value),
+                            })
+                          }
+                        />
+                        <input
+                          className="input w-24 py-1.5"
+                          placeholder="Einheit"
+                          value={ing.unit ?? ''}
+                          onChange={(e) => updateIngredient(ing.id, { unit: e.target.value })}
+                        />
+                        <button
+                          type="button"
+                          className="text-xs text-muted hover:text-brand-700 px-1 py-1.5"
+                          onClick={() => updateIngredient(ing.id, { nutritionOpen: !open })}
+                          title="Nährwerte erfassen"
+                        >
+                          {open ? '▾ Nährwerte' : '▸ Nährwerte'}
+                        </button>
+                      </div>
+                      {open && (
+                        <div className="mt-2 pl-1 grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {([
+                            ['calories_per_100g', 'kcal/100g'],
+                            ['protein_per_100g', 'Eiweiß g/100g'],
+                            ['carbs_per_100g', 'KH g/100g'],
+                            ['fat_per_100g', 'Fett g/100g'],
+                          ] as const).map(([key, label]) => (
+                            <input
+                              key={key}
+                              className="input py-1.5 text-sm"
+                              placeholder={label}
+                              inputMode="decimal"
+                              value={(ing[key] ?? '') as number | ''}
+                              onChange={(e) =>
+                                updateIngredient(ing.id, {
+                                  [key]: e.target.value === '' ? null : Number(e.target.value),
+                                } as Partial<DraftIngredient>)
+                              }
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </SortableEditRow>
+                  );
+                })}
               </div>
             </SortableContext>
           </DndContext>

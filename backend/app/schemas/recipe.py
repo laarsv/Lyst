@@ -11,6 +11,10 @@ class IngredientBase(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     quantity: float | None = None
     unit: str | None = Field(default=None, max_length=32)
+    calories_per_100g: float | None = Field(default=None, ge=0)
+    protein_per_100g: float | None = Field(default=None, ge=0)
+    carbs_per_100g: float | None = Field(default=None, ge=0)
+    fat_per_100g: float | None = Field(default=None, ge=0)
 
 
 class IngredientCreate(IngredientBase):
@@ -21,6 +25,10 @@ class IngredientUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     quantity: float | None = None
     unit: str | None = Field(default=None, max_length=32)
+    calories_per_100g: float | None = Field(default=None, ge=0)
+    protein_per_100g: float | None = Field(default=None, ge=0)
+    carbs_per_100g: float | None = Field(default=None, ge=0)
+    fat_per_100g: float | None = Field(default=None, ge=0)
 
 
 class IngredientOut(IngredientBase):
@@ -28,6 +36,16 @@ class IngredientOut(IngredientBase):
     id: int
     recipe_id: int
     position: int
+
+
+class NutritionTotals(BaseModel):
+    """Per-serving aggregates derived from ingredient nutrition fields.
+    All fields are None until at least one ingredient has nutrition data
+    for that macro (so partial information still renders sensibly)."""
+    calories: float | None = None
+    protein: float | None = None
+    carbs: float | None = None
+    fat: float | None = None
 
 
 # --- Steps ---
@@ -104,7 +122,7 @@ class RecipeSummary(RecipeBase):
 
 
 class RecipeOut(RecipeBase):
-    """Detail view — with ingredients and steps."""
+    """Detail view — with ingredients, steps, and per-serving nutrition totals."""
     model_config = ConfigDict(from_attributes=True)
     id: int
     owner_id: int
@@ -112,6 +130,7 @@ class RecipeOut(RecipeBase):
     updated_at: datetime
     ingredients: list[IngredientOut] = Field(default_factory=list)
     steps: list[StepOut] = Field(default_factory=list)
+    nutrition_per_serving: NutritionTotals = Field(default_factory=NutritionTotals)
 
 
 class RecipeDuplicate(BaseModel):

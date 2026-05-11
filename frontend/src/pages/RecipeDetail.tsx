@@ -6,6 +6,7 @@ import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
 import { CATEGORY_COLOR, CATEGORY_LABEL } from '@/components/recipes/RecipeCard';
 import { CopyToListModal } from '@/components/recipes/CopyToListModal';
+import { CookMode } from '@/components/recipes/CookMode';
 import { fmtQty } from '@/lib/format';
 
 export function RecipeDetailPage() {
@@ -13,6 +14,7 @@ export function RecipeDetailPage() {
   const recipeId = Number(id);
   const nav = useNavigate();
   const [recipe, setRecipe] = useState<Recipe | null>(null);
+  const [cookOpen, setCookOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [copyOpen, setCopyOpen] = useState(false);
 
@@ -96,7 +98,10 @@ export function RecipeDetailPage() {
               )}
             </div>
             <div className="flex flex-wrap gap-2">
-              <button className="btn-primary" onClick={() => setCopyOpen(true)}>Zu Einkaufsliste</button>
+              <button className="btn-primary" onClick={() => setCookOpen(true)} disabled={recipe.steps.length === 0}>
+                Kochen starten
+              </button>
+              <button className="btn-secondary" onClick={() => setCopyOpen(true)}>Zu Einkaufsliste</button>
               <Link to={`/recipes/${recipe.id}/edit`} className="btn-secondary">Bearbeiten</Link>
               <button className="btn-secondary" onClick={duplicate}>Duplizieren</button>
               <button className="btn-ghost text-danger" onClick={remove}>Löschen</button>
@@ -104,6 +109,8 @@ export function RecipeDetailPage() {
           </div>
         </div>
       </div>
+
+      <NutritionCard recipe={recipe} />
 
       <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4">
         <section className="card p-5">
@@ -144,6 +151,42 @@ export function RecipeDetailPage() {
       </div>
 
       <CopyToListModal open={copyOpen} recipe={recipe} onClose={() => setCopyOpen(false)} />
+      {cookOpen && (
+        <CookMode recipe={recipe} servings={recipe.servings} onClose={() => setCookOpen(false)} />
+      )}
     </div>
+  );
+}
+
+function NutritionCard({ recipe }: { recipe: Recipe }) {
+  const n = recipe.nutrition_per_serving;
+  // Hide silently if there's no data at all
+  if (n.calories == null && n.protein == null && n.carbs == null && n.fat == null) return null;
+  const cells: { label: string; value: number | null; unit: string }[] = [
+    { label: 'Kalorien', value: n.calories, unit: 'kcal' },
+    { label: 'Eiweiß', value: n.protein, unit: 'g' },
+    { label: 'Kohlenhydrate', value: n.carbs, unit: 'g' },
+    { label: 'Fett', value: n.fat, unit: 'g' },
+  ];
+  return (
+    <section className="card p-5">
+      <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
+        <h2 className="font-semibold">Nährwerte pro Portion</h2>
+        <span className="text-xs text-muted">
+          basiert auf erfassten Zutaten (g/kg)
+        </span>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {cells.map((c) => (
+          <div key={c.label} className="rounded-card border border-line p-3">
+            <div className="text-xs text-muted">{c.label}</div>
+            <div className="text-lg font-semibold tabular-nums">
+              {c.value != null ? `${c.value}` : '—'}
+              <span className="text-xs font-normal text-muted ml-1">{c.unit}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }

@@ -66,6 +66,13 @@ class RecipeIngredient(Base, TimestampMixin):
     unit: Mapped[str | None] = mapped_column(String(32), nullable=True)
     position: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
 
+    # Nutrition per 100 g of the ingredient (all optional). Used by the
+    # recipe summary card to show per-serving totals.
+    calories_per_100g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    protein_per_100g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    carbs_per_100g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fat_per_100g: Mapped[float | None] = mapped_column(Float, nullable=True)
+
     recipe: Mapped["Recipe"] = relationship(back_populates="ingredients")
 
 

@@ -166,7 +166,15 @@ export const RecipesApi = {
     image_url?: string | null;
     source_url?: string | null;
     tags?: string[];
-    ingredients?: Array<{ name: string; quantity?: number | null; unit?: string | null }>;
+    ingredients?: Array<{
+      name: string;
+      quantity?: number | null;
+      unit?: string | null;
+      calories_per_100g?: number | null;
+      protein_per_100g?: number | null;
+      carbs_per_100g?: number | null;
+      fat_per_100g?: number | null;
+    }>;
     steps?: Array<{ description: string }>;
   }) => api.post<{ data: Recipe }>('/recipes', payload).then(unwrap),
   update: (
@@ -188,12 +196,31 @@ export const RecipesApi = {
     api.post<{ data: Recipe }>(`/recipes/${id}/duplicate`, { title }).then(unwrap),
 
   // ingredients
-  addIngredient: (recipeId: number, payload: { name: string; quantity?: number | null; unit?: string | null }) =>
+  addIngredient: (
+    recipeId: number,
+    payload: {
+      name: string;
+      quantity?: number | null;
+      unit?: string | null;
+      calories_per_100g?: number | null;
+      protein_per_100g?: number | null;
+      carbs_per_100g?: number | null;
+      fat_per_100g?: number | null;
+    },
+  ) =>
     api.post<{ data: RecipeIngredient }>(`/recipes/${recipeId}/ingredients`, payload).then(unwrap),
   updateIngredient: (
     recipeId: number,
     ingId: number,
-    payload: Partial<{ name: string; quantity: number | null; unit: string | null }>,
+    payload: Partial<{
+      name: string;
+      quantity: number | null;
+      unit: string | null;
+      calories_per_100g: number | null;
+      protein_per_100g: number | null;
+      carbs_per_100g: number | null;
+      fat_per_100g: number | null;
+    }>,
   ) =>
     api
       .patch<{ data: RecipeIngredient }>(`/recipes/${recipeId}/ingredients/${ingId}`, payload)
