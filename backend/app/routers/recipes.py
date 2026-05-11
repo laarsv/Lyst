@@ -48,8 +48,8 @@ router = APIRouter(prefix="/recipes", tags=["recipes"])
 
 
 def _summary(rec, ingredient_count: int) -> dict:
-    return RecipeSummary.model_validate(
-        rec, update={"ingredient_count": ingredient_count}
+    return RecipeSummary.model_validate(rec).model_copy(
+        update={"ingredient_count": ingredient_count}
     ).model_dump(mode="json")
 
 

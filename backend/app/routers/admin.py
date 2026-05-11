@@ -31,7 +31,7 @@ async def get_users(q: str | None = None, db: AsyncSession = Depends(get_db)):
     rows = await list_users(db, q)
     return ok(
         [
-            AdminUserOut.model_validate(u, update={"list_count": c}).model_dump(mode="json")
+            AdminUserOut.model_validate(u).model_copy(update={"list_count": c}).model_dump(mode="json")
             for u, c in rows
         ]
     )

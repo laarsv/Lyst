@@ -21,8 +21,7 @@ router = APIRouter(prefix="/lists", tags=["lists"])
 
 
 def _list_out(lst, item_count: int, checked_count: int, is_owner: bool, permission: str | None) -> dict:
-    return ListOut.model_validate(
-        lst,
+    return ListOut.model_validate(lst).model_copy(
         update={
             "item_count": item_count,
             "checked_count": checked_count,
