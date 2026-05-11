@@ -291,3 +291,178 @@ async def import_recipe_from_url(url: str, db: AsyncSession) -> ImportedRecipe:
     except ValidationError as e:
         logger.error("LLM JSON failed validation (provider=%s): %s — payload: %s", provider, e, parsed)
         raise RecipeImportError(500, "Extrahierte Daten haben unerwartetes Format") from e
+
+
+# ---------- Photo import via Ollama vision model ----------
+
+import base64
+
+PHOTO_SYSTEM_PROMPT = SYSTEM_PROMPT  # same JSON contract
+
+
+async def import_recipe_from_image(image_bytes: bytes) -> ImportedRecipe:
+    """Send the uploaded image to a vision-capable Ollama model and parse
+    the same recipe JSON shape as the URL importer."""
+    if not settings.OLLAMA_VISION_MODEL:
+        raise RecipeImportError(503, "Kein Vision-Modell konfiguriert (OLLAMA_VISION_MODEL)")
+
+    b64 = base64.b64encode(image_bytes).decode("ascii")
+    body = {
+        "model": settings.OLLAMA_VISION_MODEL,
+        "prompt": (
+            "Lies dieses Rezept-Bild und extrahiere es als strukturiertes Rezept. "
+            "Antworte ausschließlich im vorgegebenen JSON-Format."
+        ),
+        "system": PHOTO_SYSTEM_PROMPT,
+        "images": [b64],
+        "stream": False,
+        "format": "json",
+        "options": {"temperature": 0.1},
+    }
+    try:
+        async with httpx.AsyncClient(timeout=settings.OLLAMA_TIMEOUT_SECONDS) as client:
+            r = await client.post(f"{settings.OLLAMA_BASE_URL}/api/generate", json=body)
+            r.raise_for_status()
+            data = r.json()
+    except httpx.TimeoutException as e:
+        logger.error("Ollama vision timeout after %ss", settings.OLLAMA_TIMEOUT_SECONDS)
+        raise RecipeImportError(504, "KI-Service hat zu lange gebraucht") from e
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            raise RecipeImportError(
+                503,
+                (
+                    f"Vision-Modell '{settings.OLLAMA_VISION_MODEL}' ist nicht installiert. "
+                    f"Per `ollama pull {settings.OLLAMA_VISION_MODEL}` nachziehen."
+                ),
+            ) from e
+        logger.error("Ollama vision HTTP error: %s", e)
+        raise RecipeImportError(502, "KI-Service-Fehler") from e
+    except httpx.HTTPError as e:
+        logger.error("Ollama vision unreachable at %s: %s", settings.OLLAMA_BASE_URL, e)
+        raise RecipeImportError(503, "KI-Service nicht erreichbar") from e
+
+    parsed = _extract_json(data.get("response", ""))
+    if isinstance(parsed.get("steps"), list):
+        for i, step in enumerate(parsed["steps"], start=1):
+            if isinstance(step, dict):
+                step["position"] = i
+    try:
+        return ImportedRecipe.model_validate(parsed)
+    except ValidationError as e:
+        logger.error("Vision JSON failed validation: %s — payload: %s", e, parsed)
+        raise RecipeImportError(500, "Extrahierte Daten haben unerwartetes Format") from e
+
+
+# ---------- "Was kann ich kochen?" suggestions ----------
+
+SUGGEST_SYSTEM_PROMPT = """You are a recipe suggestion assistant. Given the user's available ingredients and a list of recipes (each with id, title, and ingredients), suggest the top 3 recipes that fit best with what the user has on hand.
+
+Return ONLY a valid JSON array — no markdown, no prose, no code fences:
+[{"recipe_id": <number>, "title": "string", "reason": "one short sentence in German"}]
+
+Pick recipes whose ingredients overlap most with the user's available ingredients. The reason should explain in German why this recipe fits, in one sentence."""
+
+
+class SuggestedRecipe(BaseModel):
+    recipe_id: int
+    title: str
+    reason: str
+
+
+async def suggest_recipes_from_ingredients(
+    db: AsyncSession,
+    available_ingredients: list[str],
+    user_recipes: list[dict[str, Any]],
+) -> list[SuggestedRecipe]:
+    """Ask the configured provider to pick top-3 matching recipes.
+    `user_recipes` is a list of {id, title, ingredients: [name, ...]}."""
+    if not user_recipes:
+        return []
+    catalog_text = "\n".join(
+        f'- id={r["id"]} title="{r["title"]}" ingredients=[{", ".join(r["ingredients"])}]'
+        for r in user_recipes
+    )
+    user_text = (
+        f"Ich habe zuhause: {', '.join(available_ingredients)}.\n\n"
+        f"Verfügbare Rezepte:\n{catalog_text}\n\n"
+        f"Schlage die 3 passendsten vor."
+    )
+
+    provider = await get_llm_provider(db)
+    if provider == "anthropic":
+        model = await get_anthropic_model(db)
+        if not settings.ANTHROPIC_API_KEY:
+            raise RecipeImportError(503, "ANTHROPIC_API_KEY ist nicht gesetzt")
+        client = anthropic.AsyncAnthropic(
+            api_key=settings.ANTHROPIC_API_KEY,
+            timeout=float(settings.ANTHROPIC_TIMEOUT_SECONDS),
+        )
+        try:
+            response = await client.messages.create(
+                model=model,
+                max_tokens=1024,
+                temperature=0.2,
+                system=SUGGEST_SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": user_text}],
+            )
+        except anthropic.APITimeoutError as e:
+            raise RecipeImportError(504, "KI-Service hat zu lange gebraucht") from e
+        except anthropic.APIError as e:
+            raise RecipeImportError(502, f"KI-Anbieter-Fehler: {e}") from e
+        raw = "".join(b.text for b in response.content if getattr(b, "type", None) == "text")
+    else:
+        ollama_model = await get_ollama_model(db)
+        body = {
+            "model": ollama_model,
+            "system": SUGGEST_SYSTEM_PROMPT,
+            "prompt": user_text,
+            "stream": False,
+            "format": "json",
+            "options": {"temperature": 0.2},
+        }
+        try:
+            async with httpx.AsyncClient(timeout=settings.OLLAMA_TIMEOUT_SECONDS) as client:
+                r = await client.post(f"{settings.OLLAMA_BASE_URL}/api/generate", json=body)
+                r.raise_for_status()
+                data = r.json()
+        except httpx.TimeoutException as e:
+            raise RecipeImportError(504, "KI-Service hat zu lange gebraucht") from e
+        except httpx.HTTPError as e:
+            raise RecipeImportError(503, "KI-Service nicht erreichbar") from e
+        raw = data.get("response", "")
+
+    # The model may return either a JSON array directly or a wrapped object.
+    s = raw.strip()
+    if s.startswith("```"):
+        s = re.sub(r"^```(?:json)?\s*", "", s)
+        s = re.sub(r"\s*```$", "", s)
+    try:
+        parsed = json.loads(s)
+    except json.JSONDecodeError:
+        match = re.search(r"\[[\s\S]*\]", s)
+        if not match:
+            raise RecipeImportError(500, "Vorschläge konnten nicht extrahiert werden")
+        try:
+            parsed = json.loads(match.group(0))
+        except json.JSONDecodeError as e:
+            raise RecipeImportError(500, "Vorschläge konnten nicht extrahiert werden") from e
+    if isinstance(parsed, dict):
+        # Some models wrap the array in {"suggestions":[...]} despite the prompt
+        for v in parsed.values():
+            if isinstance(v, list):
+                parsed = v
+                break
+    if not isinstance(parsed, list):
+        raise RecipeImportError(500, "Antwortformat unerwartet (kein Array)")
+
+    valid_ids = {r["id"] for r in user_recipes}
+    out: list[SuggestedRecipe] = []
+    for entry in parsed[:3]:
+        try:
+            sug = SuggestedRecipe.model_validate(entry)
+        except ValidationError:
+            continue
+        if sug.recipe_id in valid_ids:
+            out.append(sug)
+    return out

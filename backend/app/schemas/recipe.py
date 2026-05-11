@@ -156,3 +156,19 @@ class CopyToListResponse(BaseModel):
 
 class ImportUrlRequest(BaseModel):
     url: str = Field(min_length=1, max_length=2048)
+
+
+# --- Suggest "Was kann ich kochen?" ---
+
+class SuggestRequest(BaseModel):
+    available_ingredients: list[str] = Field(min_length=1, max_length=50)
+
+
+class SuggestionOut(BaseModel):
+    recipe_id: int
+    title: str
+    reason: str
+
+
+class SuggestResponse(BaseModel):
+    suggestions: list[SuggestionOut]

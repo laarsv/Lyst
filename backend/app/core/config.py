@@ -26,6 +26,10 @@ class Settings(BaseSettings):
 
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "llama3"
+    # Vision-capable model used by the photo importer (llava, llama3.2-vision,
+    # qwen2.5-vl, …). Empty string disables the photo-import feature with a
+    # clear 503 instead of a confusing model error.
+    OLLAMA_VISION_MODEL: str = "llava"
     # 7B models on CPU-only home servers can need 60–180s for the first call
     # (model load) and 30–90s for warm inference. 300s gives headroom for the
     # mini-PC case; bump via env if you have an even slower setup.

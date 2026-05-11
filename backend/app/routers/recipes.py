@@ -1,10 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.dependencies import require_user
 from app.core.responses import ok
-from app.models.recipe import RecipeCategory
+from app.models.recipe import Recipe, RecipeCategory
 from app.models.user import User
 from app.schemas.recipe import (
     CopyToListRequest,
@@ -23,8 +25,15 @@ from app.schemas.recipe import (
     StepCreate,
     StepOut,
     StepUpdate,
+    SuggestRequest,
+    SuggestResponse,
 )
-from app.services.import_service import RecipeImportError, import_recipe_from_url
+from app.services.import_service import (
+    RecipeImportError,
+    import_recipe_from_image,
+    import_recipe_from_url,
+    suggest_recipes_from_ingredients,
+)
 from app.services.recipe_service import (
     add_ingredient,
     add_step,
@@ -328,6 +337,75 @@ async def post_import_url(
     except RecipeImportError as e:
         raise HTTPException(status_code=e.status, detail=e.message)
     return ok(result.model_dump(mode="json"))
+
+
+# ---------- Import from photo via Ollama vision ----------
+
+MAX_PHOTO_BYTES = 10 * 1024 * 1024
+ALLOWED_PHOTO_TYPES = {"image/jpeg", "image/jpg", "image/png", "image/webp"}
+
+
+@router.post("/import-photo")
+async def post_import_photo(
+    file: UploadFile = File(...),
+    user: User = Depends(require_user),
+):
+    if file.content_type not in ALLOWED_PHOTO_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Nur JPG, PNG und WebP werden unterstützt",
+        )
+    data = await file.read()
+    if len(data) > MAX_PHOTO_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Maximale Bildgröße: 10 MB",
+        )
+    if not data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Leere Datei")
+    try:
+        result = await import_recipe_from_image(data)
+    except RecipeImportError as e:
+        raise HTTPException(status_code=e.status, detail=e.message)
+    return ok(result.model_dump(mode="json"))
+
+
+# ---------- "Was kann ich kochen?" ----------
+
+@router.post("/suggest")
+async def post_suggest(
+    payload: SuggestRequest,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    # Build a compact catalog of the user's recipes (id, title, ingredient names).
+    result = await db.execute(
+        select(Recipe)
+        .options(selectinload(Recipe.ingredients))
+        .where(Recipe.owner_id == user.id)
+    )
+    catalog = []
+    for r in result.scalars().all():
+        names = [i.name for i in r.ingredients]
+        if not names:
+            continue
+        catalog.append({"id": r.id, "title": r.title, "ingredients": names})
+    if not catalog:
+        return ok(SuggestResponse(suggestions=[]).model_dump())
+    try:
+        suggestions = await suggest_recipes_from_ingredients(
+            db, payload.available_ingredients, catalog
+        )
+    except RecipeImportError as e:
+        raise HTTPException(status_code=e.status, detail=e.message)
+    return ok(
+        SuggestResponse(
+            suggestions=[
+                {"recipe_id": s.recipe_id, "title": s.title, "reason": s.reason}
+                for s in suggestions
+            ]
+        ).model_dump()
+    )
 
 
 # ---------- Copy to shopping list (the killer feature) ----------
