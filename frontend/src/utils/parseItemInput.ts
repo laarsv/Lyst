@@ -1,14 +1,18 @@
 /** Splits free-form item input ("200g Käse", "2 Pack Butter") into
  *  quantity + unit + text.
  *
- *  Deliberately conservative: if the line doesn't start with a digit, we
- *  return the whole input as text (so "Bio Milch" stays "Bio Milch", not
- *  q=null/u="Bio"/t="Milch").
+ *  Deliberately conservative on two fronts:
+ *    1. No leading digit → whole input is the text ("Bio Milch" stays "Bio Milch").
+ *    2. The token after the digits is ONLY accepted as a unit if it's in the
+ *       canonical list or matches an alias — "200 Bio Milch" therefore parses
+ *       as quantity=200 / unit=null / text="Bio Milch", not unit="Bio".
  *
  *  Order of attempts:
- *    1. number + word + rest  → unit-bearing form
- *    2. number + rest         → quantity-only form ("3 Eier")
- *  If neither matches, no parse — the whole input is the text. */
+ *    1. number directly attached to a unit token ("200g Käse") — only when
+ *       the token is a recognized unit.
+ *    2. number + space + word + space + rest — only when the word is a
+ *       recognized unit; otherwise we fall through.
+ *    3. number + rest → quantity-only ("3 Eier", "200 Bio Milch"). */
 import { normalizeUnit } from './units';
 
 export interface ParsedItem {
@@ -17,15 +21,12 @@ export interface ParsedItem {
   text: string;
 }
 
-// `\s*` between number and word so "200g Käse" parses the same as "200 g Käse".
-// `\s+` between word and rest so "200ml" alone never matches (we need text).
-const RE_WITH_UNIT = /^(\d+(?:[.,]\d+)?)\s*([A-Za-zÄÖÜäöüß.]+)\s+(.+)$/;
+// "200g" — digits glued to a unit token, then a space, then the rest.
+const RE_GLUED_UNIT = /^(\d+(?:[.,]\d+)?)([A-Za-zÄÖÜäöüß.]+)\s+(.+)$/;
+// "1,5 kg Mehl" — digits, space, a candidate unit token, space, rest.
+const RE_SPACED_UNIT = /^(\d+(?:[.,]\d+)?)\s+([A-Za-zÄÖÜäöüß.]+)\s+(.+)$/;
+// Fallback: digits, space, rest (no unit at all).
 const RE_QTY_ONLY = /^(\d+(?:[.,]\d+)?)\s+(.+)$/;
-
-function capitalize(word: string): string {
-  if (!word) return word;
-  return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-}
 
 export function parseItem(input: string): ParsedItem {
   const raw = input.trim();
@@ -36,23 +37,36 @@ export function parseItem(input: string): ParsedItem {
     return { quantity: null, unit: null, text: raw };
   }
 
-  const m1 = raw.match(RE_WITH_UNIT);
-  if (m1) {
-    const [, numStr, word, rest] = m1;
+  // Glued form: "200g Käse". The token must be a recognized unit, otherwise
+  // we don't have a clean way to split (e.g. "200foo Käse" stays unparsed).
+  const glued = raw.match(RE_GLUED_UNIT);
+  if (glued) {
+    const [, numStr, word, rest] = glued;
     const quantity = Number(numStr.replace(',', '.'));
-    if (Number.isFinite(quantity)) {
-      const canonical = normalizeUnit(word);
-      // Either a known alias → canonical form, or a free-form word → keep
-      // capitalized. Spec: "treat the word as a free-form unit (capitalize
-      // first letter)".
-      const unit = canonical ?? capitalize(word);
-      return { quantity, unit, text: rest.trim() };
+    const canonical = normalizeUnit(word);
+    if (Number.isFinite(quantity) && canonical) {
+      return { quantity, unit: canonical, text: rest.trim() };
     }
   }
 
-  const m2 = raw.match(RE_QTY_ONLY);
-  if (m2) {
-    const [, numStr, rest] = m2;
+  // Spaced form: "2 Pack Butter". Only treat the word as a unit if it's
+  // recognized; "200 Bio Milch" must NOT yield unit="Bio".
+  const spaced = raw.match(RE_SPACED_UNIT);
+  if (spaced) {
+    const [, numStr, word, rest] = spaced;
+    const quantity = Number(numStr.replace(',', '.'));
+    const canonical = normalizeUnit(word);
+    if (Number.isFinite(quantity) && canonical) {
+      return { quantity, unit: canonical, text: rest.trim() };
+    }
+    // Recognized number but unrecognized "unit" word — fall through to the
+    // quantity-only branch so the word stays in the item text.
+  }
+
+  // Quantity-only: "3 Eier" / "200 Bio Milch".
+  const qtyOnly = raw.match(RE_QTY_ONLY);
+  if (qtyOnly) {
+    const [, numStr, rest] = qtyOnly;
     const quantity = Number(numStr.replace(',', '.'));
     if (Number.isFinite(quantity)) {
       return { quantity, unit: null, text: rest.trim() };
