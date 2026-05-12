@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ListItemBase(BaseModel):
@@ -37,7 +37,20 @@ class ListItemOut(ListItemBase):
 
 
 class BulkItemsCreate(BaseModel):
-    lines: list[str] = Field(min_length=1)
+    """Bulk add accepts either a list of plain text lines (legacy) or a list
+    of fully-structured items (so the frontend can send pre-parsed
+    quantity/unit/text per line). Exactly one of the two must be set."""
+
+    lines: list[str] | None = None
+    items: list[ListItemCreate] | None = None
+
+    @model_validator(mode="after")
+    def _exactly_one(self) -> "BulkItemsCreate":
+        has_lines = bool(self.lines)
+        has_items = bool(self.items)
+        if has_lines == has_items:
+            raise ValueError("Provide exactly one of `lines` or `items`")
+        return self
 
 
 class ReorderItem(BaseModel):

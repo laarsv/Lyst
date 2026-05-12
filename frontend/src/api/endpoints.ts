@@ -128,10 +128,20 @@ export const ListsApi = {
 export const ItemsApi = {
   list: (listId: number) =>
     api.get<{ data: ListItem[] }>(`/lists/${listId}/items`).then(unwrap),
-  create: (listId: number, text: string, extras: Partial<{ quantity: number; unit: string }> = {}) =>
-    api.post<{ data: ListItem }>(`/lists/${listId}/items`, { text, ...extras }).then(unwrap),
+  create: (
+    listId: number,
+    text: string,
+    extras: Partial<{ quantity: number | null; unit: string | null }> = {},
+  ) => api.post<{ data: ListItem }>(`/lists/${listId}/items`, { text, ...extras }).then(unwrap),
   bulk: (listId: number, lines: string[]) =>
     api.post<{ data: ListItem[] }>(`/lists/${listId}/items/bulk`, { lines }).then(unwrap),
+  bulkStructured: (
+    listId: number,
+    items: { text: string; quantity?: number | null; unit?: string | null }[],
+  ) =>
+    api
+      .post<{ data: ListItem[] }>(`/lists/${listId}/items/bulk`, { items })
+      .then(unwrap),
   update: (
     listId: number,
     itemId: number,

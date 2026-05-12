@@ -45,18 +45,44 @@ async def create_item(
 
 
 async def bulk_create_items(
-    db: AsyncSession, list_id: int, lines: list[str]
+    db: AsyncSession,
+    list_id: int,
+    *,
+    lines: list[str] | None = None,
+    items: list[dict] | None = None,
 ) -> list[ListItem]:
+    """Insert many items in one transaction. Pass either `lines` (text-only)
+    or `items` (already-parsed dicts with text/quantity/unit/is_checked).
+    Empty/blank text rows are skipped silently."""
     pos = await _next_position(db, list_id)
     created: list[ListItem] = []
-    for line in lines:
-        text = line.strip()
-        if not text:
-            continue
-        item = ListItem(list_id=list_id, text=text, position=pos)
-        db.add(item)
-        created.append(item)
-        pos += 1
+
+    if items is not None:
+        for spec in items:
+            text = (spec.get("text") or "").strip()
+            if not text:
+                continue
+            item = ListItem(
+                list_id=list_id,
+                text=text,
+                quantity=spec.get("quantity"),
+                unit=spec.get("unit"),
+                is_checked=bool(spec.get("is_checked", False)),
+                position=pos,
+            )
+            db.add(item)
+            created.append(item)
+            pos += 1
+    else:
+        for line in lines or []:
+            text = line.strip()
+            if not text:
+                continue
+            item = ListItem(list_id=list_id, text=text, position=pos)
+            db.add(item)
+            created.append(item)
+            pos += 1
+
     await db.commit()
     for it in created:
         await db.refresh(it)

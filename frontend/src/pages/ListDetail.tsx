@@ -20,6 +20,7 @@ import { enqueue, nextTempItemId } from '@/offline/syncQueue';
 import { useListWebSocket } from '@/hooks/useListWebSocket';
 import { LiveIndicator } from '@/components/LiveIndicator';
 import { useConfirm, usePrompt } from '@/components/Dialogs';
+import { formatPreview, hasParse, parseItem } from '@/utils/parseItemInput';
 import {
   ListPlus,
   RotateCcw,
@@ -163,10 +164,18 @@ export function ListDetailPage() {
 
   const addItem = async (e?: FormEvent) => {
     e?.preventDefault();
-    const t = text.trim();
-    if (!t || !canEdit) return;
+    const raw = text.trim();
+    if (!raw || !canEdit) return;
+    // Client-side split: "200g Käse" → { quantity: 200, unit: "g", text: "Käse" }.
+    // If the parser didn't recognize a structure, `text` is the whole input.
+    const parsed = parseItem(raw);
+    const itemText = parsed.text || raw;
+    const extras = {
+      quantity: parsed.quantity ?? undefined,
+      unit: parsed.unit ?? undefined,
+    } as { quantity?: number; unit?: string };
     try {
-      const it = await ItemsApi.create(listId, t);
+      const it = await ItemsApi.create(listId, itemText, extras);
       setItems((cur) => [...cur, it]);
       setText('');
     } catch (err) {
@@ -177,10 +186,10 @@ export function ListDetailPage() {
         const placeholder: ListItem = {
           id: nextTempItemId(),
           list_id: listId,
-          text: t,
+          text: itemText,
           is_checked: false,
-          quantity: null,
-          unit: null,
+          quantity: parsed.quantity,
+          unit: parsed.unit,
           position: items.length,
           category: null,
           category_locked: false,
@@ -193,7 +202,7 @@ export function ListDetailPage() {
           kind: 'item_create',
           list_id: listId,
           item_id: placeholder.id,
-          payload: { text: t },
+          payload: { text: itemText, ...extras },
         });
         toast.info('Offline – wird synchronisiert sobald du wieder online bist.');
       } else {
@@ -417,16 +426,19 @@ export function ListDetailPage() {
       </div>
 
       {canEdit && (
-        <form onSubmit={addItem} className="flex gap-2">
-          <input
-            className="input flex-1"
-            placeholder="Eintrag hinzufügen und Enter drücken…"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-          />
-          <button className="btn-primary" type="submit" disabled={!text.trim()}>
-            Hinzufügen
-          </button>
+        <form onSubmit={addItem} className="space-y-1">
+          <div className="flex gap-2">
+            <input
+              className="input flex-1"
+              placeholder="Eintrag hinzufügen, z. B. „200g Käse" oder „2 Pack Butter"…"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+            />
+            <button className="btn-primary" type="submit" disabled={!text.trim()}>
+              Hinzufügen
+            </button>
+          </div>
+          <ParsePreview raw={text} />
         </form>
       )}
 
@@ -496,8 +508,22 @@ export function ListDetailPage() {
         open={bulkOpen}
         onClose={() => setBulkOpen(false)}
         onSubmit={async (lines) => {
+          // Apply the same parser the single-item input uses, so "200g Käse"
+          // bulk-pasted lands as quantity=200/unit=g/text=Käse, not as one
+          // long text blob.
+          const items = lines
+            .map((l) => {
+              const p = parseItem(l);
+              return {
+                text: p.text || l,
+                quantity: p.quantity,
+                unit: p.unit,
+              };
+            })
+            .filter((i) => i.text);
+          if (items.length === 0) return;
           try {
-            const created = await ItemsApi.bulk(listId, lines);
+            const created = await ItemsApi.bulkStructured(listId, items);
             setItems((cur) => [...cur, ...created]);
             setBulkOpen(false);
           } catch (e) {
@@ -505,6 +531,20 @@ export function ListDetailPage() {
           }
         }}
       />
+    </div>
+  );
+}
+
+// Live preview for the single-item input. Renders only when the parser
+// extracted at least quantity or unit — typing plain text stays clean.
+function ParsePreview({ raw }: { raw: string }) {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const p = parseItem(trimmed);
+  if (!hasParse(p)) return null;
+  return (
+    <div className="text-xs text-muted/80 pl-1">
+      → {formatPreview(p)}
     </div>
   );
 }
@@ -619,13 +659,16 @@ function BulkModal({
   return (
     <Modal open={open} onClose={onClose} title="Mehrere Einträge">
       <div className="space-y-3">
-        <p className="text-sm text-muted">Eine Zeile = ein Eintrag.</p>
+        <p className="text-sm text-muted">
+          Eine Zeile = ein Eintrag. Menge und Einheit werden automatisch
+          erkannt — z. B. „200g Käse", „2 Pack Butter" oder „3x Eier".
+        </p>
         <textarea
           ref={ref}
           className="input min-h-[180px] font-mono text-sm"
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder={'Milch\nBrot\nÄpfel'}
+          placeholder={'200g Käse\n1,5 kg Mehl\n2 Pack Butter\nJoghurt'}
         />
         <div className="flex justify-end gap-2">
           <button className="btn-secondary" onClick={onClose}>Abbrechen</button>

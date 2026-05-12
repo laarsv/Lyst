@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ListItem } from '@/types';
 import clsx from 'clsx';
 import { Lock, Tag } from 'lucide-react';
+import { UnitCombobox } from '@/components/UnitCombobox';
 
 const CATEGORIES = [
   'Obst & Gemüse',
@@ -98,12 +99,12 @@ export function SortableItem({ item, canEdit, onToggle, onUpdate, onDelete }: Pr
             inputMode="decimal"
             placeholder="Menge"
             onChange={(e) => setQty(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && save()}
           />
-          <input
-            className="input w-20 py-1.5"
-            value={unit}
-            placeholder="Einheit"
-            onChange={(e) => setUnit(e.target.value)}
+          <UnitCombobox
+            className="w-28"
+            value={unit || null}
+            onChange={(u) => setUnit(u ?? '')}
           />
           <button className="btn-primary text-xs py-1" onClick={save}>OK</button>
         </div>

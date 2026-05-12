@@ -148,7 +148,12 @@ async def post_bulk(
     client_id: str | None = Depends(get_client_id),
 ):
     await _ensure_edit(db, list_id, user.id)
-    items = await bulk_create_items(db, list_id, payload.lines)
+    items = await bulk_create_items(
+        db,
+        list_id,
+        lines=payload.lines,
+        items=[i.model_dump() for i in payload.items] if payload.items else None,
+    )
     out = [_item_out(it) for it in items]
     for o in out:
         await ws_manager.broadcast(
