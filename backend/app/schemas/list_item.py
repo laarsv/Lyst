@@ -26,6 +26,7 @@ class ListItemOut(ListItemBase):
     list_id: int
     is_checked: bool
     position: int
+    category: str | None = None
     created_at: datetime
     updated_at: datetime
 

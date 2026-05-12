@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.collaborator import CollaboratorPermission, ListCollaborator
-from app.models.list import List as ListModel
+from app.models.list import List as ListModel, ListType
 from app.models.list_item import ListItem
 from app.models.user import User
 
@@ -76,6 +76,10 @@ async def get_list_for_user(
 
 
 async def create_list(db: AsyncSession, owner_id: int, **fields) -> ListModel:
+    # SHOPPING lists default to category-sorting since that's where the
+    # auto-categorizer adds the most value.
+    if fields.get("type") == ListType.SHOPPING and "sort_by_category" not in fields:
+        fields["sort_by_category"] = True
     lst = ListModel(owner_id=owner_id, **fields)
     db.add(lst)
     await db.commit()

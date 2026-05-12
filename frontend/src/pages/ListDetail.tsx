@@ -19,6 +19,41 @@ import { getApiError } from '@/api/client';
 import { enqueue } from '@/lib/offlineQueue';
 import { useListWebSocket } from '@/hooks/useListWebSocket';
 import { LiveIndicator } from '@/components/LiveIndicator';
+import {
+  ListPlus,
+  RotateCcw,
+  BookmarkPlus,
+  Trash2,
+  Settings,
+  Apple,
+  Milk,
+  Snowflake,
+  Wheat,
+  Beef,
+  Wine,
+  Package,
+  Cookie,
+  Sparkles,
+  MoreHorizontal,
+  Loader2,
+  type LucideIcon,
+} from 'lucide-react';
+
+const CATEGORY_ICON: Record<string, LucideIcon> = {
+  'Obst & Gemüse': Apple,
+  'Milchprodukte': Milk,
+  'Tiefkühl': Snowflake,
+  'Backwaren': Wheat,
+  'Fleisch & Fisch': Beef,
+  'Getränke': Wine,
+  'Trockenwaren': Package,
+  'Süßes': Cookie,
+  'Hygiene': Sparkles,
+  'Sonstiges': MoreHorizontal,
+};
+// Display order — same as the spec.
+const CATEGORY_ORDER = Object.keys(CATEGORY_ICON);
+const PENDING_LABEL = 'Wird kategorisiert…';
 
 export function ListDetailPage() {
   const { id } = useParams();
@@ -39,8 +74,6 @@ export function ListDetailPage() {
     else params.delete('settings');
     setParams(params, { replace: true });
   };
-  const [editOpen, setEditOpen] = useState(false);
-
   const canEdit = useMemo(
     () => !!list && (list.is_owner || list.permission === 'EDIT'),
     [list],
@@ -237,42 +270,34 @@ export function ListDetailPage() {
               )}
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-1.5">
             {canEdit && (
-              <button className="btn-secondary text-sm" onClick={() => setBulkOpen(true)}>
-                Mehrere hinzufügen
-              </button>
+              <IconAction
+                label="Mehrere hinzufügen"
+                icon={ListPlus}
+                onClick={() => setBulkOpen(true)}
+              />
             )}
             {canEdit && (
-              <button className="btn-secondary text-sm" onClick={reset}>
-                Zurücksetzen
-              </button>
+              <IconAction label="Zurücksetzen" icon={RotateCcw} onClick={reset} />
             )}
             {list.is_owner && (
-              <button className="btn-secondary text-sm" onClick={saveAsTemplate}>
-                Als Vorlage
-              </button>
+              <IconAction label="Als Vorlage" icon={BookmarkPlus} onClick={saveAsTemplate} />
             )}
             {list.is_owner && (
-              <button className="btn-secondary text-sm" onClick={() => setEditOpen(true)}>
-                Bearbeiten
-              </button>
+              <IconAction
+                label="Löschen"
+                icon={Trash2}
+                onClick={removeList}
+                variant="danger"
+              />
             )}
             {list.is_owner && (
-              <button className="btn-ghost text-sm text-danger" onClick={removeList}>
-                Löschen
-              </button>
-            )}
-            {list.is_owner && (
-              <button
-                type="button"
-                className="p-2 rounded-lg text-muted hover:bg-page hover:text-ink transition"
-                aria-label="Listen-Einstellungen"
-                title="Einstellungen (Teilen, Mitnutzer, Erinnerungen, Verlauf)"
+              <IconAction
+                label="Einstellungen"
+                icon={Settings}
                 onClick={() => setSettingsOpen(true)}
-              >
-                <GearIcon />
-              </button>
+              />
             )}
           </div>
         </div>
@@ -307,6 +332,15 @@ export function ListDetailPage() {
       <div className="card p-3 sm:p-4">
         {items.length === 0 ? (
           <div className="text-center text-muted/70 py-8">Noch keine Einträge.</div>
+        ) : list.sort_by_category ? (
+          // Auto-sorted: group by category, no DnD.
+          <CategoryGroupedList
+            items={items}
+            canEdit={canEdit}
+            onToggle={toggle}
+            onUpdate={update}
+            onDelete={del}
+          />
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
             <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
@@ -349,25 +383,99 @@ export function ListDetailPage() {
           }
         }}
       />
-      <EditListModal
-        open={editOpen}
-        list={list}
-        onClose={() => setEditOpen(false)}
-        onSaved={(l) => {
-          setList(l);
-          setEditOpen(false);
-        }}
-      />
     </div>
   );
 }
 
-function GearIcon() {
+// ---------- Icon-only action button ----------
+
+function IconAction({
+  label,
+  icon: Icon,
+  onClick,
+  variant,
+}: {
+  label: string;
+  icon: LucideIcon;
+  onClick: () => void;
+  variant?: 'danger';
+}) {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.36.16.66.42.88.74.22.32.34.7.34 1.09v.34c0 .39-.12.77-.34 1.09-.22.32-.52.58-.88.74Z" />
-    </svg>
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className={`size-10 inline-flex items-center justify-center rounded-ctl border border-line bg-transparent transition hover:bg-page ${
+        variant === 'danger' ? 'text-danger hover:text-danger' : 'text-ink'
+      }`}
+    >
+      <Icon size={18} />
+    </button>
+  );
+}
+
+// ---------- Category-grouped item list (read-only DnD, sort by category) ----------
+
+function CategoryGroupedList({
+  items,
+  canEdit,
+  onToggle,
+  onUpdate,
+  onDelete,
+}: {
+  items: ListItem[];
+  canEdit: boolean;
+  onToggle: (i: ListItem) => void;
+  onUpdate: (i: ListItem, patch: Partial<ListItem>) => void;
+  onDelete: (i: ListItem) => void;
+}) {
+  // Bucket by category, then keep CATEGORY_ORDER and append a "pending" group.
+  const buckets = new Map<string, ListItem[]>();
+  const pending: ListItem[] = [];
+  for (const it of items) {
+    if (!it.category || !CATEGORY_ICON[it.category]) {
+      pending.push(it);
+    } else {
+      const arr = buckets.get(it.category) ?? [];
+      arr.push(it);
+      buckets.set(it.category, arr);
+    }
+  }
+  const sections: { label: string; items: ListItem[]; pending: boolean }[] = [];
+  for (const cat of CATEGORY_ORDER) {
+    const arr = buckets.get(cat);
+    if (arr && arr.length) sections.push({ label: cat, items: arr, pending: false });
+  }
+  if (pending.length) sections.push({ label: PENDING_LABEL, items: pending, pending: true });
+
+  return (
+    <div className="space-y-3">
+      {sections.map((s) => {
+        const Icon = s.pending ? Loader2 : CATEGORY_ICON[s.label] ?? MoreHorizontal;
+        return (
+          <div key={s.label}>
+            <div className="flex items-center gap-1.5 px-1 mb-1 text-xs text-muted">
+              <Icon size={14} className={s.pending ? 'animate-spin' : ''} />
+              <span>{s.label}</span>
+              <span className="text-muted/60 tabular-nums">· {s.items.length}</span>
+            </div>
+            <div className="space-y-1.5">
+              {s.items.map((it) => (
+                <SortableItem
+                  key={it.id}
+                  item={it}
+                  canEdit={canEdit}
+                  onToggle={onToggle}
+                  onUpdate={onUpdate}
+                  onDelete={onDelete}
+                />
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -413,81 +521,3 @@ function BulkModal({
   );
 }
 
-function EditListModal({
-  open,
-  list,
-  onClose,
-  onSaved,
-}: {
-  open: boolean;
-  list: ListSummary;
-  onClose: () => void;
-  onSaved: (l: ListSummary) => void;
-}) {
-  const [title, setTitle] = useState(list.title);
-  const [description, setDescription] = useState(list.description ?? '');
-  const [icon, setIcon] = useState(list.icon ?? '');
-  const [color, setColor] = useState(list.color ?? '#00c896');
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (open) {
-      setTitle(list.title);
-      setDescription(list.description ?? '');
-      setIcon(list.icon ?? '');
-      setColor(list.color ?? '#00c896');
-    }
-  }, [open, list]);
-
-  const save = async () => {
-    setLoading(true);
-    try {
-      const l = await ListsApi.update(list.id, { title, description, icon, color });
-      onSaved(l);
-    } catch (e) {
-      toast.error(getApiError(e));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <Modal open={open} onClose={onClose} title="Liste bearbeiten">
-      <div className="space-y-3">
-        <div>
-          <label className="label">Titel</label>
-          <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} />
-        </div>
-        <div>
-          <label className="label">Beschreibung</label>
-          <textarea
-            className="input min-h-[80px]"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-        </div>
-        <div className="flex gap-2 items-end">
-          <div className="flex-1">
-            <label className="label">Emoji</label>
-            <input className="input" value={icon} maxLength={4} onChange={(e) => setIcon(e.target.value)} />
-          </div>
-          <div>
-            <label className="label">Farbe</label>
-            <input
-              type="color"
-              className="h-[42px] w-16 rounded-xl border border-line cursor-pointer"
-              value={color}
-              onChange={(e) => setColor(e.target.value)}
-            />
-          </div>
-        </div>
-        <div className="flex justify-end gap-2 pt-2">
-          <button className="btn-secondary" onClick={onClose}>Abbrechen</button>
-          <button className="btn-primary" disabled={loading} onClick={save}>
-            {loading ? 'Speichern…' : 'Speichern'}
-          </button>
-        </div>
-      </div>
-    </Modal>
-  );
-}

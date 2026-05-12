@@ -96,8 +96,17 @@ export const ListsApi = {
   get: (id: number) => api.get<{ data: ListSummary }>(`/lists/${id}`).then(unwrap),
   create: (payload: { title: string; type: ListType; description?: string; color?: string; icon?: string }) =>
     api.post<{ data: ListSummary }>('/lists', payload).then(unwrap),
-  update: (id: number, payload: Partial<{ title: string; description: string; color: string; icon: string; type: ListType }>) =>
-    api.patch<{ data: ListSummary }>(`/lists/${id}`, payload).then(unwrap),
+  update: (
+    id: number,
+    payload: Partial<{
+      title: string;
+      description: string;
+      color: string;
+      icon: string;
+      type: ListType;
+      sort_by_category: boolean;
+    }>,
+  ) => api.patch<{ data: ListSummary }>(`/lists/${id}`, payload).then(unwrap),
   remove: (id: number) => api.delete(`/lists/${id}`),
   duplicate: (id: number, payload: { title?: string; as_template?: boolean; template_name?: string }) =>
     api.post<{ data: ListSummary }>(`/lists/${id}/duplicate`, payload).then(unwrap),

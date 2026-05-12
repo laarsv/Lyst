@@ -25,6 +25,7 @@ class ListUpdate(BaseModel):
     icon: str | None = Field(default=None, max_length=16)
     is_template: bool | None = None
     template_name: str | None = None
+    sort_by_category: bool | None = None
 
 
 class ListDuplicate(BaseModel):
@@ -41,6 +42,7 @@ class ListOut(ListBase):
     template_name: str | None
     share_enabled: bool
     share_token: str | None
+    sort_by_category: bool = False
     created_at: datetime
     updated_at: datetime
     item_count: int = 0

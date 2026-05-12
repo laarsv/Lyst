@@ -45,6 +45,9 @@ class List(Base, TimestampMixin):
         String(64), unique=True, nullable=True, index=True
     )
     share_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # When true, SHOPPING items are grouped by their AI-assigned category
+    # in the UI. Defaults to true for SHOPPING lists, false otherwise.
+    sort_by_category: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     owner: Mapped["User"] = relationship(back_populates="lists")
     items: Mapped[list["ListItem"]] = relationship(

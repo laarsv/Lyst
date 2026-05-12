@@ -38,6 +38,7 @@ export interface ListSummary {
   template_name: string | null;
   share_enabled: boolean;
   share_token: string | null;
+  sort_by_category: boolean;
   created_at: string;
   updated_at: string;
   item_count: number;
@@ -54,6 +55,7 @@ export interface ListItem {
   quantity: number | null;
   unit: string | null;
   position: number;
+  category: string | null;
   created_at: string;
   updated_at: string;
 }

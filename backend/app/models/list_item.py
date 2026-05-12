@@ -21,5 +21,8 @@ class ListItem(Base, TimestampMixin):
     quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
     unit: Mapped[str | None] = mapped_column(String(32), nullable=True)
     position: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
+    # Filled in asynchronously by the Ollama categorizer for SHOPPING-type
+    # lists. Null means "not yet categorized" and the UI shows a pending state.
+    category: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
     list: Mapped["List"] = relationship(back_populates="items")
