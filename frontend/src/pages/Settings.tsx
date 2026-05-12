@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { MeApi } from '@/api/endpoints';
 import { useAuthStore } from '@/store/auth';
+import { useInstallStore } from '@/store/install';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
 
@@ -70,6 +71,7 @@ export function SettingsPage() {
           <button type="submit" className="btn-primary" disabled={loading}>Speichern</button>
         </div>
       </form>
+      <InstallSection />
       <form onSubmit={savePassword} className="card p-6 space-y-4">
         <h2 className="font-semibold">Passwort ändern</h2>
         <div>
@@ -85,5 +87,75 @@ export function SettingsPage() {
         </div>
       </form>
     </div>
+  );
+}
+
+function InstallSection() {
+  const evt = useInstallStore((s) => s.evt);
+  const standalone = useInstallStore((s) => s.standalone);
+  const setEvt = useInstallStore((s) => s.setEvt);
+  const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+  let body: React.ReactNode;
+  if (standalone) {
+    body = (
+      <p className="text-sm text-muted">
+        lyst läuft bereits als installierte App auf diesem Gerät. ✓
+      </p>
+    );
+  } else if (evt) {
+    body = (
+      <button
+        className="btn-primary"
+        onClick={async () => {
+          try {
+            await evt.prompt();
+            const r = await evt.userChoice;
+            if (r.outcome === 'accepted') setEvt(null);
+          } catch {
+            /* user closed dialog */
+          }
+        }}
+      >
+        App installieren
+      </button>
+    );
+  } else if (isIos) {
+    body = (
+      <p className="text-sm text-muted">
+        Auf iPhone / iPad: in Safari unten auf <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-page">Teilen</span>{' '}
+        tippen und dann <em>„Zum Home-Bildschirm"</em>.
+      </p>
+    );
+  } else {
+    body = (
+      <div className="text-sm text-muted space-y-2">
+        <p>
+          Dein Browser bietet die Installation aktuell nicht an. Häufige Gründe:
+        </p>
+        <ul className="list-disc list-inside space-y-0.5 text-xs">
+          <li>Die App ist bereits installiert (dann oben nochmal nachsehen).</li>
+          <li>Browser unterstützt PWA-Install nicht (z.B. Firefox).</li>
+          <li>
+            In Chrome rechts oben das Menü öffnen → „App installieren" oder
+            „Zum Startbildschirm hinzufügen".
+          </li>
+          <li>Hard-Reload (Strg+Umschalt+R) versuchen damit der Service Worker frisch lädt.</li>
+        </ul>
+      </div>
+    );
+  }
+
+  return (
+    <section className="card p-6 space-y-3">
+      <div>
+        <h2 className="font-semibold">App installieren</h2>
+        <p className="text-sm text-muted">
+          lyst lässt sich als eigenständige App installieren — schneller Start, eigenes Icon,
+          Offline-Modus.
+        </p>
+      </div>
+      {body}
+    </section>
   );
 }

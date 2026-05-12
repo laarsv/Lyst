@@ -1,65 +1,60 @@
 import { useEffect, useState } from 'react';
+import { useInstallStore } from '@/store/install';
 
-interface BeforeInstallPromptEvent extends Event {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
-}
-
-const DISMISS_KEY = 'lyst-install-dismissed';
-
-function isStandalone(): boolean {
-  // PWA already installed → don't nag
-  return (
-    window.matchMedia('(display-mode: standalone)').matches ||
-    // Safari iOS legacy flag
-    // @ts-expect-error nav.standalone is iOS-only
-    window.navigator.standalone === true
-  );
-}
+const DISMISS_KEY = 'lyst-install-dismissed-until';
 
 function isIos(): boolean {
   return /iPad|iPhone|iPod/.test(window.navigator.userAgent);
 }
 
+function isDismissed(): boolean {
+  const until = Number(localStorage.getItem(DISMISS_KEY) ?? 0);
+  return until > Date.now();
+}
+
+function dismissFor(days: number) {
+  localStorage.setItem(DISMISS_KEY, String(Date.now() + days * 24 * 60 * 60 * 1000));
+}
+
 export function InstallPrompt() {
-  const [evt, setEvt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [hidden, setHidden] = useState(false);
+  const evt = useInstallStore((s) => s.evt);
+  const standalone = useInstallStore((s) => s.standalone);
+  const setEvt = useInstallStore((s) => s.setEvt);
+
+  const [hidden, setHidden] = useState(true);
   const [iosHint, setIosHint] = useState(false);
 
+  // Show the in-app banner only when:
+  //   - the app is NOT already installed
+  //   - the user hasn't dismissed it within the last 7 days
+  //   - either Chrome fired beforeinstallprompt (`evt`) OR we're on iOS Safari
   useEffect(() => {
-    if (localStorage.getItem(DISMISS_KEY)) {
+    if (standalone) return setHidden(true);
+    if (isDismissed()) return setHidden(true);
+    if (evt) {
+      setHidden(false);
+      setIosHint(false);
+    } else if (isIos()) {
+      setHidden(false);
+      setIosHint(true);
+    } else {
       setHidden(true);
-      return;
     }
-    if (isStandalone()) {
-      setHidden(true);
-      return;
-    }
-    // Android / desktop Chromium fires this; iOS Safari does not.
-    const handler = (e: Event) => {
-      e.preventDefault();
-      setEvt(e as BeforeInstallPromptEvent);
-    };
-    window.addEventListener('beforeinstallprompt', handler);
-    // iOS — show a manual hint instead, since there's no install API.
-    if (isIos()) setIosHint(true);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, []);
-
-  const dismiss = () => {
-    localStorage.setItem(DISMISS_KEY, '1');
-    setHidden(true);
-  };
+  }, [evt, standalone]);
 
   if (hidden) return null;
-  if (!evt && !iosHint) return null;
+
+  const dismiss = () => {
+    dismissFor(7);
+    setHidden(true);
+  };
 
   return (
     <div
       className="fixed left-4 right-4 sm:left-auto sm:right-4 z-40 card p-4 max-w-sm flex flex-col gap-3"
       style={{ bottom: 'calc(env(safe-area-inset-bottom, 0) + 16px)' }}
     >
-      {evt ? (
+      {evt && !iosHint ? (
         <>
           <div className="text-sm text-ink">
             Installiere <strong>lyst</strong> auf deinem Gerät für schnelleren Zugriff und Offline-Modus.
@@ -71,9 +66,16 @@ export function InstallPrompt() {
             <button
               className="btn-primary text-sm"
               onClick={async () => {
-                await evt.prompt();
-                const r = await evt.userChoice;
-                if (r.outcome === 'accepted') setHidden(true);
+                try {
+                  await evt.prompt();
+                  const r = await evt.userChoice;
+                  if (r.outcome === 'accepted') {
+                    setEvt(null);
+                    setHidden(true);
+                  }
+                } catch {
+                  /* user closed system dialog — leave banner */
+                }
               }}
             >
               Installieren
@@ -84,9 +86,7 @@ export function InstallPrompt() {
         <>
           <div className="text-sm text-ink">
             <strong>lyst zum Home-Bildschirm hinzufügen:</strong> tippe in Safari unten auf{' '}
-            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-page">
-              Teilen
-            </span>{' '}
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-page">Teilen</span>{' '}
             und dann <em>„Zum Home-Bildschirm"</em>.
           </div>
           <div className="flex justify-end">
