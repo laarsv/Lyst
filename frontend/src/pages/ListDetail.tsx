@@ -430,7 +430,7 @@ export function ListDetailPage() {
           <div className="flex gap-2">
             <input
               className="input flex-1"
-              placeholder="Eintrag hinzufügen, z. B. „200g Käse" oder „2 Pack Butter"…"
+              placeholder='Eintrag hinzufügen, z. B. „200g Käse" oder „2 Pack Butter"…'
               value={text}
               onChange={(e) => setText(e.target.value)}
             />
