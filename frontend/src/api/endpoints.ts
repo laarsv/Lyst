@@ -174,6 +174,30 @@ export const NotesApi = {
   remove: (id: number) => api.delete(`/notes/${id}`),
 };
 
+export interface NoteTitleResult {
+  id: number;
+  title: string;
+}
+export interface SearchResults {
+  query: string;
+  notes: Array<{ id: number; title: string; snippet: string; folder_id: number | null; is_pinned: boolean }>;
+  lists: Array<{ id: number; title: string; icon: string | null; color: string | null; type: string; matched_item: string | null }>;
+  recipes: Array<{ id: number; title: string; category: string; image_url: string | null; snippet: string | null; matched_ingredient: string | null }>;
+}
+
+export const SearchApi = {
+  global: (q: string) =>
+    api.get<{ data: SearchResults }>('/search', { params: { q } }).then(unwrap),
+  noteTitles: (q: string, limit = 8) =>
+    api
+      .get<{ data: NoteTitleResult[] }>('/notes/search', { params: { q, limit } })
+      .then(unwrap),
+  noteBacklinks: (noteId: number) =>
+    api
+      .get<{ data: NoteTitleResult[] }>(`/notes/${noteId}/backlinks`)
+      .then(unwrap),
+};
+
 export const NoteFoldersApi = {
   list: () => api.get<{ data: NoteFolder[] }>('/note-folders').then(unwrap),
   create: (name: string, color?: string | null) =>

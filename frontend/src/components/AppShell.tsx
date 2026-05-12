@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-do
 import { useAuthStore } from '@/store/auth';
 import { AuthApi } from '@/api/endpoints';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { SearchModal } from '@/components/SearchModal';
 import clsx from 'clsx';
 
 const USER_LINKS: [string, string][] = [
@@ -24,11 +25,26 @@ export function AppShell() {
   const nav = useNavigate();
   const loc = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   // Close the mobile menu whenever the route changes (e.g. user picks a link)
   useEffect(() => {
     setMenuOpen(false);
   }, [loc.pathname]);
+
+  // Cmd/Ctrl+K → open global search; Esc handled inside the modal.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setSearchOpen(true);
+      } else if (e.key === 'Escape' && searchOpen) {
+        setSearchOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [searchOpen]);
 
   const onLogout = async () => {
     try {
@@ -91,6 +107,15 @@ export function AppShell() {
           </nav>
 
           <div className="flex items-center gap-2 ml-auto">
+            <button
+              type="button"
+              onClick={() => setSearchOpen(true)}
+              aria-label="Suchen"
+              title="Suchen (Cmd+K)"
+              className="p-2 rounded-lg text-muted hover:bg-page hover:text-ink transition"
+            >
+              <SearchIcon />
+            </button>
             <span className="text-sm text-muted hidden sm:inline truncate max-w-[140px]">
               {name}
             </span>
@@ -148,7 +173,18 @@ export function AppShell() {
           <Outlet />
         </div>
       </main>
+
+      <SearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
     </div>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </svg>
   );
 }
 

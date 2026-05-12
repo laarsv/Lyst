@@ -11,7 +11,7 @@ from app.core.config import settings
 from app.core.limiter import limiter
 from app.routers import (
     admin, auth, items, lists, me, meal_plans, note_folders, notes, recipes,
-    reminders, share, snapshots, tags, ws,
+    reminders, search, share, snapshots, tags, ws,
 )
 from app.services.scheduler import start_scheduler, stop_scheduler
 
@@ -74,6 +74,7 @@ app.include_router(tags.router, prefix=PREFIX)
 app.include_router(recipes.router, prefix=PREFIX)
 app.include_router(meal_plans.router, prefix=PREFIX)
 app.include_router(snapshots.router, prefix=PREFIX)
+app.include_router(search.router, prefix=PREFIX)
 # WebSocket router is intentionally NOT prefixed with /api so the
 # spec-compliant URL `ws://.../ws/lists/{id}` works.
 app.include_router(ws.router)

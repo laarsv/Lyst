@@ -84,6 +84,55 @@ async def _ensure_folder_owned(db: AsyncSession, folder_id: int, owner_id: int) 
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Ordner nicht gefunden")
 
 
+@router.get("/search")
+async def search_titles(
+    q: str = "",
+    limit: int = 10,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Title-only autocomplete for the [[…]] interlink dropdown.
+    Excludes archived notes."""
+    needle = q.strip()
+    stmt = (
+        select(Note.id, Note.title)
+        .where(Note.owner_id == user.id, Note.is_archived.is_(False))
+        .order_by(Note.is_pinned.desc(), Note.updated_at.desc())
+        .limit(min(max(1, limit), 50))
+    )
+    if needle:
+        stmt = stmt.where(func.lower(Note.title).like(f"%{needle.lower()}%"))
+    result = await db.execute(stmt)
+    return ok([{"id": i, "title": t} for i, t in result.all()])
+
+
+@router.get("/{note_id}/backlinks")
+async def get_backlinks(
+    note_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Notes whose markdown content contains [[<this note's title>]]."""
+    target = await db.execute(
+        select(Note).where(Note.id == note_id, Note.owner_id == user.id)
+    )
+    note = target.scalar_one_or_none()
+    if not note:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    # PostgreSQL ILIKE with the literal `[[Title]]` string. We escape the
+    # SQL wildcard chars `_` and `%` in the title so a title that happens to
+    # contain them doesn't widen the search.
+    safe_title = note.title.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    pattern = f"%[[{safe_title}]]%"
+    result = await db.execute(
+        select(Note.id, Note.title)
+        .where(Note.owner_id == user.id, Note.id != note.id, Note.is_archived.is_(False))
+        .where(Note.content.ilike(pattern, escape="\\"))
+        .order_by(Note.updated_at.desc())
+    )
+    return ok([{"id": i, "title": t} for i, t in result.all()])
+
+
 @router.get("/{note_id}")
 async def get_note(
     note_id: int,

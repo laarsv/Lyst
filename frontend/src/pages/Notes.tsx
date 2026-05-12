@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
-import { NoteFoldersApi, NotesApi, TagsApi } from '@/api/endpoints';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { NoteFoldersApi, NotesApi, SearchApi, TagsApi, type NoteTitleResult } from '@/api/endpoints';
 import type { Note, NoteFolder, Tag } from '@/types';
 import { Modal } from '@/components/Modal';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
+import { remarkWikilinks, parseWikilinkUrl } from '@/lib/wikilinks';
 import MDEditor from '@uiw/react-md-editor';
 
 type Scope =
@@ -27,6 +29,50 @@ export function NotesPage() {
   const [folderModal, setFolderModal] = useState<{ open: boolean; edit?: NoteFolder | null }>({
     open: false,
   });
+  const [params, setParams] = useSearchParams();
+
+  // Deep link from search modal / wikilinks: /notes?focus=<id>
+  useEffect(() => {
+    const focus = params.get('focus');
+    if (!focus) return;
+    const id = Number(focus);
+    if (!Number.isFinite(id)) return;
+    setActiveId(id);
+    // If the focused note isn't in the current scope's list (e.g. search hit
+    // an archived note), broaden to "all" so the editor can fetch it.
+    if (!notes.some((n) => n.id === id)) {
+      setScope({ kind: 'all' });
+    }
+    // Strip the param so back-navigation doesn't keep re-focusing.
+    params.delete('focus');
+    setParams(params, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params]);
+
+  // Navigate by note title — used by wikilink clicks in the markdown preview.
+  const openByTitle = async (title: string) => {
+    const found = notes.find((n) => n.title === title);
+    if (found) {
+      setActiveId(found.id);
+      return;
+    }
+    // Look it up via the title-search endpoint. Fall back to a toast.
+    try {
+      const r = await SearchApi.noteTitles(title);
+      const exact = r.find((x) => x.title === title) ?? r[0];
+      if (!exact) {
+        toast.info(`Notiz „${title}" nicht gefunden`);
+        return;
+      }
+      setActiveId(exact.id);
+      if (!notes.some((n) => n.id === exact.id)) {
+        // Switch to "all" so subsequent reload pulls this note in
+        setScope({ kind: 'all' });
+      }
+    } catch (e) {
+      toast.error(getApiError(e));
+    }
+  };
 
   const loadFolders = async () => {
     try {
@@ -69,7 +115,38 @@ export function NotesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tagFilter, scope.kind, scope.kind === 'folder' ? scope.folderId : null]);
 
-  const active = useMemo(() => notes.find((n) => n.id === activeId) ?? null, [notes, activeId]);
+  const inList = useMemo(() => notes.find((n) => n.id === activeId) ?? null, [notes, activeId]);
+  const [activeFallback, setActiveFallback] = useState<Note | null>(null);
+  const active = inList ?? activeFallback;
+
+  // If the focused note isn't visible in the currently scoped list (e.g. deep
+  // link to an archived note), fetch it directly so the editor still opens.
+  useEffect(() => {
+    if (!activeId) {
+      setActiveFallback(null);
+      return;
+    }
+    if (inList) {
+      setActiveFallback(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const n = await NotesApi.get(activeId);
+        if (!cancelled) setActiveFallback(n);
+      } catch {
+        if (!cancelled) {
+          setActiveFallback(null);
+          toast.info('Notiz nicht gefunden');
+          setActiveId(null);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeId, inList]);
 
   const create = async () => {
     try {
@@ -268,6 +345,7 @@ export function NotesPage() {
             onTogglePin={() => togglePin(active)}
             onToggleArchive={() => toggleArchive(active)}
             onBack={() => setActiveId(null)}
+            onOpenByTitle={openByTitle}
           />
         ) : (
           <NoteList
@@ -539,6 +617,7 @@ function NoteEditor({
   onTogglePin,
   onToggleArchive,
   onBack,
+  onOpenByTitle,
 }: {
   note: Note;
   availableTags: Tag[];
@@ -548,16 +627,24 @@ function NoteEditor({
   onTogglePin: () => void;
   onToggleArchive: () => void;
   onBack: () => void;
+  onOpenByTitle: (title: string) => void;
 }) {
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
   const [tags, setTags] = useState<string[]>(note.tags);
   const [tagInput, setTagInput] = useState('');
+  const [backlinks, setBacklinks] = useState<NoteTitleResult[]>([]);
+
+  // ----- [[…]] autocomplete state -----
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [autocomplete, setAutocomplete] = useState<{ query: string; index: number } | null>(null);
+  const [titleSuggestions, setTitleSuggestions] = useState<NoteTitleResult[]>([]);
 
   useEffect(() => {
     setTitle(note.title);
     setContent(note.content);
     setTags(note.tags);
+    setAutocomplete(null);
   }, [note.id]);
 
   useEffect(() => {
@@ -569,6 +656,107 @@ function NoteEditor({
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [title, content, tags]);
+
+  // Backlinks — refetch when the note id changes (also after autosave so a
+  // freshly typed [[Title]] elsewhere shows up). We refetch on save by
+  // depending on note.updated_at as well.
+  useEffect(() => {
+    let cancelled = false;
+    SearchApi.noteBacklinks(note.id)
+      .then((r) => {
+        if (!cancelled) setBacklinks(r);
+      })
+      .catch(() => {
+        /* non-critical */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [note.id, note.updated_at]);
+
+  // Detect `[[…` near the cursor on every change. If found, open the
+  // autocomplete with the in-flight query; otherwise close it.
+  const detectAutocomplete = (newContent: string) => {
+    const ta = textareaRef.current;
+    if (!ta) {
+      setAutocomplete(null);
+      return;
+    }
+    const cursor = ta.selectionStart ?? newContent.length;
+    const before = newContent.slice(0, cursor);
+    const lastOpen = before.lastIndexOf('[[');
+    if (lastOpen === -1) {
+      setAutocomplete(null);
+      return;
+    }
+    const between = before.slice(lastOpen + 2);
+    if (between.includes(']]') || between.includes('\n')) {
+      setAutocomplete(null);
+      return;
+    }
+    setAutocomplete((prev) => ({ query: between, index: prev?.query === between ? prev.index : 0 }));
+  };
+
+  // Fetch title suggestions whenever the autocomplete query changes.
+  useEffect(() => {
+    if (!autocomplete) {
+      setTitleSuggestions([]);
+      return;
+    }
+    let cancelled = false;
+    SearchApi.noteTitles(autocomplete.query)
+      .then((r) => {
+        if (!cancelled) setTitleSuggestions(r.filter((s) => s.id !== note.id));
+      })
+      .catch(() => {
+        /* ignore */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [autocomplete?.query, note.id]);
+
+  const insertWikilink = (linkTitle: string) => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const cursor = ta.selectionStart ?? content.length;
+    const before = content.slice(0, cursor);
+    const lastOpen = before.lastIndexOf('[[');
+    if (lastOpen === -1) return;
+    const after = content.slice(cursor);
+    const insert = `[[${linkTitle}]]`;
+    const newContent = content.slice(0, lastOpen) + insert + after;
+    setContent(newContent);
+    setAutocomplete(null);
+    requestAnimationFrame(() => {
+      const pos = lastOpen + insert.length;
+      ta.focus();
+      ta.selectionStart = ta.selectionEnd = pos;
+    });
+  };
+
+  const onTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!autocomplete || titleSuggestions.length === 0) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setAutocomplete({
+        ...autocomplete,
+        index: (autocomplete.index + 1) % titleSuggestions.length,
+      });
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setAutocomplete({
+        ...autocomplete,
+        index: (autocomplete.index - 1 + titleSuggestions.length) % titleSuggestions.length,
+      });
+    } else if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      insertWikilink(titleSuggestions[autocomplete.index].title);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setAutocomplete(null);
+    }
+  };
 
   return (
     <>
@@ -640,9 +828,100 @@ function NoteEditor({
           ))}
         </datalist>
       </div>
-      <div data-color-mode="light" className="flex-1 min-h-[400px]">
-        <MDEditor value={content} onChange={(v) => setContent(v ?? '')} height={500} preview="live" />
+      <div data-color-mode="light" className="flex-1 min-h-[400px] relative">
+        <MDEditor
+          value={content}
+          onChange={(v) => {
+            const next = v ?? '';
+            setContent(next);
+            detectAutocomplete(next);
+          }}
+          height={500}
+          preview="live"
+          textareaProps={{
+            ref: textareaRef as any,
+            onKeyDown: onTextareaKeyDown,
+            onClick: () => detectAutocomplete(content),
+            onKeyUp: () => detectAutocomplete(content),
+            placeholder:
+              'Inhalt… Tippe [[ um eine andere Notiz zu verlinken.',
+          }}
+          previewOptions={{
+            remarkPlugins: [remarkWikilinks],
+            components: {
+              a: ({ href, children, ...rest }: any) => {
+                const linked = parseWikilinkUrl(href);
+                if (linked !== null) {
+                  return (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        onOpenByTitle(linked);
+                      }}
+                      className="inline text-brand-700 underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                    >
+                      {children}
+                    </button>
+                  );
+                }
+                return (
+                  <a href={href} {...rest} target="_blank" rel="noreferrer noopener">
+                    {children}
+                  </a>
+                );
+              },
+            },
+          }}
+        />
+        {autocomplete && titleSuggestions.length > 0 && (
+          <div className="absolute z-20 left-2 right-2 sm:right-auto sm:max-w-sm bottom-2 card p-1 shadow-flat border border-line bg-surface">
+            <div className="text-[11px] text-muted px-2 py-1">
+              Notiz verlinken — ↑/↓ wählen, Enter einfügen, Esc abbrechen
+            </div>
+            <ul className="max-h-48 overflow-auto">
+              {titleSuggestions.map((s, i) => (
+                <li key={s.id}>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault(); // keep textarea focus
+                      insertWikilink(s.title);
+                    }}
+                    onMouseEnter={() => setAutocomplete({ ...autocomplete, index: i })}
+                    className={`w-full text-left px-2 py-1.5 text-sm rounded ${
+                      i === autocomplete.index ? 'bg-brand-50 text-brand-700' : 'hover:bg-page'
+                    }`}
+                  >
+                    {s.title}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
+
+      {backlinks.length > 0 && (
+        <section className="border border-line rounded-card p-3 mt-2">
+          <div className="text-xs uppercase tracking-wide text-muted mb-2">
+            Wird erwähnt in ({backlinks.length})
+          </div>
+          <ul className="space-y-1">
+            {backlinks.map((b) => (
+              <li key={b.id}>
+                <button
+                  type="button"
+                  onClick={() => onOpenByTitle(b.title)}
+                  className="text-sm text-brand-700 hover:underline"
+                >
+                  {b.title}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </>
   );
 }
