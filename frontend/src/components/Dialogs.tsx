@@ -60,11 +60,14 @@ export function DialogProvider({ children }: { children: ReactNode }) {
   const push = useCallback(<T,>(p: Pending): Promise<T> => {
     setStack((s) => [...s, p]);
     return new Promise<T>((res) => {
-      const orig = p.resolve;
-      p.resolve = (v: any) => {
+      // The three Pending variants have different resolver signatures, so
+      // `p.resolve` narrows to `never` under the union. We're just wrapping
+      // and forwarding — cast both sides to a permissive signature.
+      const orig = p.resolve as (v: unknown) => void;
+      (p as { resolve: (v: unknown) => void }).resolve = (v: unknown) => {
         orig(v);
         setStack((s) => s.filter((x) => x !== p));
-        res(v);
+        res(v as T);
       };
     });
   }, []);
