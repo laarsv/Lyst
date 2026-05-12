@@ -1,5 +1,6 @@
 export type Role = 'admin' | 'user';
 export type ListType = 'SHOPPING' | 'PACKING' | 'CHECKLIST' | 'CUSTOM';
+export type CategorizationMode = 'OFF' | 'MANUAL' | 'AUTO';
 export type CollaboratorPermission = 'VIEW' | 'EDIT';
 
 export interface User {
@@ -38,7 +39,7 @@ export interface ListSummary {
   template_name: string | null;
   share_enabled: boolean;
   share_token: string | null;
-  sort_by_category: boolean;
+  categorization_mode: CategorizationMode;
   created_at: string;
   updated_at: string;
   item_count: number;
@@ -56,6 +57,7 @@ export interface ListItem {
   unit: string | null;
   position: number;
   category: string | null;
+  category_locked: boolean;
   created_at: string;
   updated_at: string;
 }

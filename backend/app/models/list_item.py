@@ -24,5 +24,10 @@ class ListItem(Base, TimestampMixin):
     # Filled in asynchronously by the Ollama categorizer for SHOPPING-type
     # lists. Null means "not yet categorized" and the UI shows a pending state.
     category: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # When true, the user manually picked this category — auto-categorizer
+    # MUST NOT overwrite it (unless explicitly forced by the regenerate flow).
+    category_locked: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
 
     list: Mapped["List"] = relationship(back_populates="items")

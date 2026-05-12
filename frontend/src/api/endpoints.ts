@@ -2,6 +2,7 @@ import { api } from './client';
 import type {
   AdminUser,
   AuthResponse,
+  CategorizationMode,
   Collaborator,
   CollaboratorPermission,
   CopyToListResponse,
@@ -104,9 +105,17 @@ export const ListsApi = {
       color: string;
       icon: string;
       type: ListType;
-      sort_by_category: boolean;
+      categorization_mode: CategorizationMode;
     }>,
   ) => api.patch<{ data: ListSummary }>(`/lists/${id}`, payload).then(unwrap),
+  categorize: (id: number, force = false) =>
+    api
+      .post<{ data: { queued: number; total: number } }>(
+        `/lists/${id}/categorize`,
+        null,
+        { params: { force } },
+      )
+      .then(unwrap),
   remove: (id: number) => api.delete(`/lists/${id}`),
   duplicate: (id: number, payload: { title?: string; as_template?: boolean; template_name?: string }) =>
     api.post<{ data: ListSummary }>(`/lists/${id}/duplicate`, payload).then(unwrap),
@@ -120,7 +129,17 @@ export const ItemsApi = {
     api.post<{ data: ListItem }>(`/lists/${listId}/items`, { text, ...extras }).then(unwrap),
   bulk: (listId: number, lines: string[]) =>
     api.post<{ data: ListItem[] }>(`/lists/${listId}/items/bulk`, { lines }).then(unwrap),
-  update: (listId: number, itemId: number, payload: Partial<{ text: string; is_checked: boolean; quantity: number | null; unit: string | null }>) =>
+  update: (
+    listId: number,
+    itemId: number,
+    payload: Partial<{
+      text: string;
+      is_checked: boolean;
+      quantity: number | null;
+      unit: string | null;
+      category: string | null;
+    }>,
+  ) =>
     api.patch<{ data: ListItem }>(`/lists/${listId}/items/${itemId}`, payload).then(unwrap),
   remove: (listId: number, itemId: number) =>
     api.delete(`/lists/${listId}/items/${itemId}`),

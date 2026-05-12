@@ -21,6 +21,12 @@ class ListType(str, enum.Enum):
     CUSTOM = "CUSTOM"
 
 
+class CategorizationMode(str, enum.Enum):
+    OFF = "OFF"          # No categorization, items stay in manual order, DnD on.
+    MANUAL = "MANUAL"    # User-triggered only.
+    AUTO = "AUTO"        # Categorize on every new item.
+
+
 def _gen_share_token() -> str:
     return uuid.uuid4().hex
 
@@ -45,9 +51,11 @@ class List(Base, TimestampMixin):
         String(64), unique=True, nullable=True, index=True
     )
     share_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    # When true, SHOPPING items are grouped by their AI-assigned category
-    # in the UI. Defaults to true for SHOPPING lists, false otherwise.
-    sort_by_category: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    categorization_mode: Mapped[CategorizationMode] = mapped_column(
+        Enum(CategorizationMode, name="categorization_mode"),
+        default=CategorizationMode.OFF,
+        nullable=False,
+    )
 
     owner: Mapped["User"] = relationship(back_populates="lists")
     items: Mapped[list["ListItem"]] = relationship(

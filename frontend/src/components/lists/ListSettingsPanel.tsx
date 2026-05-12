@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { X } from 'lucide-react';
-import type { ListSummary, ListType } from '@/types';
+import { Sparkles, Hand, X, Zap } from 'lucide-react';
+import type { CategorizationMode, ListSummary, ListType } from '@/types';
 import { ListsApi } from '@/api/endpoints';
 import { SharePanel } from '@/components/lists/SharePanel';
 import { CollaboratorsPanel } from '@/components/lists/CollaboratorsPanel';
@@ -14,6 +14,9 @@ interface Props {
   list: ListSummary;
   onClose: () => void;
   onListUpdate: (patch: Partial<ListSummary>) => void;
+  /** Notified when the user starts a manual categorize run. Lets the parent
+   *  show a progress indicator above the items list. */
+  onCategorizationStarted?: (queued: number) => void;
 }
 
 const TYPE_OPTIONS: { v: ListType; label: string }[] = [
@@ -24,7 +27,13 @@ const TYPE_OPTIONS: { v: ListType; label: string }[] = [
 ];
 
 /** Slide-in side panel with list-level configuration. */
-export function ListSettingsPanel({ open, list, onClose, onListUpdate }: Props) {
+export function ListSettingsPanel({
+  open,
+  list,
+  onClose,
+  onListUpdate,
+  onCategorizationStarted,
+}: Props) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -77,6 +86,19 @@ export function ListSettingsPanel({ open, list, onClose, onListUpdate }: Props) 
           <Section title="Listendetails">
             <ListDetailsSection list={list} onListUpdate={onListUpdate} />
           </Section>
+          <CategorizationModeSection
+            list={list}
+            onListUpdate={onListUpdate}
+            onCategorizationStarted={onCategorizationStarted}
+            saveField={async (_field, payload) => {
+              try {
+                const updated = await ListsApi.update(list.id, payload);
+                onListUpdate(updated);
+              } catch (e) {
+                toast.error(getApiError(e));
+              }
+            }}
+          />
           <Section title="Öffentlicher Link">
             <SharePanel list={list} onUpdate={onListUpdate} />
           </Section>
@@ -207,24 +229,126 @@ function ListDetailsSection({
           ))}
         </div>
       </div>
-      <label className="flex items-center justify-between gap-3 cursor-pointer pt-1">
-        <span className="min-w-0">
-          <span className="block font-medium">Nach Kategorie sortieren</span>
-          <span className="block text-xs text-muted">
-            Items werden automatisch nach Kategorie gruppiert
-            (Obst & Gemüse, Milchprodukte, …). Manuelles Verschieben deaktiviert.
-          </span>
-        </span>
-        <input
-          type="checkbox"
-          className="sr-only peer"
-          checked={list.sort_by_category}
-          onChange={(e) =>
-            void saveField('sort_by_category', { sort_by_category: e.target.checked })
-          }
-        />
-        <span className="w-11 h-6 bg-line peer-checked:bg-brand rounded-full transition relative shrink-0 after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-[#fff] after:rounded-full after:h-5 after:w-5 after:transition peer-checked:after:translate-x-5" />
-      </label>
     </div>
   );
 }
+
+// Wraps the mode selector + manual buttons; rendered as a sibling card under
+// "Listendetails" inside the Settings Panel.
+function CategorizationModeSection({
+  list,
+  onListUpdate,
+  saveField,
+  onCategorizationStarted,
+}: {
+  list: ListSummary;
+  onListUpdate: (patch: Partial<ListSummary>) => void;
+  saveField: (field: string, payload: Parameters<typeof ListsApi.update>[1]) => Promise<void>;
+  onCategorizationStarted?: (queued: number) => void;
+}) {
+  const [busy, setBusy] = useState<'normal' | 'force' | null>(null);
+  const [lastQueued, setLastQueued] = useState<number | null>(null);
+  const active = MODE_OPTIONS.find((m) => m.v === list.categorization_mode) ?? MODE_OPTIONS[0];
+
+  const trigger = async (force: boolean) => {
+    if (force && !confirm('Alle Items werden neu kategorisiert. Fortfahren?')) return;
+    setBusy(force ? 'force' : 'normal');
+    setLastQueued(null);
+    try {
+      const r = await ListsApi.categorize(list.id, force);
+      setLastQueued(r.queued);
+      if (r.queued > 0) onCategorizationStarted?.(r.queued);
+    } catch (e) {
+      toast.error(getApiError(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="card p-4">
+      <div className="text-sm font-medium mb-2">Kategorisierung</div>
+      <div className="grid grid-cols-3 gap-1 bg-page border border-line rounded-xl p-1 mb-2">
+        {MODE_OPTIONS.map((m) => {
+          const isActive = list.categorization_mode === m.v;
+          const Icon = m.icon;
+          return (
+            <button
+              key={m.v}
+              type="button"
+              onClick={() => {
+                if (!isActive) {
+                  void saveField('categorization_mode', { categorization_mode: m.v });
+                  onListUpdate({ categorization_mode: m.v });
+                }
+              }}
+              className={`flex flex-col items-center gap-1 py-2 px-1 rounded-lg text-xs font-medium transition ${
+                isActive ? 'bg-surface shadow-flat text-brand-700' : 'text-muted hover:bg-surface/60'
+              }`}
+            >
+              <Icon size={16} />
+              {m.label}
+            </button>
+          );
+        })}
+      </div>
+      <div className="text-xs text-muted px-1 mb-3">{active.description}</div>
+
+      {list.categorization_mode !== 'OFF' && (
+        <div className="space-y-2">
+          <button
+            type="button"
+            className="btn-primary w-full text-sm"
+            disabled={busy !== null}
+            onClick={() => void trigger(false)}
+          >
+            <Sparkles size={14} className={busy === 'normal' ? 'animate-pulse' : ''} />
+            {busy === 'normal' ? 'Starte…' : 'Jetzt kategorisieren'}
+          </button>
+          <button
+            type="button"
+            className="btn-secondary w-full text-xs"
+            disabled={busy !== null}
+            onClick={() => void trigger(true)}
+          >
+            {busy === 'force' ? 'Starte…' : 'Alle neu kategorisieren'}
+          </button>
+          {lastQueued !== null && (
+            <div className="text-xs text-muted px-1">
+              {lastQueued === 0
+                ? 'Alle Items sind bereits kategorisiert.'
+                : `${lastQueued} Item${lastQueued === 1 ? '' : 's'} in der Warteschlange — Fortschritt erscheint im Hauptfenster.`}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const MODE_OPTIONS: {
+  v: CategorizationMode;
+  label: string;
+  icon: typeof Hand;
+  description: string;
+}[] = [
+  {
+    v: 'OFF',
+    label: 'Aus',
+    icon: X,
+    description: 'Items werden in der Reihenfolge angezeigt, in der du sie hinzufügst.',
+  },
+  {
+    v: 'MANUAL',
+    label: 'Manuell',
+    icon: Hand,
+    description:
+      'Items werden auf Wunsch nach Kategorie gruppiert. Du löst die Kategorisierung selbst aus.',
+  },
+  {
+    v: 'AUTO',
+    label: 'Automatisch',
+    icon: Zap,
+    description: 'Jedes neue Item wird sofort einer Kategorie zugeordnet.',
+  },
+];

@@ -18,6 +18,10 @@ class ListItemUpdate(BaseModel):
     is_checked: bool | None = None
     quantity: float | None = None
     unit: str | None = Field(default=None, max_length=32)
+    # When the client patches `category` directly, the items router treats
+    # that as a manual override and flips category_locked to True so future
+    # auto-categorization runs leave it alone.
+    category: str | None = Field(default=None, max_length=64)
 
 
 class ListItemOut(ListItemBase):
@@ -27,6 +31,7 @@ class ListItemOut(ListItemBase):
     is_checked: bool
     position: int
     category: str | None = None
+    category_locked: bool = False
     created_at: datetime
     updated_at: datetime
 

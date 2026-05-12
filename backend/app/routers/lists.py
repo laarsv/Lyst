@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import get_client_id, require_user
 from app.core.responses import ok
+from app.models.list_item import ListItem
 from app.models.user import User
 from app.schemas.list import ListCreate, ListDuplicate, ListOut, ListUpdate
 from app.services.list_service import (
@@ -154,3 +156,64 @@ async def post_reset(
         list_id, {"type": "list_reset", "payload": {}}, exclude_client_id=client_id
     )
     return ok({"message": "List reset"})
+
+
+# ---------- Manual categorization ----------
+
+@router.post("/{list_id}/categorize")
+async def post_categorize(
+    list_id: int,
+    background: BackgroundTasks,
+    force: bool = False,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Categorize all items on this list. By default skips items that already
+    have a category and items the user manually locked. With `force=true`,
+    re-categorizes everything (including locked items, since this only fires
+    on explicit user action) and clears existing categories first so the
+    progress UI on the frontend can observe each item flipping in turn.
+
+    Runs as a background task and returns the count of items queued. The
+    frontend listens to the existing `item_updated` WebSocket events to
+    drive its progress counter."""
+    try:
+        lst, _, _ = await get_list_for_user(db, list_id, user.id, require_edit=True)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
+    items_q = await db.execute(select(ListItem).where(ListItem.list_id == list_id))
+    all_items = list(items_q.scalars().all())
+
+    if force:
+        targets = all_items
+        # Clear categories upfront so the UI shows them flipping back to
+        # "pending" then to the new category as the worker progresses.
+        for it in targets:
+            it.category = None
+            it.category_locked = False
+        await db.commit()
+        for it in targets:
+            await ws_manager.broadcast(
+                list_id,
+                {"type": "item_updated", "payload": {
+                    "id": it.id, "list_id": it.list_id, "text": it.text,
+                    "is_checked": it.is_checked, "quantity": it.quantity,
+                    "unit": it.unit, "position": it.position,
+                    "category": None, "category_locked": False,
+                    "created_at": it.created_at.isoformat(),
+                    "updated_at": it.updated_at.isoformat(),
+                }},
+            )
+    else:
+        targets = [it for it in all_items if it.category is None and not it.category_locked]
+
+    # Lazy-import to avoid a circular import at module load.
+    from app.routers.items import _categorize_set_in_background
+    if targets:
+        background.add_task(
+            _categorize_set_in_background, list_id, [it.id for it in targets], force
+        )
+    return ok({"queued": len(targets), "total": len(all_items)})

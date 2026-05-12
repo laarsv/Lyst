@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import AsyncSessionLocal, get_db
 from app.core.dependencies import get_client_id, require_user
 from app.core.responses import ok
-from app.models.list import List as ListModel, ListType
+from app.models.list import CategorizationMode, List as ListModel, ListType
 from app.models.list_item import ListItem
 from app.models.user import User
 from app.schemas.list_item import (
@@ -44,24 +44,28 @@ async def _ensure_edit(db: AsyncSession, list_id: int, user_id: int) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
 
-async def _list_is_shopping(db: AsyncSession, list_id: int) -> bool:
-    result = await db.execute(select(ListModel.type).where(ListModel.id == list_id))
-    row = result.scalar_one_or_none()
-    return row == ListType.SHOPPING
+async def _list_mode(db: AsyncSession, list_id: int) -> tuple[ListType | None, CategorizationMode]:
+    result = await db.execute(
+        select(ListModel.type, ListModel.categorization_mode).where(ListModel.id == list_id)
+    )
+    row = result.one_or_none()
+    if row is None:
+        return None, CategorizationMode.OFF
+    return row[0], row[1]
 
 
 async def _categorize_in_background(list_id: int, item_id: int) -> None:
     """Runs after the POST response has been sent. Uses its own DB session
-    (FastAPI's request-scoped session is gone by the time this fires)."""
+    (FastAPI's request-scoped session is gone by the time this fires).
+
+    Skips items that already carry a category or are locked by the user.
+    """
     async with AsyncSessionLocal() as db:
-        item_result = await db.execute(select(ListItem).where(ListItem.id == item_id))
-        item = item_result.scalar_one_or_none()
-        if not item or item.category is not None:
+        item = (await db.execute(select(ListItem).where(ListItem.id == item_id))).scalar_one_or_none()
+        if not item or item.category is not None or item.category_locked:
             return
         category = await categorize_item(db, item.text)
         if category is None:
-            # Ollama unreachable — leave the item uncategorized; the UI shows
-            # "Wird kategorisiert…" forever, that's fine — better than guessing.
             return
         item.category = category
         await db.commit()
@@ -70,6 +74,31 @@ async def _categorize_in_background(list_id: int, item_id: int) -> None:
             list_id,
             {"type": "item_updated", "payload": ListItemOut.model_validate(item).model_dump(mode="json")},
         )
+
+
+async def _categorize_set_in_background(list_id: int, item_ids: list[int], force: bool) -> None:
+    """Categorize a fixed set of items, broadcasting each one as it lands so
+    the frontend can update its progress counter live."""
+    for iid in item_ids:
+        async with AsyncSessionLocal() as db:
+            item = (await db.execute(select(ListItem).where(ListItem.id == iid))).scalar_one_or_none()
+            if not item:
+                continue
+            if not force and (item.category is not None or item.category_locked):
+                continue
+            category = await categorize_item(db, item.text)
+            if category is None:
+                continue
+            item.category = category
+            # The bulk run is system-driven, not user-driven, so locked stays
+            # unchanged (force re-categorize doesn't lock either; locking is
+            # only for explicit per-item user overrides).
+            await db.commit()
+            await db.refresh(item)
+            await ws_manager.broadcast(
+                list_id,
+                {"type": "item_updated", "payload": ListItemOut.model_validate(item).model_dump(mode="json")},
+            )
 
 
 @router.get("")
@@ -101,9 +130,10 @@ async def post_item(
     await ws_manager.broadcast(
         list_id, {"type": "item_created", "payload": out}, exclude_client_id=client_id
     )
-    # Fire-and-forget categorization for SHOPPING items. The Ollama call
-    # can take seconds and we don't want to delay the POST response.
-    if await _list_is_shopping(db, list_id):
+    # Fire-and-forget categorization only when the list is in AUTO mode.
+    # MANUAL leaves it null until the user hits "Jetzt kategorisieren".
+    _t, mode = await _list_mode(db, list_id)
+    if mode == CategorizationMode.AUTO:
         background.add_task(_categorize_in_background, list_id, item.id)
     return ok(out)
 
@@ -124,7 +154,8 @@ async def post_bulk(
         await ws_manager.broadcast(
             list_id, {"type": "item_created", "payload": o}, exclude_client_id=client_id
         )
-    if await _list_is_shopping(db, list_id):
+    _t, mode = await _list_mode(db, list_id)
+    if mode == CategorizationMode.AUTO:
         for it in items:
             background.add_task(_categorize_in_background, list_id, it.id)
     return ok(out)
@@ -165,7 +196,19 @@ async def patch_item(
     item = await get_item(db, list_id, item_id)
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
-    item = await update_item(db, item, **payload.model_dump(exclude_unset=True))
+    patch = payload.model_dump(exclude_unset=True)
+    # Treat any user-driven category change as a lock so the auto-categorizer
+    # leaves it alone. Setting category=null also clears the lock.
+    if "category" in patch:
+        patch["category_locked"] = patch["category"] is not None
+        # Apply the category fields inline so explicit nulls (clearing) stick;
+        # update_item() filters out None values for backwards compatibility.
+        item.category = patch.pop("category")
+        item.category_locked = patch.pop("category_locked")
+    item = await update_item(db, item, **patch) if patch else item
+    if not patch:
+        await db.commit()
+        await db.refresh(item)
     out = _item_out(item)
     await ws_manager.broadcast(
         list_id, {"type": "item_updated", "payload": out}, exclude_client_id=client_id

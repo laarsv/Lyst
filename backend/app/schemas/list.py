@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.list import ListType
+from app.models.list import CategorizationMode, ListType
 
 
 class ListBase(BaseModel):
@@ -25,7 +25,7 @@ class ListUpdate(BaseModel):
     icon: str | None = Field(default=None, max_length=16)
     is_template: bool | None = None
     template_name: str | None = None
-    sort_by_category: bool | None = None
+    categorization_mode: CategorizationMode | None = None
 
 
 class ListDuplicate(BaseModel):
@@ -42,7 +42,7 @@ class ListOut(ListBase):
     template_name: str | None
     share_enabled: bool
     share_token: str | None
-    sort_by_category: bool = False
+    categorization_mode: CategorizationMode = CategorizationMode.OFF
     created_at: datetime
     updated_at: datetime
     item_count: int = 0

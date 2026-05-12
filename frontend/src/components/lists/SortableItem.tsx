@@ -1,8 +1,22 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ListItem } from '@/types';
 import clsx from 'clsx';
+import { Lock, Tag } from 'lucide-react';
+
+const CATEGORIES = [
+  'Obst & Gemüse',
+  'Milchprodukte',
+  'Tiefkühl',
+  'Backwaren',
+  'Fleisch & Fisch',
+  'Getränke',
+  'Trockenwaren',
+  'Süßes',
+  'Hygiene',
+  'Sonstiges',
+];
 
 interface Props {
   item: ListItem;
@@ -115,6 +129,12 @@ export function SortableItem({ item, canEdit, onToggle, onUpdate, onDelete }: Pr
         </div>
       )}
       {canEdit && !editing && (
+        <CategoryChip
+          item={item}
+          onPick={(category) => onUpdate(item, { category })}
+        />
+      )}
+      {canEdit && !editing && (
         <button
           className="opacity-0 group-hover:opacity-100 transition text-muted/70 hover:text-danger px-1"
           onClick={() => onDelete(item)}
@@ -122,6 +142,105 @@ export function SortableItem({ item, canEdit, onToggle, onUpdate, onDelete }: Pr
         >
           ×
         </button>
+      )}
+    </div>
+  );
+}
+
+function CategoryChip({
+  item,
+  onPick,
+}: {
+  item: ListItem;
+  onPick: (category: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('mousedown', onClick);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', onClick);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const has = !!item.category;
+  return (
+    <div className="relative shrink-0" ref={ref}>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        title={
+          item.category_locked
+            ? `${item.category} (manuell festgelegt — Auto-Sortierung lässt das in Ruhe)`
+            : item.category ?? 'Kategorie zuweisen'
+        }
+        className={clsx(
+          'inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-chip transition',
+          has
+            ? 'bg-brand-50 text-brand-700 hover:bg-brand-100'
+            : 'opacity-0 group-hover:opacity-100 text-muted/70 border border-dashed border-line hover:text-ink',
+        )}
+      >
+        {has ? (
+          <>
+            {item.category_locked && <Lock size={10} />}
+            <span className="truncate max-w-[110px]">{item.category}</span>
+          </>
+        ) : (
+          <>
+            <Tag size={10} />
+            <span>Kategorie</span>
+          </>
+        )}
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-20 min-w-[170px] card p-1 shadow-flat border border-line bg-surface">
+          {CATEGORIES.map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onPick(c);
+                setOpen(false);
+              }}
+              className={`w-full text-left px-2 py-1.5 text-sm rounded transition ${
+                item.category === c ? 'bg-brand-50 text-brand-700' : 'hover:bg-page'
+              }`}
+            >
+              {c}
+            </button>
+          ))}
+          {item.category && (
+            <>
+              <div className="border-t border-line my-1" />
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onPick(null);
+                  setOpen(false);
+                }}
+                className="w-full text-left px-2 py-1.5 text-sm rounded text-muted hover:bg-page hover:text-ink"
+              >
+                Kategorie entfernen
+              </button>
+            </>
+          )}
+        </div>
       )}
     </div>
   );

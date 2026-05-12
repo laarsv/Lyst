@@ -107,6 +107,16 @@ export function ListDetailPage() {
     }
   }, [listId]);
 
+  // Bulk-categorize progress. The Settings panel triggers a backend run and
+  // tells us how many items are queued; we then count items flipping from
+  // null→category via the existing item_updated WebSocket events.
+  const [catTotal, setCatTotal] = useState(0);
+  const [catDone, setCatDone] = useState(0);
+  const onCategorizationStarted = (queued: number) => {
+    setCatTotal(queued);
+    setCatDone(0);
+  };
+
   const wsConnected = useListWebSocket(listId, {
     onMessage: (msg) => {
       switch (msg.type) {
@@ -116,7 +126,16 @@ export function ListDetailPage() {
           );
           break;
         case 'item_updated':
-          setItems((cur) => cur.map((i) => (i.id === msg.payload.id ? msg.payload : i)));
+          setItems((cur) =>
+            cur.map((i) => {
+              if (i.id !== msg.payload.id) return i;
+              // Count progress: prior was uncategorized, new has a category.
+              if ((i.category ?? null) === null && (msg.payload.category ?? null) !== null) {
+                setCatDone((d) => d + 1);
+              }
+              return msg.payload;
+            }),
+          );
           break;
         case 'item_deleted':
           setItems((cur) => cur.filter((i) => i.id !== msg.payload.id));
@@ -329,10 +348,30 @@ export function ListDetailPage() {
         </form>
       )}
 
+      {catTotal > 0 && catDone < catTotal && (
+        <div className="card p-3 flex items-center gap-3">
+          <Loader2 size={16} className="animate-spin text-brand shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="text-sm">
+              Kategorisiere{' '}
+              <span className="tabular-nums font-medium">
+                {catDone} / {catTotal}
+              </span>
+            </div>
+            <div className="h-1 mt-1 bg-line rounded-full overflow-hidden">
+              <div
+                className="h-full bg-brand transition-all"
+                style={{ width: `${Math.min(100, (catDone / catTotal) * 100)}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="card p-3 sm:p-4">
         {items.length === 0 ? (
           <div className="text-center text-muted/70 py-8">Noch keine Einträge.</div>
-        ) : list.sort_by_category ? (
+        ) : list.categorization_mode !== 'OFF' ? (
           // Auto-sorted: group by category, no DnD.
           <CategoryGroupedList
             items={items}
@@ -367,6 +406,7 @@ export function ListDetailPage() {
           list={list}
           onClose={() => setSettingsOpen(false)}
           onListUpdate={(p) => setList((cur) => (cur ? { ...cur, ...p } : cur))}
+          onCategorizationStarted={onCategorizationStarted}
         />
       )}
 
