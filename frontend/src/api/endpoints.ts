@@ -17,6 +17,7 @@ import type {
   MealPlanEntry,
   MealType,
   Note,
+  NoteFolder,
   PublicListData,
   Recipe,
   RecipeCategory,
@@ -144,14 +145,42 @@ export const RemindersApi = {
 };
 
 export const NotesApi = {
-  list: (params?: { q?: string; tag?: string }) =>
-    api.get<{ data: Note[] }>('/notes', { params }).then(unwrap),
+  list: (params?: {
+    q?: string;
+    tag?: string;
+    folder_id?: number;
+    uncategorized?: boolean;
+    archived?: boolean;
+  }) => api.get<{ data: Note[] }>('/notes', { params }).then(unwrap),
   get: (id: number) => api.get<{ data: Note }>(`/notes/${id}`).then(unwrap),
-  create: (payload: { title: string; content?: string; tags?: string[] }) =>
-    api.post<{ data: Note }>('/notes', payload).then(unwrap),
-  update: (id: number, payload: Partial<{ title: string; content: string; tags: string[] }>) =>
-    api.patch<{ data: Note }>(`/notes/${id}`, payload).then(unwrap),
+  create: (payload: {
+    title: string;
+    content?: string;
+    tags?: string[];
+    folder_id?: number | null;
+    is_pinned?: boolean;
+  }) => api.post<{ data: Note }>('/notes', payload).then(unwrap),
+  update: (
+    id: number,
+    payload: Partial<{
+      title: string;
+      content: string;
+      tags: string[];
+      folder_id: number | null;
+      is_pinned: boolean;
+      is_archived: boolean;
+    }>,
+  ) => api.patch<{ data: Note }>(`/notes/${id}`, payload).then(unwrap),
   remove: (id: number) => api.delete(`/notes/${id}`),
+};
+
+export const NoteFoldersApi = {
+  list: () => api.get<{ data: NoteFolder[] }>('/note-folders').then(unwrap),
+  create: (name: string, color?: string | null) =>
+    api.post<{ data: NoteFolder }>('/note-folders', { name, color }).then(unwrap),
+  update: (id: number, payload: Partial<{ name: string; color: string | null }>) =>
+    api.patch<{ data: NoteFolder }>(`/note-folders/${id}`, payload).then(unwrap),
+  remove: (id: number) => api.delete(`/note-folders/${id}`),
 };
 
 export const RecipesApi = {

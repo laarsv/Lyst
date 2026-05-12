@@ -81,8 +81,20 @@ export interface Note {
   title: string;
   content: string;
   tags: string[];
+  folder_id: number | null;
+  is_pinned: boolean;
+  is_archived: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface NoteFolder {
+  id: number;
+  owner_id: number;
+  name: string;
+  color: string | null;
+  created_at: string;
+  note_count: number;
 }
 
 export interface Tag {
