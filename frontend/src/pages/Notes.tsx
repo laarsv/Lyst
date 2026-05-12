@@ -1,13 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { NoteFoldersApi, NotesApi, SearchApi, TagsApi, type NoteTitleResult } from '@/api/endpoints';
+import { NoteFoldersApi, NotesApi, SearchApi, TagsApi } from '@/api/endpoints';
 import type { Note, NoteFolder, Tag } from '@/types';
 import { Modal } from '@/components/Modal';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
 import { remarkWikilinks, parseWikilinkUrl } from '@/lib/wikilinks';
 import { VersionHistoryPanel } from '@/components/notes/VersionHistoryPanel';
+import { NoteToolbar } from '@/components/notes/NoteToolbar';
+import { NoteActionsMenu } from '@/components/notes/NoteActionsMenu';
+import { NoteMobileLayout } from '@/components/notes/NoteMobileLayout';
 import { useConfirm } from '@/components/Dialogs';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { useNoteEditingState } from '@/hooks/useNoteEditingState';
 import MDEditor from '@uiw/react-md-editor';
 
 type Scope =
@@ -238,6 +243,31 @@ export function NotesPage() {
     const f = folders.find((x) => x.id === scope.folderId);
     return f ? f.name : 'Ordner';
   })();
+
+  // On mobile (< 768px), once a note is open we hand off to the full-screen
+  // NoteMobileLayout — sidebar/list disappear entirely until the user backs out.
+  const isMobile = useMediaQuery('(max-width: 767.98px)');
+  const showMobileFullScreen = isMobile && !!active;
+
+  if (showMobileFullScreen) {
+    return (
+      <MobileNoteShell
+        note={active!}
+        availableTags={tags}
+        folders={folders}
+        onChange={(patch) => updateNote(active!, patch)}
+        onDelete={() => removeNote(active!)}
+        onTogglePin={() => togglePin(active!)}
+        onToggleArchive={() => toggleArchive(active!)}
+        onBack={() => setActiveId(null)}
+        onOpenByTitle={openByTitle}
+        onRestored={(n) => {
+          setNotes((cur) => cur.map((x) => (x.id === n.id ? n : x)));
+          setActiveFallback(n);
+        }}
+      />
+    );
+  }
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-4 min-h-[60vh]">
@@ -648,155 +678,22 @@ function NoteEditor({
   onOpenByTitle: (title: string) => void;
   onRestored: (n: Note) => void;
 }) {
-  const [title, setTitle] = useState(note.title);
-  const [content, setContent] = useState(note.content);
-  const [tags, setTags] = useState<string[]>(note.tags);
+  const state = useNoteEditingState(note, onChange);
   const [tagInput, setTagInput] = useState('');
-  const [backlinks, setBacklinks] = useState<NoteTitleResult[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
-
-  // ----- [[…]] autocomplete state -----
-  // MDEditor doesn't expose a ref for its internal textarea, so we anchor on
-  // the wrapper div and grab the textarea via querySelector when we need it.
-  const editorWrapRef = useRef<HTMLDivElement | null>(null);
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const getTextarea = (): HTMLTextAreaElement | null => {
-    if (textareaRef.current && document.body.contains(textareaRef.current)) {
-      return textareaRef.current;
-    }
-    const ta = editorWrapRef.current?.querySelector<HTMLTextAreaElement>('textarea') ?? null;
-    textareaRef.current = ta;
-    return ta;
-  };
-  const [autocomplete, setAutocomplete] = useState<{ query: string; index: number } | null>(null);
-  const [titleSuggestions, setTitleSuggestions] = useState<NoteTitleResult[]>([]);
-
-  useEffect(() => {
-    setTitle(note.title);
-    setContent(note.content);
-    setTags(note.tags);
-    setAutocomplete(null);
-  }, [note.id]);
-
-  useEffect(() => {
-    const t = setTimeout(() => {
-      if (title !== note.title || content !== note.content || tags.join(',') !== note.tags.join(',')) {
-        onChange({ title, content, tags });
-      }
-    }, 600);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [title, content, tags]);
-
-  // Backlinks — refetch when the note id changes (also after autosave so a
-  // freshly typed [[Title]] elsewhere shows up). We refetch on save by
-  // depending on note.updated_at as well.
-  useEffect(() => {
-    let cancelled = false;
-    SearchApi.noteBacklinks(note.id)
-      .then((r) => {
-        if (!cancelled) setBacklinks(r);
-      })
-      .catch(() => {
-        /* non-critical */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [note.id, note.updated_at]);
-
-  // Detect `[[…` near the cursor on every change. If found, open the
-  // autocomplete with the in-flight query; otherwise close it.
-  const detectAutocomplete = (newContent: string) => {
-    const ta = getTextarea();
-    if (!ta) {
-      setAutocomplete(null);
-      return;
-    }
-    const cursor = ta.selectionStart ?? newContent.length;
-    const before = newContent.slice(0, cursor);
-    const lastOpen = before.lastIndexOf('[[');
-    if (lastOpen === -1) {
-      setAutocomplete(null);
-      return;
-    }
-    const between = before.slice(lastOpen + 2);
-    if (between.includes(']]') || between.includes('\n')) {
-      setAutocomplete(null);
-      return;
-    }
-    setAutocomplete((prev) => ({ query: between, index: prev?.query === between ? prev.index : 0 }));
-  };
-
-  // Fetch title suggestions whenever the autocomplete query changes.
-  useEffect(() => {
-    if (!autocomplete) {
-      setTitleSuggestions([]);
-      return;
-    }
-    let cancelled = false;
-    SearchApi.noteTitles(autocomplete.query)
-      .then((r) => {
-        if (!cancelled) setTitleSuggestions(r.filter((s) => s.id !== note.id));
-      })
-      .catch(() => {
-        /* ignore */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [autocomplete?.query, note.id]);
-
-  const insertWikilink = (linkTitle: string) => {
-    const ta = getTextarea();
-    if (!ta) return;
-    const cursor = ta.selectionStart ?? content.length;
-    const before = content.slice(0, cursor);
-    const lastOpen = before.lastIndexOf('[[');
-    if (lastOpen === -1) return;
-    const after = content.slice(cursor);
-    const insert = `[[${linkTitle}]]`;
-    const newContent = content.slice(0, lastOpen) + insert + after;
-    setContent(newContent);
-    setAutocomplete(null);
-    requestAnimationFrame(() => {
-      const pos = lastOpen + insert.length;
-      ta.focus();
-      ta.selectionStart = ta.selectionEnd = pos;
-    });
-  };
-
-  const onTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (!autocomplete || titleSuggestions.length === 0) return;
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setAutocomplete({
-        ...autocomplete,
-        index: (autocomplete.index + 1) % titleSuggestions.length,
-      });
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setAutocomplete({
-        ...autocomplete,
-        index: (autocomplete.index - 1 + titleSuggestions.length) % titleSuggestions.length,
-      });
-    } else if (e.key === 'Enter' || e.key === 'Tab') {
-      e.preventDefault();
-      insertWikilink(titleSuggestions[autocomplete.index].title);
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      setAutocomplete(null);
-    }
-  };
 
   return (
     <>
+      {/* Slim header: back, title, folder, pin, kebab. Archivieren / Verlauf
+          / Löschen all live in the kebab now — they're rare, never need to
+          be visible on every screen. */}
       <div className="flex items-center gap-2 flex-wrap">
         <button className="btn-ghost text-sm" onClick={onBack}>← Zurück</button>
         <input
           className="input flex-1 text-lg font-semibold min-w-[180px]"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
+          value={state.title}
+          onChange={(e) => state.setTitle(e.target.value)}
+          placeholder="Titel"
         />
         <select
           className="input py-1.5 w-36"
@@ -814,36 +711,43 @@ function NoteEditor({
         </select>
         <button
           type="button"
-          className={`btn-ghost text-sm ${note.is_pinned ? 'text-brand-700' : ''}`}
+          aria-label={note.is_pinned ? 'Pin entfernen' : 'Anpinnen'}
+          aria-pressed={note.is_pinned}
           disabled={note.is_archived}
           onClick={onTogglePin}
-          title={note.is_pinned ? 'Pin entfernen' : 'Anpinnen'}
+          className={`size-9 inline-flex items-center justify-center rounded-ctl transition ${
+            note.is_pinned ? 'text-brand-700' : 'text-muted hover:text-ink'
+          } ${note.is_archived ? 'opacity-30 cursor-not-allowed' : ''}`}
         >
-          📌 {note.is_pinned ? 'Angepinnt' : 'Pinnen'}
+          <PinIcon filled={note.is_pinned} />
         </button>
-        <button
-          type="button"
-          className="btn-ghost text-sm"
-          onClick={onToggleArchive}
-          title={note.is_archived ? 'Wiederherstellen' : 'Archivieren'}
-        >
-          {note.is_archived ? '↩ Wiederherstellen' : '🗄 Archivieren'}
-        </button>
-        <button
-          type="button"
-          className="btn-ghost text-sm"
-          onClick={() => setHistoryOpen(true)}
-          title="Versionsverlauf"
-        >
-          🕒 Verlauf
-        </button>
-        <button className="btn-ghost text-sm text-danger" onClick={onDelete}>Löschen</button>
+        <NoteActionsMenu
+          isPinned={note.is_pinned}
+          isArchived={note.is_archived}
+          onTogglePin={onTogglePin}
+          onChangeFolder={() => {
+            // Surface a quick prompt — desktop also has the inline select,
+            // so this entry mostly mirrors mobile behavior. Focus the select.
+            const sel = document.querySelector<HTMLSelectElement>('select.input');
+            sel?.focus();
+          }}
+          onToggleArchive={onToggleArchive}
+          onShowHistory={() => setHistoryOpen(true)}
+          onDelete={onDelete}
+          buttonClassName="size-9"
+        />
       </div>
+
       <div className="flex flex-wrap items-center gap-1">
-        {tags.map((t) => (
+        {state.tags.map((t) => (
           <span key={t} className="inline-flex items-center gap-1 text-xs bg-page px-2 py-1 rounded-full">
             #{t}
-            <button onClick={() => setTags(tags.filter((x) => x !== t))} className="text-muted/70 hover:text-danger">×</button>
+            <button
+              onClick={() => state.setTags(state.tags.filter((x) => x !== t))}
+              className="text-muted/70 hover:text-danger"
+            >
+              ×
+            </button>
           </span>
         ))}
         <input
@@ -856,7 +760,7 @@ function NoteEditor({
             if (e.key === 'Enter' || e.key === ',') {
               e.preventDefault();
               const v = tagInput.trim().replace(/^#/, '');
-              if (v && !tags.includes(v)) setTags([...tags, v]);
+              if (v && !state.tags.includes(v)) state.setTags([...state.tags, v]);
               setTagInput('');
             }
           }}
@@ -867,22 +771,36 @@ function NoteEditor({
           ))}
         </datalist>
       </div>
-      <div data-color-mode="light" className="flex-1 min-h-[400px] relative" ref={editorWrapRef}>
+
+      {/* Compact icon-only toolbar — replaces the lib's built-in toolbar
+          and matches the mobile bottom toolbar for consistency. */}
+      <NoteToolbar
+        variant="desktop"
+        content={state.content}
+        setContent={state.setContent}
+        getTextarea={state.getTextarea}
+      />
+
+      <div
+        data-color-mode="light"
+        className="flex-1 min-h-[400px] relative"
+        ref={state.editorWrapRef}
+      >
         <MDEditor
-          value={content}
+          value={state.content}
           onChange={(v) => {
             const next = v ?? '';
-            setContent(next);
-            detectAutocomplete(next);
+            state.setContent(next);
+            state.detectAutocomplete(next);
           }}
           height={500}
           preview="live"
+          hideToolbar
           textareaProps={{
-            onKeyDown: onTextareaKeyDown,
-            onClick: () => detectAutocomplete(content),
-            onKeyUp: () => detectAutocomplete(content),
-            placeholder:
-              'Inhalt… Tippe [[ um eine andere Notiz zu verlinken.',
+            onKeyDown: state.onTextareaKeyDown,
+            onClick: () => state.detectAutocomplete(state.content),
+            onKeyUp: () => state.detectAutocomplete(state.content),
+            placeholder: 'Inhalt… Tippe [[ um eine andere Notiz zu verlinken.',
           }}
           previewOptions={{
             remarkPlugins: [remarkWikilinks],
@@ -912,41 +830,49 @@ function NoteEditor({
             },
           }}
         />
-        {autocomplete && titleSuggestions.length > 0 && (
-          <div className="absolute z-20 left-2 right-2 sm:right-auto sm:max-w-sm bottom-2 card p-1 shadow-flat border border-line bg-surface">
-            <div className="text-[11px] text-muted px-2 py-1">
-              Notiz verlinken — ↑/↓ wählen, Enter einfügen, Esc abbrechen
-            </div>
-            <ul className="max-h-48 overflow-auto">
-              {titleSuggestions.map((s, i) => (
-                <li key={s.id}>
-                  <button
-                    type="button"
-                    onMouseDown={(e) => {
-                      e.preventDefault(); // keep textarea focus
-                      insertWikilink(s.title);
-                    }}
-                    onMouseEnter={() => setAutocomplete({ ...autocomplete, index: i })}
-                    className={`w-full text-left px-2 py-1.5 text-sm rounded ${
-                      i === autocomplete.index ? 'bg-brand-50 text-brand-700' : 'hover:bg-page'
-                    }`}
-                  >
-                    {s.title}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
+        {state.autocomplete && state.titleSuggestions.length > 0 && (
+          (() => {
+            // Snapshot so TS narrows `ac` cleanly inside callbacks.
+            const ac = state.autocomplete;
+            return (
+              <div className="absolute z-20 left-2 right-2 sm:right-auto sm:max-w-sm bottom-2 card p-1 shadow-flat border border-line bg-surface">
+                <div className="text-[11px] text-muted px-2 py-1">
+                  Notiz verlinken — ↑/↓ wählen, Enter einfügen, Esc abbrechen
+                </div>
+                <ul className="max-h-48 overflow-auto">
+                  {state.titleSuggestions.map((s, i) => (
+                    <li key={s.id}>
+                      <button
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault(); // keep textarea focus
+                          state.insertWikilink(s.title);
+                        }}
+                        onMouseEnter={() =>
+                          state.setAutocomplete({ ...ac, index: i })
+                        }
+                        className={`w-full text-left px-2 py-1.5 text-sm rounded ${
+                          i === ac.index ? 'bg-brand-50 text-brand-700' : 'hover:bg-page'
+                        }`}
+                      >
+                        {s.title}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })()
         )}
       </div>
 
-      {backlinks.length > 0 && (
+      {state.backlinks.length > 0 && (
         <section className="border border-line rounded-card p-3 mt-2">
           <div className="text-xs uppercase tracking-wide text-muted mb-2">
-            Wird erwähnt in ({backlinks.length})
+            Wird erwähnt in ({state.backlinks.length})
           </div>
           <ul className="space-y-1">
-            {backlinks.map((b) => (
+            {state.backlinks.map((b) => (
               <li key={b.id}>
                 <button
                   type="button"
@@ -961,6 +887,74 @@ function NoteEditor({
         </section>
       )}
 
+      <VersionHistoryPanel
+        noteId={note.id}
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        onRestored={onRestored}
+      />
+    </>
+  );
+}
+
+/** Pin icon — shared between desktop header and mobile title row. Filled
+ *  state matches the spec ("filled when pinned"). */
+function PinIcon({ filled }: { filled: boolean }) {
+  // Inline SVG so we don't pull two pin variants from lucide just for this.
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path
+        d="M12 17v5M9 10.76V6h6v4.76l3 3.24v2H6v-2l3-3.24z"
+        fill={filled ? 'currentColor' : 'none'}
+      />
+    </svg>
+  );
+}
+
+/** Mobile shell — owns the version history panel state so it can sit on top
+ *  of the full-screen layout, otherwise the panel would be trapped inside
+ *  the same fixed container and the backdrop wouldn't cover the topbar. */
+function MobileNoteShell({
+  note,
+  availableTags,
+  folders,
+  onChange,
+  onDelete,
+  onTogglePin,
+  onToggleArchive,
+  onBack,
+  onOpenByTitle,
+  onRestored,
+}: {
+  note: Note;
+  availableTags: Tag[];
+  folders: NoteFolder[];
+  onChange: (patch: Partial<Note>) => void;
+  onDelete: () => void;
+  onTogglePin: () => void;
+  onToggleArchive: () => void;
+  onBack: () => void;
+  onOpenByTitle: (title: string) => void;
+  onRestored: (n: Note) => void;
+}) {
+  const state = useNoteEditingState(note, onChange);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  return (
+    <>
+      <NoteMobileLayout
+        note={note}
+        state={state}
+        availableTags={availableTags}
+        folders={folders}
+        onChange={onChange}
+        onDelete={onDelete}
+        onTogglePin={onTogglePin}
+        onToggleArchive={onToggleArchive}
+        onShowHistory={() => setHistoryOpen(true)}
+        onBack={onBack}
+        onOpenByTitle={onOpenByTitle}
+      />
       <VersionHistoryPanel
         noteId={note.id}
         open={historyOpen}
