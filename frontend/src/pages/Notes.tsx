@@ -646,7 +646,18 @@ function NoteEditor({
   const [historyOpen, setHistoryOpen] = useState(false);
 
   // ----- [[…]] autocomplete state -----
+  // MDEditor doesn't expose a ref for its internal textarea, so we anchor on
+  // the wrapper div and grab the textarea via querySelector when we need it.
+  const editorWrapRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const getTextarea = (): HTMLTextAreaElement | null => {
+    if (textareaRef.current && document.body.contains(textareaRef.current)) {
+      return textareaRef.current;
+    }
+    const ta = editorWrapRef.current?.querySelector<HTMLTextAreaElement>('textarea') ?? null;
+    textareaRef.current = ta;
+    return ta;
+  };
   const [autocomplete, setAutocomplete] = useState<{ query: string; index: number } | null>(null);
   const [titleSuggestions, setTitleSuggestions] = useState<NoteTitleResult[]>([]);
 
@@ -687,7 +698,7 @@ function NoteEditor({
   // Detect `[[…` near the cursor on every change. If found, open the
   // autocomplete with the in-flight query; otherwise close it.
   const detectAutocomplete = (newContent: string) => {
-    const ta = textareaRef.current;
+    const ta = getTextarea();
     if (!ta) {
       setAutocomplete(null);
       return;
@@ -727,7 +738,7 @@ function NoteEditor({
   }, [autocomplete?.query, note.id]);
 
   const insertWikilink = (linkTitle: string) => {
-    const ta = textareaRef.current;
+    const ta = getTextarea();
     if (!ta) return;
     const cursor = ta.selectionStart ?? content.length;
     const before = content.slice(0, cursor);
@@ -846,7 +857,7 @@ function NoteEditor({
           ))}
         </datalist>
       </div>
-      <div data-color-mode="light" className="flex-1 min-h-[400px] relative">
+      <div data-color-mode="light" className="flex-1 min-h-[400px] relative" ref={editorWrapRef}>
         <MDEditor
           value={content}
           onChange={(v) => {
@@ -857,7 +868,6 @@ function NoteEditor({
           height={500}
           preview="live"
           textareaProps={{
-            ref: textareaRef as any,
             onKeyDown: onTextareaKeyDown,
             onClick: () => detectAutocomplete(content),
             onKeyUp: () => detectAutocomplete(content),
