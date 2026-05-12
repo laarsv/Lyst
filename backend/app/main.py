@@ -13,6 +13,7 @@ from app.routers import (
     admin, auth, items, lists, me, meal_plans, note_folders, notes, recipes,
     reminders, search, share, snapshots, tags, ws,
 )
+from app.services.ollama import prewarm_text
 from app.services.scheduler import start_scheduler, stop_scheduler
 
 logging.basicConfig(
@@ -26,6 +27,13 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     start_scheduler()
     logger.info("%s API starting", settings.APP_NAME)
+    # Fire-and-forget: load the text model into RAM so the first user request
+    # is instant. Wrapped in try because Ollama may be down during startup —
+    # the service must still come up so the rest of the API works.
+    try:
+        await prewarm_text()
+    except Exception as e:  # noqa: BLE001 — never fail startup because of warmup
+        logger.warning("Ollama pre-warm errored: %s", e)
     try:
         yield
     finally:

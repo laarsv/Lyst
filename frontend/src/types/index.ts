@@ -279,6 +279,31 @@ export interface LlmSettings {
   anthropic: AnthropicInfo;
 }
 
+export interface OllamaLoadedModel {
+  name?: string;
+  model?: string;
+  size?: number;
+  size_vram?: number;
+  expires_at?: string | null;
+  details?: {
+    parameter_size?: string;
+    quantization_level?: string;
+    family?: string;
+  };
+}
+
+export interface OllamaStatus {
+  base_url: string;
+  configured: {
+    text_model: string;
+    vision_model: string;
+    text_keep_alive: string;
+    vision_keep_alive: string;
+  };
+  loaded: OllamaLoadedModel[];
+  error: string | null;
+}
+
 export interface ListSnapshot {
   id: number;
   list_id: number;

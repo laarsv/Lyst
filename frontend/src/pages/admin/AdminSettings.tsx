@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AdminApi } from '@/api/endpoints';
-import type { LlmProvider, LlmSettings } from '@/types';
+import type { LlmProvider, LlmSettings, OllamaStatus } from '@/types';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
 import { useAuthStore } from '@/store/auth';
@@ -122,8 +122,104 @@ export function AdminSettingsPage() {
         ) : null}
       </section>
 
+      <OllamaStatusSection />
       <TestEmailSection />
     </div>
+  );
+}
+
+function OllamaStatusSection() {
+  const [status, setStatus] = useState<OllamaStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      setStatus(await AdminApi.getOllamaStatus());
+    } catch (e) {
+      toast.error(getApiError(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  return (
+    <section className="card p-6 mt-6">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="font-semibold">Ollama-Status</h2>
+          <p className="text-sm text-muted">
+            Welche Modelle hat Ollama gerade im Speicher? Dank{' '}
+            <code className="bg-page px-1 py-0.5 rounded">keep_alive</code> sollte das Text-Modell
+            permanent geladen sein — Antworten kommen dann sofort.
+          </p>
+        </div>
+        <button className="text-brand text-sm hover:underline shrink-0" onClick={load} disabled={loading}>
+          Aktualisieren
+        </button>
+      </div>
+
+      {loading && !status ? (
+        <div className="text-muted/70 py-4 text-center text-sm">Lade…</div>
+      ) : status ? (
+        <>
+          <div className="grid sm:grid-cols-2 gap-3 mb-4 text-xs">
+            <div className="rounded-lg border border-line p-3">
+              <div className="text-muted">Text-Modell</div>
+              <div className="font-medium font-mono mt-1">{status.configured.text_model}</div>
+              <div className="text-muted mt-0.5">
+                keep_alive:{' '}
+                <code className="bg-page px-1 py-0.5 rounded">{status.configured.text_keep_alive}</code>
+              </div>
+            </div>
+            <div className="rounded-lg border border-line p-3">
+              <div className="text-muted">Vision-Modell</div>
+              <div className="font-medium font-mono mt-1">{status.configured.vision_model || '—'}</div>
+              <div className="text-muted mt-0.5">
+                keep_alive:{' '}
+                <code className="bg-page px-1 py-0.5 rounded">{status.configured.vision_keep_alive}</code>
+              </div>
+            </div>
+          </div>
+
+          {status.error ? (
+            <div className="text-sm text-danger bg-danger-50 border border-danger/30 rounded-lg p-3">
+              {status.error}
+            </div>
+          ) : status.loaded.length === 0 ? (
+            <div className="text-sm text-muted bg-page border border-line rounded-lg p-3">
+              Aktuell ist kein Modell geladen. Beim nächsten Aufruf zahlst du den Lade-Aufwand —
+              prüfe die <code className="bg-surface px-1 py-0.5 rounded">keep_alive</code>-Werte.
+            </div>
+          ) : (
+            <ul className="divide-y divide-line border border-line rounded-xl">
+              {status.loaded.map((m, i) => {
+                const name = m.name || m.model || 'unbekannt';
+                const sizeGb = m.size_vram || m.size;
+                return (
+                  <li key={`${name}-${i}`} className="p-3 flex items-center gap-3">
+                    <span className="size-2 rounded-full bg-brand shrink-0" title="Im Speicher" />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium font-mono truncate">{name}</div>
+                      <div className="text-xs text-muted flex flex-wrap gap-x-3">
+                        {m.details?.parameter_size && <span>{m.details.parameter_size}</span>}
+                        {m.details?.quantization_level && <span>{m.details.quantization_level}</span>}
+                        {sizeGb && <span>{(sizeGb / 1024 ** 3).toFixed(1)} GB im RAM</span>}
+                        {m.expires_at && <span>läuft ab: {new Date(m.expires_at).toLocaleTimeString('de-DE')}</span>}
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </>
+      ) : null}
+    </section>
   );
 }
 

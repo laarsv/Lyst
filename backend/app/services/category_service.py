@@ -10,10 +10,9 @@ from __future__ import annotations
 
 import logging
 
-import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
+from app.services.ollama import OllamaError, call_text
 from app.services.settings_service import get_ollama_model
 
 logger = logging.getLogger(__name__)
@@ -46,24 +45,22 @@ async def categorize_item(db: AsyncSession, text: str) -> str | None:
     if not cleaned:
         return DEFAULT_CATEGORY
     model = await get_ollama_model(db)
-    body = {
-        "model": model,
-        "system": SYSTEM_PROMPT,
-        "prompt": cleaned,
-        "stream": False,
-        "options": {"temperature": 0.0, "num_predict": 24},
-    }
     try:
         # Short timeout — we don't want a slow Ollama to block the worker
-        # for minutes per item; 30 s is plenty for a one-word response.
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            r = await client.post(f"{settings.OLLAMA_BASE_URL}/api/generate", json=body)
-            r.raise_for_status()
-            raw = (r.json().get("response") or "").strip()
-    except httpx.HTTPError as e:
-        logger.info("Ollama categorization failed for %r: %s", cleaned, e)
+        # for minutes per item; 30 s is plenty for a one-word response on
+        # an already-loaded model (which it is, thanks to keep_alive=-1).
+        raw = await call_text(
+            cleaned,
+            system=SYSTEM_PROMPT,
+            model=model,
+            temperature=0.0,
+            max_tokens=24,
+            timeout=30.0,
+        )
+    except OllamaError as e:
+        logger.info("Ollama categorization failed for %r: %s", cleaned, e.message)
         return None
-    return _normalize(raw)
+    return _normalize(raw.strip())
 
 
 def _normalize(raw: str) -> str:

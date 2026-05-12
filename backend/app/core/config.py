@@ -1,9 +1,11 @@
 from functools import lru_cache
+
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", populate_by_name=True)
 
     APP_NAME: str = "Lyst"
     DATABASE_URL: str = "postgresql+asyncpg://lyst:lyst@db:5432/lyst"
@@ -25,11 +27,22 @@ class Settings(BaseSettings):
     INITIAL_ADMIN_NAME: str = "Admin"
 
     OLLAMA_BASE_URL: str = "http://localhost:11434"
-    OLLAMA_MODEL: str = "llama3"
+    # Text-generation model. New env var name is OLLAMA_TEXT_MODEL; the
+    # legacy OLLAMA_MODEL is still accepted so existing .env files keep working.
+    OLLAMA_TEXT_MODEL: str = Field(
+        default="llama3.1:8b",
+        validation_alias=AliasChoices("OLLAMA_TEXT_MODEL", "OLLAMA_MODEL"),
+    )
     # Vision-capable model used by the photo importer (llava, llama3.2-vision,
     # qwen2.5-vl, …). Empty string disables the photo-import feature with a
     # clear 503 instead of a confusing model error.
-    OLLAMA_VISION_MODEL: str = "llava"
+    OLLAMA_VISION_MODEL: str = "llava:7b"
+    # keep_alive controls how long Ollama keeps a model resident in (V)RAM after
+    # a request. "-1" = forever, "1h"/"30m"/"5s" = duration, "0" = unload now.
+    # Text model is hot-path (every shopping item is categorized) so we pin it
+    # forever; vision is rare so 1h is plenty and frees RAM if unused.
+    OLLAMA_TEXT_KEEP_ALIVE: str = "-1"
+    OLLAMA_VISION_KEEP_ALIVE: str = "1h"
     # 7B models on CPU-only home servers can need 60–180s for the first call
     # (model load) and 30–90s for warm inference. 300s gives headroom for the
     # mini-PC case; bump via env if you have an even slower setup.

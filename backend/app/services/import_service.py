@@ -1,11 +1,17 @@
-"""Recipe URL import via local Ollama.
+"""Recipe URL/photo import & "was kann ich kochen?" suggestions.
 
-Pipeline: fetch URL → strip boilerplate → send text to Ollama → parse JSON →
-return a Pydantic-validated `ImportedRecipe`. The endpoint never persists —
-the frontend prefills its edit form and the user saves explicitly.
+Pipeline (URL): fetch URL → strip boilerplate → send text to LLM → parse
+JSON → return a Pydantic-validated `ImportedRecipe`. The endpoint never
+persists — the frontend prefills its edit form and the user saves
+explicitly.
+
+All Ollama traffic goes through `app.services.ollama`. Direct httpx calls
+to `/api/generate` are not allowed in this file (or anywhere else) — that
+keeps keep_alive consistent so models stay warm.
 """
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import re
@@ -19,6 +25,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.recipe import RecipeCategory
+from app.services.ollama import (
+    OllamaError,
+    call_text,
+    call_vision,
+    list_installed_models,
+)
 from app.services.settings_service import (
     get_anthropic_model,
     get_llm_provider,
@@ -101,6 +113,10 @@ class RecipeImportError(Exception):
         self.message = message
 
 
+def _from_ollama_error(e: OllamaError) -> RecipeImportError:
+    return RecipeImportError(e.status, e.message)
+
+
 async def _fetch_html(url: str) -> str:
     try:
         async with httpx.AsyncClient(
@@ -157,47 +173,17 @@ def _extract_json(raw: str) -> dict[str, Any]:
     try:
         return json.loads(s)
     except json.JSONDecodeError as e:
-        logger.error("Ollama returned non-JSON response: %s", raw[:500])
+        logger.error("LLM returned non-JSON response: %s", raw[:500])
         raise RecipeImportError(500, "Rezept konnte nicht extrahiert werden") from e
 
 
-async def _call_ollama(text: str, model: str) -> dict[str, Any]:
-    body = {
-        "model": model,
-        "system": SYSTEM_PROMPT,
-        "prompt": text,
-        "stream": False,
-        "format": "json",
-        "options": {"temperature": 0.1},
-    }
-    try:
-        async with httpx.AsyncClient(timeout=settings.OLLAMA_TIMEOUT_SECONDS) as client:
-            r = await client.post(f"{settings.OLLAMA_BASE_URL}/api/generate", json=body)
-            r.raise_for_status()
-            data = r.json()
-    except httpx.TimeoutException as e:
-        logger.error("Ollama timeout after %ss", settings.OLLAMA_TIMEOUT_SECONDS)
-        raise RecipeImportError(504, "KI-Service hat zu lange gebraucht") from e
-    except httpx.HTTPError as e:
-        logger.error("Ollama unreachable at %s: %s", settings.OLLAMA_BASE_URL, e)
-        raise RecipeImportError(503, "KI-Service nicht erreichbar") from e
-
-    response_text = data.get("response", "")
-    return _extract_json(response_text)
-
-
 async def list_ollama_models() -> list[dict[str, Any]]:
-    """Query Ollama for installed models. Returns the raw `models` list from
-    /api/tags (each entry has at least `name`, often `size` and `details`)."""
+    """Back-compat shim — admin router calls this. Forwards to the central
+    Ollama service and converts errors into the local exception type."""
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(f"{settings.OLLAMA_BASE_URL}/api/tags")
-            r.raise_for_status()
-            data = r.json()
-    except httpx.HTTPError as e:
-        logger.error("Ollama tags fetch failed: %s", e)
-        raise RecipeImportError(503, "KI-Service nicht erreichbar") from e
-    return list(data.get("models", []))
+        return await list_installed_models()
+    except OllamaError as e:
+        raise _from_ollama_error(e) from e
 
 
 # ---------- Anthropic provider ----------
@@ -277,7 +263,17 @@ async def import_recipe_from_url(url: str, db: AsyncSession) -> ImportedRecipe:
         parsed = await _call_anthropic(text, model)
     else:
         model = await get_ollama_model(db)
-        parsed = await _call_ollama(text, model)
+        try:
+            raw = await call_text(
+                text,
+                system=SYSTEM_PROMPT,
+                model=model,
+                json_mode=True,
+                temperature=0.1,
+            )
+        except OllamaError as e:
+            raise _from_ollama_error(e) from e
+        parsed = _extract_json(raw)
     parsed["source_url"] = url
 
     # Renumber step positions deterministically (LLM may skip or repeat)
@@ -295,54 +291,28 @@ async def import_recipe_from_url(url: str, db: AsyncSession) -> ImportedRecipe:
 
 # ---------- Photo import via Ollama vision model ----------
 
-import base64
-
 PHOTO_SYSTEM_PROMPT = SYSTEM_PROMPT  # same JSON contract
 
 
 async def import_recipe_from_image(image_bytes: bytes) -> ImportedRecipe:
     """Send the uploaded image to a vision-capable Ollama model and parse
     the same recipe JSON shape as the URL importer."""
-    if not settings.OLLAMA_VISION_MODEL:
-        raise RecipeImportError(503, "Kein Vision-Modell konfiguriert (OLLAMA_VISION_MODEL)")
-
     b64 = base64.b64encode(image_bytes).decode("ascii")
-    body = {
-        "model": settings.OLLAMA_VISION_MODEL,
-        "prompt": (
-            "Lies dieses Rezept-Bild und extrahiere es als strukturiertes Rezept. "
-            "Antworte ausschließlich im vorgegebenen JSON-Format."
-        ),
-        "system": PHOTO_SYSTEM_PROMPT,
-        "images": [b64],
-        "stream": False,
-        "format": "json",
-        "options": {"temperature": 0.1},
-    }
     try:
-        async with httpx.AsyncClient(timeout=settings.OLLAMA_TIMEOUT_SECONDS) as client:
-            r = await client.post(f"{settings.OLLAMA_BASE_URL}/api/generate", json=body)
-            r.raise_for_status()
-            data = r.json()
-    except httpx.TimeoutException as e:
-        logger.error("Ollama vision timeout after %ss", settings.OLLAMA_TIMEOUT_SECONDS)
-        raise RecipeImportError(504, "KI-Service hat zu lange gebraucht") from e
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 404:
-            raise RecipeImportError(
-                503,
-                (
-                    f"Vision-Modell '{settings.OLLAMA_VISION_MODEL}' ist nicht installiert. "
-                    f"Per `ollama pull {settings.OLLAMA_VISION_MODEL}` nachziehen."
-                ),
-            ) from e
-        logger.error("Ollama vision HTTP error: %s", e)
-        raise RecipeImportError(502, "KI-Service-Fehler") from e
-    except httpx.HTTPError as e:
-        logger.error("Ollama vision unreachable at %s: %s", settings.OLLAMA_BASE_URL, e)
-        raise RecipeImportError(503, "KI-Service nicht erreichbar") from e
+        raw = await call_vision(
+            (
+                "Lies dieses Rezept-Bild und extrahiere es als strukturiertes Rezept. "
+                "Antworte ausschließlich im vorgegebenen JSON-Format."
+            ),
+            b64,
+            system=PHOTO_SYSTEM_PROMPT,
+            json_mode=True,
+            temperature=0.1,
+        )
+    except OllamaError as e:
+        raise _from_ollama_error(e) from e
 
-    parsed = _extract_json(data.get("response", ""))
+    parsed = _extract_json(raw)
     if isinstance(parsed.get("steps"), list):
         for i, step in enumerate(parsed["steps"], start=1):
             if isinstance(step, dict):
@@ -413,24 +383,16 @@ async def suggest_recipes_from_ingredients(
         raw = "".join(b.text for b in response.content if getattr(b, "type", None) == "text")
     else:
         ollama_model = await get_ollama_model(db)
-        body = {
-            "model": ollama_model,
-            "system": SUGGEST_SYSTEM_PROMPT,
-            "prompt": user_text,
-            "stream": False,
-            "format": "json",
-            "options": {"temperature": 0.2},
-        }
         try:
-            async with httpx.AsyncClient(timeout=settings.OLLAMA_TIMEOUT_SECONDS) as client:
-                r = await client.post(f"{settings.OLLAMA_BASE_URL}/api/generate", json=body)
-                r.raise_for_status()
-                data = r.json()
-        except httpx.TimeoutException as e:
-            raise RecipeImportError(504, "KI-Service hat zu lange gebraucht") from e
-        except httpx.HTTPError as e:
-            raise RecipeImportError(503, "KI-Service nicht erreichbar") from e
-        raw = data.get("response", "")
+            raw = await call_text(
+                user_text,
+                system=SUGGEST_SYSTEM_PROMPT,
+                model=ollama_model,
+                json_mode=True,
+                temperature=0.2,
+            )
+        except OllamaError as e:
+            raise _from_ollama_error(e) from e
 
     # The model may return either a JSON array directly or a wrapped object.
     s = raw.strip()

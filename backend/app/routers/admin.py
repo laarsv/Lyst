@@ -32,6 +32,7 @@ from app.services.import_service import (
     RecipeImportError,
     list_ollama_models,
 )
+from app.services.ollama import OllamaError, list_loaded_models
 from app.services.settings_service import (
     KEY_ANTHROPIC_MODEL,
     KEY_LLM_PROVIDER,
@@ -158,9 +159,9 @@ async def get_llm_settings(db: AsyncSession = Depends(get_db)):
             "provider": provider,
             "ollama": {
                 "models": ollama_models,
-                "selected": ollama_override or env_settings.OLLAMA_MODEL,
+                "selected": ollama_override or env_settings.OLLAMA_TEXT_MODEL,
                 "is_override": ollama_override is not None,
-                "env_default": env_settings.OLLAMA_MODEL,
+                "env_default": env_settings.OLLAMA_TEXT_MODEL,
                 "base_url": env_settings.OLLAMA_BASE_URL,
                 "error": ollama_error,
             },
@@ -187,7 +188,7 @@ async def put_ollama_model(payload: ModelSetting, db: AsyncSession = Depends(get
     Setting null falls back to the env default."""
     value = payload.model.strip() if payload.model and payload.model.strip() else None
     await set_setting(db, KEY_OLLAMA_MODEL, value)
-    return ok({"selected": value or env_settings.OLLAMA_MODEL, "is_override": value is not None})
+    return ok({"selected": value or env_settings.OLLAMA_TEXT_MODEL, "is_override": value is not None})
 
 
 @router.put("/llm/anthropic-model")
@@ -195,6 +196,31 @@ async def put_anthropic_model(payload: ModelSetting, db: AsyncSession = Depends(
     value = payload.model.strip() if payload.model and payload.model.strip() else None
     await set_setting(db, KEY_ANTHROPIC_MODEL, value)
     return ok({"selected": value or env_settings.ANTHROPIC_MODEL, "is_override": value is not None})
+
+
+# ---------- Ollama runtime status (which models are loaded right now) ----------
+
+@router.get("/ollama-status")
+async def get_ollama_status():
+    """Returns the configured text/vision models plus Ollama's /api/ps —
+    the list of models currently held in memory. Powers the admin widget
+    that shows whether keep_alive is doing its job."""
+    payload: dict = {
+        "base_url": env_settings.OLLAMA_BASE_URL,
+        "configured": {
+            "text_model": env_settings.OLLAMA_TEXT_MODEL,
+            "vision_model": env_settings.OLLAMA_VISION_MODEL,
+            "text_keep_alive": env_settings.OLLAMA_TEXT_KEEP_ALIVE,
+            "vision_keep_alive": env_settings.OLLAMA_VISION_KEEP_ALIVE,
+        },
+        "loaded": [],
+        "error": None,
+    }
+    try:
+        payload["loaded"] = await list_loaded_models()
+    except OllamaError as e:
+        payload["error"] = e.message
+    return ok(payload)
 
 
 # ---------- Mail test ----------

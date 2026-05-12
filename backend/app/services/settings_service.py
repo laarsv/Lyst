@@ -32,8 +32,8 @@ async def set_setting(db: AsyncSession, key: str, value: str | None) -> None:
 
 
 async def get_ollama_model(db: AsyncSession) -> str:
-    """Returns the admin-selected Ollama model, falling back to the env default."""
-    return (await get_setting(db, KEY_OLLAMA_MODEL)) or env_settings.OLLAMA_MODEL
+    """Returns the admin-selected Ollama text model, falling back to the env default."""
+    return (await get_setting(db, KEY_OLLAMA_MODEL)) or env_settings.OLLAMA_TEXT_MODEL
 
 
 async def get_anthropic_model(db: AsyncSession) -> str:

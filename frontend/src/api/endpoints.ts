@@ -12,6 +12,7 @@ import type {
   ListSnapshot,
   LlmProvider,
   LlmSettings,
+  OllamaStatus,
   ListSummary,
   ListType,
   MealPlan,
@@ -89,6 +90,8 @@ export const AdminApi = {
     api
       .post<{ data: { to: string; message: string } }>('/admin/test-email', { to: to || null })
       .then(unwrap),
+  getOllamaStatus: () =>
+    api.get<{ data: OllamaStatus }>('/admin/ollama-status').then(unwrap),
 };
 
 export const ListsApi = {
