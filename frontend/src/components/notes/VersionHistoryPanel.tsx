@@ -3,6 +3,7 @@ import MDEditor from '@uiw/react-md-editor';
 import { NotesApi } from '@/api/endpoints';
 import type { Note, NoteVersionFull, NoteVersionListItem } from '@/types';
 import { toast } from '@/components/Toast';
+import { useConfirm } from '@/components/Dialogs';
 import { getApiError } from '@/api/client';
 import { relativeDe } from '@/lib/relativeTime';
 
@@ -20,6 +21,7 @@ export function VersionHistoryPanel({ noteId, open, onClose, onRestored }: Props
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [selected, setSelected] = useState<NoteVersionFull | null>(null);
   const [restoring, setRestoring] = useState(false);
+  const confirmDialog = useConfirm();
 
   // Reload versions whenever the panel opens or the note changes.
   useEffect(() => {
@@ -68,9 +70,11 @@ export function VersionHistoryPanel({ noteId, open, onClose, onRestored }: Props
   const restore = async () => {
     if (selectedId === null) return;
     if (
-      !confirm(
-        'Diese Version wiederherstellen? Der aktuelle Stand wird vorher als neue Version gesichert.',
-      )
+      !(await confirmDialog({
+        title: 'Diese Version wiederherstellen?',
+        message: 'Der aktuelle Stand wird vorher als neue Version gesichert.',
+        confirmLabel: 'Wiederherstellen',
+      }))
     )
       return;
     setRestoring(true);

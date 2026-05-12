@@ -16,9 +16,10 @@ import { ListSettingsPanel } from '@/components/lists/ListSettingsPanel';
 import { Modal } from '@/components/Modal';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
-import { enqueue } from '@/lib/offlineQueue';
+import { enqueue, nextTempItemId } from '@/offline/syncQueue';
 import { useListWebSocket } from '@/hooks/useListWebSocket';
 import { LiveIndicator } from '@/components/LiveIndicator';
+import { useConfirm, usePrompt } from '@/components/Dialogs';
 import {
   ListPlus,
   RotateCcw,
@@ -74,6 +75,9 @@ export function ListDetailPage() {
     else params.delete('settings');
     setParams(params, { replace: true });
   };
+  const confirmDialog = useConfirm();
+  const promptDialog = usePrompt();
+
   const canEdit = useMemo(
     () => !!list && (list.is_owner || list.permission === 'EDIT'),
     [list],
@@ -166,7 +170,35 @@ export function ListDetailPage() {
       setItems((cur) => [...cur, it]);
       setText('');
     } catch (err) {
-      toast.error(getApiError(err));
+      // Queue offline + place an optimistic placeholder so the UI updates
+      // immediately. The placeholder uses a negative id so it can't collide
+      // with anything from the server.
+      if (!navigator.onLine) {
+        const placeholder: ListItem = {
+          id: nextTempItemId(),
+          list_id: listId,
+          text: t,
+          is_checked: false,
+          quantity: null,
+          unit: null,
+          position: items.length,
+          category: null,
+          category_locked: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        setItems((cur) => [...cur, placeholder]);
+        setText('');
+        await enqueue({
+          kind: 'item_create',
+          list_id: listId,
+          item_id: placeholder.id,
+          payload: { text: t },
+        });
+        toast.info('Offline – wird synchronisiert sobald du wieder online bist.');
+      } else {
+        toast.error(getApiError(err));
+      }
     }
   };
 
@@ -178,12 +210,11 @@ export function ListDetailPage() {
     } catch {
       if (!navigator.onLine) {
         await enqueue({
-          kind: 'toggle',
+          kind: 'item_update',
           list_id: listId,
           item_id: item.id,
           payload: { is_checked: !prev },
         });
-        toast.info('Offline – wird synchronisiert wenn du wieder online bist.');
       } else {
         setItems((cur) => cur.map((i) => (i.id === item.id ? { ...i, is_checked: prev } : i)));
         toast.error('Konnte nicht speichern');
@@ -196,7 +227,16 @@ export function ListDetailPage() {
     try {
       await ItemsApi.update(listId, item.id, patch as any);
     } catch (e) {
-      toast.error(getApiError(e));
+      if (!navigator.onLine) {
+        await enqueue({
+          kind: 'item_update',
+          list_id: listId,
+          item_id: item.id,
+          payload: patch as any,
+        });
+      } else {
+        toast.error(getApiError(e));
+      }
     }
   };
 
@@ -205,8 +245,30 @@ export function ListDetailPage() {
     try {
       await ItemsApi.remove(listId, item.id);
     } catch (e) {
-      toast.error(getApiError(e));
-      void refresh();
+      if (!navigator.onLine) {
+        // If the item was itself only a queued placeholder (negative id),
+        // we can short-circuit by removing the matching create op so we
+        // never round-trip a doomed pair.
+        if (item.id < 0) {
+          // Best-effort — finding the matching op is up to the queue.
+          await enqueue({
+            kind: 'item_delete',
+            list_id: listId,
+            item_id: item.id,
+            payload: {},
+          });
+        } else {
+          await enqueue({
+            kind: 'item_delete',
+            list_id: listId,
+            item_id: item.id,
+            payload: {},
+          });
+        }
+      } else {
+        toast.error(getApiError(e));
+        void refresh();
+      }
     }
   };
 
@@ -230,7 +292,14 @@ export function ListDetailPage() {
   };
 
   const reset = async () => {
-    if (!confirm('Alle Häkchen entfernen?')) return;
+    if (
+      !(await confirmDialog({
+        title: 'Alle Häkchen entfernen?',
+        message: 'Der aktuelle Stand wird vorher als Snapshot gesichert.',
+        confirmLabel: 'Zurücksetzen',
+      }))
+    )
+      return;
     try {
       await ListsApi.reset(listId);
       setItems((cur) => cur.map((i) => ({ ...i, is_checked: false })));
@@ -240,7 +309,12 @@ export function ListDetailPage() {
   };
 
   const saveAsTemplate = async () => {
-    const name = prompt('Vorlagenname?', list?.title);
+    const name = await promptDialog({
+      title: 'Vorlage speichern',
+      message: 'Wie soll die Vorlage heißen?',
+      defaultValue: list?.title ?? '',
+      confirmLabel: 'Speichern',
+    });
     if (!name) return;
     try {
       await ListsApi.duplicate(listId, { as_template: true, template_name: name, title: list?.title });
@@ -251,7 +325,15 @@ export function ListDetailPage() {
   };
 
   const removeList = async () => {
-    if (!confirm('Liste endgültig löschen?')) return;
+    if (
+      !(await confirmDialog({
+        title: 'Liste löschen?',
+        message: 'Diese Aktion kann nicht rückgängig gemacht werden.',
+        confirmLabel: 'Löschen',
+        variant: 'danger',
+      }))
+    )
+      return;
     try {
       await ListsApi.remove(listId);
       nav('/');

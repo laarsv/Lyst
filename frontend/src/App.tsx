@@ -18,15 +18,15 @@ import { AdminSettingsPage } from '@/pages/admin/AdminSettings';
 import { AppShell } from '@/components/AppShell';
 import { RequireAuth } from '@/components/RequireAuth';
 import { ToastHost } from '@/components/Toast';
-import { OfflineBadge } from '@/components/OfflineBadge';
 import { InstallPrompt } from '@/components/InstallPrompt';
 import { AuthBootstrap } from '@/components/AuthBootstrap';
+import { DialogProvider } from '@/components/Dialogs';
 
 export default function App() {
   return (
     <AuthBootstrap>
+      <DialogProvider>
       <ToastHost />
-      <OfflineBadge />
       <InstallPrompt />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
@@ -67,6 +67,7 @@ export default function App() {
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </DialogProvider>
     </AuthBootstrap>
   );
 }

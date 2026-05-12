@@ -7,6 +7,7 @@ import { CollaboratorsPanel } from '@/components/lists/CollaboratorsPanel';
 import { RemindersPanel } from '@/components/lists/RemindersPanel';
 import { HistoryPanel } from '@/components/lists/HistoryPanel';
 import { toast } from '@/components/Toast';
+import { useConfirm } from '@/components/Dialogs';
 import { getApiError } from '@/api/client';
 
 interface Props {
@@ -249,9 +250,19 @@ function CategorizationModeSection({
   const [busy, setBusy] = useState<'normal' | 'force' | null>(null);
   const [lastQueued, setLastQueued] = useState<number | null>(null);
   const active = MODE_OPTIONS.find((m) => m.v === list.categorization_mode) ?? MODE_OPTIONS[0];
+  const confirmDialog = useConfirm();
 
   const trigger = async (force: boolean) => {
-    if (force && !confirm('Alle Items werden neu kategorisiert. Fortfahren?')) return;
+    if (
+      force &&
+      !(await confirmDialog({
+        title: 'Alle Items neu kategorisieren?',
+        message:
+          'Auch manuell festgelegte Kategorien werden überschrieben und neu gesetzt.',
+        confirmLabel: 'Neu kategorisieren',
+      }))
+    )
+      return;
     setBusy(force ? 'force' : 'normal');
     setLastQueued(null);
     try {

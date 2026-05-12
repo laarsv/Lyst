@@ -4,6 +4,7 @@ import { useAuthStore } from '@/store/auth';
 import { AuthApi } from '@/api/endpoints';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { SearchModal } from '@/components/SearchModal';
+import { SyncStatusBadge } from '@/components/SyncStatusBadge';
 import clsx from 'clsx';
 
 const USER_LINKS: [string, string][] = [
@@ -107,6 +108,7 @@ export function AppShell() {
           </nav>
 
           <div className="flex items-center gap-2 ml-auto">
+            <SyncStatusBadge />
             <button
               type="button"
               onClick={() => setSearchOpen(true)}

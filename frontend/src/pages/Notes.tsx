@@ -7,6 +7,7 @@ import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
 import { remarkWikilinks, parseWikilinkUrl } from '@/lib/wikilinks';
 import { VersionHistoryPanel } from '@/components/notes/VersionHistoryPanel';
+import { useConfirm } from '@/components/Dialogs';
 import MDEditor from '@uiw/react-md-editor';
 
 type Scope =
@@ -31,6 +32,7 @@ export function NotesPage() {
     open: false,
   });
   const [params, setParams] = useSearchParams();
+  const confirmDialog = useConfirm();
 
   // Deep link from search modal / wikilinks: /notes?focus=<id>
   useEffect(() => {
@@ -192,7 +194,15 @@ export function NotesPage() {
   };
 
   const removeNote = async (n: Note) => {
-    if (!confirm('Notiz löschen?')) return;
+    if (
+      !(await confirmDialog({
+        title: 'Notiz löschen?',
+        message: 'Diese Aktion kann nicht rückgängig gemacht werden.',
+        confirmLabel: 'Löschen',
+        variant: 'danger',
+      }))
+    )
+      return;
     try {
       await NotesApi.remove(n.id);
       setNotes((cur) => cur.filter((x) => x.id !== n.id));
@@ -977,6 +987,7 @@ function FolderModal({
   const [name, setName] = useState(edit?.name ?? '');
   const [color, setColor] = useState(edit?.color ?? '#00c896');
   const [busy, setBusy] = useState(false);
+  const confirmDialog = useConfirm();
 
   useEffect(() => {
     if (open) {
@@ -1002,7 +1013,15 @@ function FolderModal({
 
   const remove = async () => {
     if (!edit) return;
-    if (!confirm(`Ordner „${edit.name}" löschen? Notizen darin bleiben erhalten.`)) return;
+    if (
+      !(await confirmDialog({
+        title: `Ordner „${edit.name}" löschen?`,
+        message: 'Notizen darin bleiben erhalten und werden „Ohne Ordner" zugeordnet.',
+        confirmLabel: 'Löschen',
+        variant: 'danger',
+      }))
+    )
+      return;
     setBusy(true);
     try {
       await NoteFoldersApi.remove(edit.id);

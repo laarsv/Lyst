@@ -3,6 +3,7 @@ import { AdminApi } from '@/api/endpoints';
 import type { AdminUser } from '@/types';
 import { Modal } from '@/components/Modal';
 import { toast } from '@/components/Toast';
+import { useConfirm } from '@/components/Dialogs';
 import { getApiError } from '@/api/client';
 import { useAuthStore } from '@/store/auth';
 
@@ -14,6 +15,7 @@ export function AdminUsersPage() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [tempPwInfo, setTempPwInfo] = useState<{ email: string; temp: string } | null>(null);
   const myId = useAuthStore((s) => s.userId);
+  const confirmDialog = useConfirm();
 
   const refresh = async () => {
     setLoading(true);
@@ -52,7 +54,15 @@ export function AdminUsersPage() {
   };
 
   const onDelete = async (u: AdminUser) => {
-    if (!confirm(`Benutzer ${u.email} endgültig löschen? Alle Listen und Notizen werden entfernt.`)) return;
+    if (
+      !(await confirmDialog({
+        title: `Benutzer ${u.email} löschen?`,
+        message: 'Alle Listen, Notizen und Rezepte dieses Kontos werden ebenfalls entfernt. Kann nicht rückgängig gemacht werden.',
+        confirmLabel: 'Löschen',
+        variant: 'danger',
+      }))
+    )
+      return;
     try {
       await AdminApi.deleteUser(u.id);
       setUsers((cur) => cur.filter((x) => x.id !== u.id));

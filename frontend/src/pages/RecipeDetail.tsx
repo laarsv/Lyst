@@ -7,6 +7,7 @@ import { getApiError } from '@/api/client';
 import { CATEGORY_COLOR, CATEGORY_LABEL } from '@/components/recipes/RecipeCard';
 import { CopyToListModal } from '@/components/recipes/CopyToListModal';
 import { CookMode } from '@/components/recipes/CookMode';
+import { useConfirm } from '@/components/Dialogs';
 import { fmtQty } from '@/lib/format';
 
 export function RecipeDetailPage() {
@@ -17,6 +18,7 @@ export function RecipeDetailPage() {
   const [cookOpen, setCookOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [copyOpen, setCopyOpen] = useState(false);
+  const confirmDialog = useConfirm();
 
   useEffect(() => {
     void (async () => {
@@ -32,7 +34,16 @@ export function RecipeDetailPage() {
   }, [recipeId, nav]);
 
   const remove = async () => {
-    if (!recipe || !confirm(`Rezept „${recipe.title}" löschen?`)) return;
+    if (!recipe) return;
+    if (
+      !(await confirmDialog({
+        title: `Rezept „${recipe.title}" löschen?`,
+        message: 'Inklusive aller Zutaten und Schritte. Kann nicht rückgängig gemacht werden.',
+        confirmLabel: 'Löschen',
+        variant: 'danger',
+      }))
+    )
+      return;
     try {
       await RecipesApi.remove(recipe.id);
       toast.success('Rezept gelöscht');

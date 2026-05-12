@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ListsApi, RecipesApi } from '@/api/endpoints';
 import { Modal } from '@/components/Modal';
 import { toast } from '@/components/Toast';
+import { useConfirm } from '@/components/Dialogs';
 import { getApiError } from '@/api/client';
 import { fmtQty, scaleQty } from '@/lib/format';
 import type { ListSummary, Recipe } from '@/types';
@@ -24,6 +25,7 @@ export function CopyToListModal({ open, recipe, onClose }: Props) {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const nav = useNavigate();
+  const confirmDialog = useConfirm();
 
   useEffect(() => {
     if (!open) return;
@@ -75,9 +77,16 @@ export function CopyToListModal({ open, recipe, onClose }: Props) {
       });
       onClose();
       toast.success(`${r.items_added} Zutaten zu „${r.list_title}" hinzugefügt`);
-      // Offer navigation after a short tick
-      setTimeout(() => {
-        if (confirm(`Zur Liste „${r.list_title}" wechseln?`)) nav(`/lists/${r.list_id}`);
+      // Offer navigation after a short tick (lets the toast settle).
+      setTimeout(async () => {
+        if (
+          await confirmDialog({
+            title: `Zur Liste „${r.list_title}" wechseln?`,
+            message: `${r.items_added} Zutaten wurden hinzugefügt.`,
+            confirmLabel: 'Öffnen',
+          })
+        )
+          nav(`/lists/${r.list_id}`);
       }, 100);
     } catch (e) {
       toast.error(getApiError(e));
