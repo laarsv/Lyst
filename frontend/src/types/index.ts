@@ -97,6 +97,22 @@ export interface NoteFolder {
   note_count: number;
 }
 
+export interface NoteVersionListItem {
+  id: number;
+  note_id: number;
+  title: string;
+  preview: string;
+  created_at: string;
+}
+
+export interface NoteVersionFull {
+  id: number;
+  note_id: number;
+  title: string;
+  content: string;
+  created_at: string;
+}
+
 export interface Tag {
   id: number;
   owner_id: number;

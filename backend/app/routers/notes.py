@@ -7,7 +7,18 @@ from app.core.dependencies import require_user
 from app.core.responses import ok
 from app.models.note import Note
 from app.models.user import User
-from app.schemas.note import NoteCreate, NoteOut, NoteUpdate
+from app.schemas.note import (
+    NoteCreate,
+    NoteOut,
+    NoteUpdate,
+    NoteVersionListItem,
+    NoteVersionOut,
+)
+from app.services.note_version_service import (
+    get_version,
+    list_versions,
+    maybe_save_version,
+)
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 
@@ -170,8 +181,88 @@ async def patch_note(
         patch["is_pinned"] = False
     elif patch.get("is_pinned") is True and (patch.get("is_archived") or note.is_archived):
         patch["is_pinned"] = False
+
+    # If title or content is changing, snapshot the *current* state as a
+    # version first (debounced server-side to 60 s, see service). Metadata-
+    # only patches (folder, pin, archive) don't trigger versioning.
+    title_changing = "title" in patch and patch["title"] is not None and patch["title"] != note.title
+    content_changing = "content" in patch and patch["content"] is not None and patch["content"] != note.content
+    if title_changing or content_changing:
+        await maybe_save_version(db, note)
+
     for k, v in patch.items():
         setattr(note, k, v)
+    await db.commit()
+    await db.refresh(note)
+    return ok(_out(note))
+
+
+# ---------- Version history ----------
+
+def _version_list_item(v) -> dict:
+    flat = (v.content or "").replace("\n", " ").strip()
+    return NoteVersionListItem(
+        id=v.id,
+        note_id=v.note_id,
+        title=v.title,
+        preview=flat[:100],
+        created_at=v.created_at,
+    ).model_dump(mode="json")
+
+
+@router.get("/{note_id}/versions")
+async def get_versions(
+    note_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    note = (
+        await db.execute(select(Note).where(Note.id == note_id, Note.owner_id == user.id))
+    ).scalar_one_or_none()
+    if not note:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    versions = await list_versions(db, note_id)
+    return ok([_version_list_item(v) for v in versions])
+
+
+@router.get("/{note_id}/versions/{version_id}")
+async def get_version_full(
+    note_id: int,
+    version_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    note = (
+        await db.execute(select(Note).where(Note.id == note_id, Note.owner_id == user.id))
+    ).scalar_one_or_none()
+    if not note:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    v = await get_version(db, note_id, version_id)
+    if not v:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found")
+    return ok(NoteVersionOut.model_validate(v).model_dump(mode="json"))
+
+
+@router.post("/{note_id}/versions/{version_id}/restore", status_code=status.HTTP_200_OK)
+async def restore_version(
+    note_id: int,
+    version_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    note = (
+        await db.execute(select(Note).where(Note.id == note_id, Note.owner_id == user.id))
+    ).scalar_one_or_none()
+    if not note:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    v = await get_version(db, note_id, version_id)
+    if not v:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found")
+    # Always snapshot the current state before restoring so the user can
+    # always undo the restore by picking the freshly-saved version.
+    await maybe_save_version(db, note, force=True)
+    note.title = v.title
+    note.content = v.content
     await db.commit()
     await db.refresh(note)
     return ok(_out(note))

@@ -18,6 +18,8 @@ import type {
   MealType,
   Note,
   NoteFolder,
+  NoteVersionFull,
+  NoteVersionListItem,
   PublicListData,
   Recipe,
   RecipeCategory,
@@ -172,6 +174,16 @@ export const NotesApi = {
     }>,
   ) => api.patch<{ data: Note }>(`/notes/${id}`, payload).then(unwrap),
   remove: (id: number) => api.delete(`/notes/${id}`),
+  versions: (id: number) =>
+    api.get<{ data: NoteVersionListItem[] }>(`/notes/${id}/versions`).then(unwrap),
+  version: (id: number, versionId: number) =>
+    api
+      .get<{ data: NoteVersionFull }>(`/notes/${id}/versions/${versionId}`)
+      .then(unwrap),
+  restoreVersion: (id: number, versionId: number) =>
+    api
+      .post<{ data: Note }>(`/notes/${id}/versions/${versionId}/restore`)
+      .then(unwrap),
 };
 
 export interface NoteTitleResult {

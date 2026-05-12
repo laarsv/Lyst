@@ -9,6 +9,7 @@ from app.models.list_snapshot import ListSnapshot
 from app.models.meal_plan import MealPlan, MealPlanEntry, MealType
 from app.models.note import Note
 from app.models.note_folder import NoteFolder
+from app.models.note_version import NoteVersion
 from app.models.recipe import Recipe, RecipeCategory, RecipeIngredient, RecipeStep
 from app.models.tag import Tag
 
@@ -34,4 +35,5 @@ __all__ = [
     "MealPlanEntry",
     "MealType",
     "NoteFolder",
+    "NoteVersion",
 ]

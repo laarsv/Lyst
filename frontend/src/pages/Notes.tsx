@@ -6,6 +6,7 @@ import { Modal } from '@/components/Modal';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
 import { remarkWikilinks, parseWikilinkUrl } from '@/lib/wikilinks';
+import { VersionHistoryPanel } from '@/components/notes/VersionHistoryPanel';
 import MDEditor from '@uiw/react-md-editor';
 
 type Scope =
@@ -346,6 +347,12 @@ export function NotesPage() {
             onToggleArchive={() => toggleArchive(active)}
             onBack={() => setActiveId(null)}
             onOpenByTitle={openByTitle}
+            onRestored={(n) => {
+              // Replace in the current list if present, else use the
+              // fallback slot so the editor sees the new content.
+              setNotes((cur) => cur.map((x) => (x.id === n.id ? n : x)));
+              setActiveFallback(n);
+            }}
           />
         ) : (
           <NoteList
@@ -618,6 +625,7 @@ function NoteEditor({
   onToggleArchive,
   onBack,
   onOpenByTitle,
+  onRestored,
 }: {
   note: Note;
   availableTags: Tag[];
@@ -628,12 +636,14 @@ function NoteEditor({
   onToggleArchive: () => void;
   onBack: () => void;
   onOpenByTitle: (title: string) => void;
+  onRestored: (n: Note) => void;
 }) {
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
   const [tags, setTags] = useState<string[]>(note.tags);
   const [tagInput, setTagInput] = useState('');
   const [backlinks, setBacklinks] = useState<NoteTitleResult[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   // ----- [[…]] autocomplete state -----
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -798,6 +808,14 @@ function NoteEditor({
         >
           {note.is_archived ? '↩ Wiederherstellen' : '🗄 Archivieren'}
         </button>
+        <button
+          type="button"
+          className="btn-ghost text-sm"
+          onClick={() => setHistoryOpen(true)}
+          title="Versionsverlauf"
+        >
+          🕒 Verlauf
+        </button>
         <button className="btn-ghost text-sm text-danger" onClick={onDelete}>Löschen</button>
       </div>
       <div className="flex flex-wrap items-center gap-1">
@@ -922,6 +940,13 @@ function NoteEditor({
           </ul>
         </section>
       )}
+
+      <VersionHistoryPanel
+        noteId={note.id}
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        onRestored={onRestored}
+      />
     </>
   );
 }

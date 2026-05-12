@@ -53,3 +53,22 @@ class NoteFolderOut(BaseModel):
     color: str | None
     created_at: datetime
     note_count: int = 0
+
+
+# --- Versions ---
+
+class NoteVersionListItem(BaseModel):
+    id: int
+    note_id: int
+    title: str
+    preview: str
+    created_at: datetime
+
+
+class NoteVersionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    note_id: int
+    title: str
+    content: str
+    created_at: datetime
