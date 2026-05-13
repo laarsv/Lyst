@@ -17,6 +17,7 @@ import {
   Trash2,
   type LucideIcon,
 } from 'lucide-react';
+import { BottomSheet } from '@/components/BottomSheet';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 
 interface Props {
@@ -113,9 +114,14 @@ export function NoteActionsMenu({
         <MoreVertical size={20} />
       </button>
 
-      {open && isMobile && (
-        <BottomSheet onClose={() => setOpen(false)}>
-          <ul className="py-1">
+      {isMobile && (
+        <BottomSheet
+          open={open}
+          onClose={() => setOpen(false)}
+          maxHeightClass="max-h-[60vh]"
+          ariaLabel="Aktionen"
+        >
+          <ul className="py-1 overflow-y-auto">
             {items.map((it) => (
               <li key={it.key}>
                 <ActionRow item={it} onClick={() => fire(it)} variant="sheet" />
@@ -168,45 +174,3 @@ function ActionRow({
   );
 }
 
-function BottomSheet({
-  children,
-  onClose,
-}: {
-  children: React.ReactNode;
-  onClose: () => void;
-}) {
-  // Tiny mount-frame delay so the slide-up transition actually plays
-  // (otherwise React commits with the final transform on first paint).
-  const [shown, setShown] = useState(false);
-  useEffect(() => {
-    const id = requestAnimationFrame(() => setShown(true));
-    return () => cancelAnimationFrame(id);
-  }, []);
-
-  return (
-    <div
-      className="fixed inset-0 z-[60] flex items-end justify-center"
-      role="dialog"
-      aria-modal="true"
-    >
-      <button
-        type="button"
-        aria-label="Schließen"
-        className={`absolute inset-0 transition-opacity duration-200 ${
-          shown ? 'opacity-100' : 'opacity-0'
-        } bg-ink/40`}
-        onClick={onClose}
-      />
-      <div
-        className={`relative w-full max-w-[640px] bg-surface border-t border-line rounded-t-card pb-[max(env(safe-area-inset-bottom,0px),12px)] transition-transform duration-200 ${
-          shown ? 'translate-y-0' : 'translate-y-full'
-        }`}
-      >
-        <div className="flex justify-center py-2">
-          <span className="block w-10 h-1.5 rounded-full bg-line" />
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}

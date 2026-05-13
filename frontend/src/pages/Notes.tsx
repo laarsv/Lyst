@@ -10,16 +10,15 @@ import { VersionHistoryPanel } from '@/components/notes/VersionHistoryPanel';
 import { NoteToolbar } from '@/components/notes/NoteToolbar';
 import { NoteActionsMenu } from '@/components/notes/NoteActionsMenu';
 import { NoteMobileLayout } from '@/components/notes/NoteMobileLayout';
+import { NotesFilterButton } from '@/components/notes/NotesFilterButton';
+import { NotesFilterPanel } from '@/components/notes/NotesFilterPanel';
+import { ActiveFilterChips } from '@/components/notes/ActiveFilterChips';
 import { useConfirm } from '@/components/Dialogs';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useNoteEditingState } from '@/hooks/useNoteEditingState';
+import { hasActiveFilters, useNotesFilters } from '@/store/notesFilters';
+import { Plus, Search } from 'lucide-react';
 import MDEditor from '@uiw/react-md-editor';
-
-type Scope =
-  | { kind: 'all' }
-  | { kind: 'folder'; folderId: number }
-  | { kind: 'uncategorized' }
-  | { kind: 'archive' };
 
 const NOTE_DRAG_TYPE = 'application/x-lyst-note-id';
 
@@ -28,11 +27,11 @@ export function NotesPage() {
   const [folders, setFolders] = useState<NoteFolder[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [activeId, setActiveId] = useState<number | null>(null);
-  const [q, setQ] = useState('');
-  const [tagFilter, setTagFilter] = useState<string | null>(null);
-  const [scope, setScope] = useState<Scope>({ kind: 'all' });
+  const { q, scope, tagFilter, setQ, setScope, setTagFilter } = useNotesFilters();
+  const filtersActive = useNotesFilters((s) => hasActiveFilters(s));
   const [loading, setLoading] = useState(true);
   const [tagsOpen, setTagsOpen] = useState(false);
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const [folderModal, setFolderModal] = useState<{ open: boolean; edit?: NoteFolder | null }>({
     open: false,
   });
@@ -266,6 +265,96 @@ export function NotesPage() {
           setActiveFallback(n);
         }}
       />
+    );
+  }
+
+  // Mobile overview (no note open). Compact sticky header + chips + list;
+  // sidebar is replaced by the bottom-sheet filter panel.
+  if (isMobile) {
+    return (
+      <div className="-mx-4 -my-4 sm:-my-6 flex flex-col min-h-[calc(100vh-56px)] bg-page">
+        {/* Sticky search row — pinned under the AppShell header (~56px). */}
+        <div className="sticky top-14 z-20 bg-surface border-b border-line px-3 py-2 flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search
+              size={16}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted/70 pointer-events-none"
+            />
+            <input
+              className="input w-full pl-9 py-2 text-sm"
+              placeholder="Suche…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && loadNotes()}
+            />
+          </div>
+          <NotesFilterButton
+            active={filtersActive}
+            onClick={() => setFilterPanelOpen(true)}
+          />
+          <button
+            type="button"
+            onClick={create}
+            aria-label="Neue Notiz"
+            className="size-11 inline-flex items-center justify-center rounded-ctl bg-brand text-surface hover:bg-brand-700 transition"
+          >
+            <Plus size={20} />
+          </button>
+        </div>
+
+        <ActiveFilterChips folders={folders} />
+
+        <div className="flex-1 px-3 pt-3 pb-6">
+          {loading ? (
+            <div className="text-muted/70 py-8 text-center">Lade…</div>
+          ) : (
+            <NoteList
+              scopeLabel={scopeLabel}
+              archive={scope.kind === 'archive'}
+              pinned={pinned}
+              others={others}
+              onSelect={(n) => setActiveId(n.id)}
+              onTogglePin={togglePin}
+              onToggleArchive={toggleArchive}
+              onCreate={create}
+            />
+          )}
+        </div>
+
+        <NotesFilterPanel
+          open={filterPanelOpen}
+          onClose={() => setFilterPanelOpen(false)}
+          folders={folders}
+          tags={tags}
+          onCreateFolder={() => {
+            setFilterPanelOpen(false);
+            setFolderModal({ open: true, edit: null });
+          }}
+          onEditFolder={(f) => {
+            setFilterPanelOpen(false);
+            setFolderModal({ open: true, edit: f });
+          }}
+        />
+
+        <FolderModal
+          open={folderModal.open}
+          edit={folderModal.edit ?? null}
+          onClose={() => setFolderModal({ open: false })}
+          onSaved={(f, deleted) => {
+            if (deleted) {
+              setFolders((cur) => cur.filter((x) => x.id !== f.id));
+              if (scope.kind === 'folder' && scope.folderId === f.id) setScope({ kind: 'all' });
+            } else {
+              setFolders((cur) => {
+                const without = cur.filter((x) => x.id !== f.id);
+                return [...without, f].sort((a, b) => a.name.localeCompare(b.name));
+              });
+            }
+            setFolderModal({ open: false });
+            void loadNotes();
+          }}
+        />
+      </div>
     );
   }
 
