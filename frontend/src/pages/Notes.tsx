@@ -10,6 +10,7 @@ import { VersionHistoryPanel } from '@/components/notes/VersionHistoryPanel';
 import { NoteToolbar } from '@/components/notes/NoteToolbar';
 import { NoteActionsMenu } from '@/components/notes/NoteActionsMenu';
 import { NoteMobileLayout } from '@/components/notes/NoteMobileLayout';
+import { FolderChip } from '@/components/notes/FolderChip';
 import { NotesFilterButton } from '@/components/notes/NotesFilterButton';
 import { NotesFilterPanel } from '@/components/notes/NotesFilterPanel';
 import { ActiveFilterChips } from '@/components/notes/ActiveFilterChips';
@@ -260,6 +261,7 @@ export function NotesPage() {
         onToggleArchive={() => toggleArchive(active!)}
         onBack={() => setActiveId(null)}
         onOpenByTitle={openByTitle}
+        onCreateFolder={() => setFolderModal({ open: true, edit: null })}
         onRestored={(n) => {
           setNotes((cur) => cur.map((x) => (x.id === n.id ? n : x)));
           setActiveFallback(n);
@@ -476,6 +478,7 @@ export function NotesPage() {
             onToggleArchive={() => toggleArchive(active)}
             onBack={() => setActiveId(null)}
             onOpenByTitle={openByTitle}
+            onCreateFolder={() => setFolderModal({ open: true, edit: null })}
             onRestored={(n) => {
               // Replace in the current list if present, else use the
               // fallback slot so the editor sees the new content.
@@ -755,6 +758,7 @@ function NoteEditor({
   onBack,
   onOpenByTitle,
   onRestored,
+  onCreateFolder,
 }: {
   note: Note;
   availableTags: Tag[];
@@ -766,16 +770,20 @@ function NoteEditor({
   onBack: () => void;
   onOpenByTitle: (title: string) => void;
   onRestored: (n: Note) => void;
+  onCreateFolder: () => void;
 }) {
   const state = useNoteEditingState(note, onChange);
   const [tagInput, setTagInput] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
+  // Lifted so both the chip and the kebab "Ordner ändern" entry pop the
+  // same FolderPicker (one source of truth for the open state).
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false);
 
   return (
     <>
-      {/* Slim header: back, title, folder, pin, kebab. Archivieren / Verlauf
-          / Löschen all live in the kebab now — they're rare, never need to
-          be visible on every screen. */}
+      {/* Slim header: back, title, pin, kebab. Folder lives in the metadata
+          row below — it was crowding the title and the dropdown was getting
+          truncated. */}
       <div className="flex items-center gap-2 flex-wrap">
         <button className="btn-ghost text-sm" onClick={onBack}>← Zurück</button>
         <input
@@ -784,20 +792,6 @@ function NoteEditor({
           onChange={(e) => state.setTitle(e.target.value)}
           placeholder="Titel"
         />
-        <select
-          className="input py-1.5 w-36"
-          value={note.folder_id ?? ''}
-          onChange={(e) =>
-            onChange({ folder_id: e.target.value === '' ? null : Number(e.target.value) })
-          }
-        >
-          <option value="">— ohne Ordner —</option>
-          {folders.map((f) => (
-            <option key={f.id} value={f.id}>
-              {f.name}
-            </option>
-          ))}
-        </select>
         <button
           type="button"
           aria-label={note.is_pinned ? 'Pin entfernen' : 'Anpinnen'}
@@ -814,12 +808,7 @@ function NoteEditor({
           isPinned={note.is_pinned}
           isArchived={note.is_archived}
           onTogglePin={onTogglePin}
-          onChangeFolder={() => {
-            // Surface a quick prompt — desktop also has the inline select,
-            // so this entry mostly mirrors mobile behavior. Focus the select.
-            const sel = document.querySelector<HTMLSelectElement>('select.input');
-            sel?.focus();
-          }}
+          onChangeFolder={() => setFolderPickerOpen(true)}
           onToggleArchive={onToggleArchive}
           onShowHistory={() => setHistoryOpen(true)}
           onDelete={onDelete}
@@ -827,7 +816,18 @@ function NoteEditor({
         />
       </div>
 
-      <div className="flex flex-wrap items-center gap-1">
+      {/* Metadata row: folder chip + tag chips + "+ tag" input — all chip-
+          shaped so they read as related. Wraps cleanly when the user adds
+          many tags. */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <FolderChip
+          folders={folders}
+          currentFolderId={note.folder_id}
+          onChange={(id) => onChange({ folder_id: id })}
+          onCreateFolder={onCreateFolder}
+          open={folderPickerOpen}
+          onOpenChange={setFolderPickerOpen}
+        />
         {state.tags.map((t) => (
           <span key={t} className="inline-flex items-center gap-1 text-xs bg-page px-2 py-1 rounded-full">
             #{t}
@@ -1015,6 +1015,7 @@ function MobileNoteShell({
   onBack,
   onOpenByTitle,
   onRestored,
+  onCreateFolder,
 }: {
   note: Note;
   availableTags: Tag[];
@@ -1026,6 +1027,7 @@ function MobileNoteShell({
   onBack: () => void;
   onOpenByTitle: (title: string) => void;
   onRestored: (n: Note) => void;
+  onCreateFolder: () => void;
 }) {
   const state = useNoteEditingState(note, onChange);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -1043,6 +1045,7 @@ function MobileNoteShell({
         onShowHistory={() => setHistoryOpen(true)}
         onBack={onBack}
         onOpenByTitle={onOpenByTitle}
+        onCreateFolder={onCreateFolder}
       />
       <VersionHistoryPanel
         noteId={note.id}

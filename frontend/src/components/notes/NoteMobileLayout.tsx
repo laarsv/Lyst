@@ -14,11 +14,11 @@
  *  identical to the desktop split-view. */
 import { useEffect, useRef, useState } from 'react';
 import MDEditor from '@uiw/react-md-editor';
-import { ArrowLeft, FolderOpen, Pin, X } from 'lucide-react';
+import { ArrowLeft, Pin, X } from 'lucide-react';
 import type { Note, NoteFolder, Tag } from '@/types';
 import type { NoteEditingState } from '@/hooks/useNoteEditingState';
 import { remarkWikilinks, parseWikilinkUrl } from '@/lib/wikilinks';
-import { Modal } from '@/components/Modal';
+import { FolderChip } from './FolderChip';
 import { NoteActionsMenu } from './NoteActionsMenu';
 import { NoteToolbar } from './NoteToolbar';
 
@@ -34,6 +34,7 @@ interface Props {
   onShowHistory: () => void;
   onBack: () => void;
   onOpenByTitle: (title: string) => void;
+  onCreateFolder: () => void;
 }
 
 export function NoteMobileLayout({
@@ -48,10 +49,11 @@ export function NoteMobileLayout({
   onShowHistory,
   onBack,
   onOpenByTitle,
+  onCreateFolder,
 }: Props) {
   const [mode, setMode] = useState<'edit' | 'preview'>('preview');
   const [titleEditing, setTitleEditing] = useState(false);
-  const [folderModalOpen, setFolderModalOpen] = useState(false);
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false);
   const [pinPulse, setPinPulse] = useState(false);
   const [tagInput, setTagInput] = useState('');
   const titleInputRef = useRef<HTMLInputElement | null>(null);
@@ -91,7 +93,7 @@ export function NoteMobileLayout({
           isPinned={note.is_pinned}
           isArchived={note.is_archived}
           onTogglePin={handlePin}
-          onChangeFolder={() => setFolderModalOpen(true)}
+          onChangeFolder={() => setFolderPickerOpen(true)}
           onToggleArchive={onToggleArchive}
           onShowHistory={onShowHistory}
           onDelete={onDelete}
@@ -138,8 +140,17 @@ export function NoteMobileLayout({
         </button>
       </div>
 
-      {/* Tag row */}
-      <div className="flex flex-wrap items-center gap-1 px-3 mt-2 shrink-0">
+      {/* Metadata row: folder chip + tag chips + "+ tag" input. Folder
+          and tags are visually grouped — both are chip-shaped. */}
+      <div className="flex flex-wrap items-center gap-1.5 px-3 mt-2 shrink-0">
+        <FolderChip
+          folders={folders}
+          currentFolderId={note.folder_id}
+          onChange={(id) => onChange({ folder_id: id })}
+          onCreateFolder={onCreateFolder}
+          open={folderPickerOpen}
+          onOpenChange={setFolderPickerOpen}
+        />
         {state.tags.map((t) => (
           <span
             key={t}
@@ -296,17 +307,6 @@ export function NoteMobileLayout({
         </div>
       )}
 
-      {/* Folder picker — fired from the kebab menu. */}
-      <FolderPickerModal
-        open={folderModalOpen}
-        currentFolderId={note.folder_id}
-        folders={folders}
-        onClose={() => setFolderModalOpen(false)}
-        onPick={(folderId) => {
-          setFolderModalOpen(false);
-          onChange({ folder_id: folderId });
-        }}
-      />
     </div>
   );
 }
@@ -360,56 +360,6 @@ function WikilinkPopup({ state }: { state: NoteEditingState }) {
         ))}
       </ul>
     </div>
-  );
-}
-
-function FolderPickerModal({
-  open,
-  folders,
-  currentFolderId,
-  onClose,
-  onPick,
-}: {
-  open: boolean;
-  folders: NoteFolder[];
-  currentFolderId: number | null;
-  onClose: () => void;
-  onPick: (folderId: number | null) => void;
-}) {
-  return (
-    <Modal open={open} onClose={onClose} title="Ordner ändern">
-      <ul className="divide-y divide-line">
-        <li>
-          <button
-            type="button"
-            onClick={() => onPick(null)}
-            className={`w-full flex items-center gap-3 px-2 py-3 text-left ${
-              currentFolderId === null ? 'text-brand-700' : ''
-            }`}
-          >
-            <FolderOpen size={18} className="text-muted" />
-            <span className="flex-1">Ohne Ordner</span>
-          </button>
-        </li>
-        {folders.map((f) => (
-          <li key={f.id}>
-            <button
-              type="button"
-              onClick={() => onPick(f.id)}
-              className={`w-full flex items-center gap-3 px-2 py-3 text-left ${
-                currentFolderId === f.id ? 'text-brand-700' : ''
-              }`}
-            >
-              <span
-                className="size-3 rounded-full shrink-0"
-                style={{ background: f.color || '#00c896' }}
-              />
-              <span className="flex-1">{f.name}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
-    </Modal>
   );
 }
 
