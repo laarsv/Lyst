@@ -20,6 +20,9 @@ import { enqueue, nextTempItemId } from '@/offline/syncQueue';
 import { useListWebSocket } from '@/hooks/useListWebSocket';
 import { LiveIndicator } from '@/components/LiveIndicator';
 import { useConfirm, usePrompt } from '@/components/Dialogs';
+import { BackLink } from '@/components/BackLink';
+import { SaveIndicator, useSaveIndicator } from '@/components/SaveIndicator';
+import { invalidateFresh } from '@/hooks/useFreshOnMount';
 import { formatPreview, hasParse, parseItem } from '@/utils/parseItemInput';
 import {
   ListPlus,
@@ -78,6 +81,7 @@ export function ListDetailPage() {
   };
   const confirmDialog = useConfirm();
   const promptDialog = usePrompt();
+  const save = useSaveIndicator();
 
   const canEdit = useMemo(
     () => !!list && (list.is_owner || list.permission === 'EDIT'),
@@ -178,6 +182,7 @@ export function ListDetailPage() {
       const it = await ItemsApi.create(listId, itemText, extras);
       setItems((cur) => [...cur, it]);
       setText('');
+      save.signalSaved();
     } catch (err) {
       // Queue offline + place an optimistic placeholder so the UI updates
       // immediately. The placeholder uses a negative id so it can't collide
@@ -216,6 +221,7 @@ export function ListDetailPage() {
     setItems((cur) => cur.map((i) => (i.id === item.id ? { ...i, is_checked: !prev } : i)));
     try {
       await ItemsApi.update(listId, item.id, { is_checked: !prev });
+      save.signalSaved();
     } catch {
       if (!navigator.onLine) {
         await enqueue({
@@ -226,6 +232,7 @@ export function ListDetailPage() {
         });
       } else {
         setItems((cur) => cur.map((i) => (i.id === item.id ? { ...i, is_checked: prev } : i)));
+        save.signalError(() => toggle(item));
         toast.error('Konnte nicht speichern');
       }
     }
@@ -235,6 +242,7 @@ export function ListDetailPage() {
     setItems((cur) => cur.map((i) => (i.id === item.id ? { ...i, ...patch } : i)));
     try {
       await ItemsApi.update(listId, item.id, patch as any);
+      save.signalSaved();
     } catch (e) {
       if (!navigator.onLine) {
         await enqueue({
@@ -244,6 +252,7 @@ export function ListDetailPage() {
           payload: patch as any,
         });
       } else {
+        save.signalError(() => update(item, patch));
         toast.error(getApiError(e));
       }
     }
@@ -253,6 +262,7 @@ export function ListDetailPage() {
     setItems((cur) => cur.filter((i) => i.id !== item.id));
     try {
       await ItemsApi.remove(listId, item.id);
+      save.signalSaved();
     } catch (e) {
       if (!navigator.onLine) {
         // If the item was itself only a queued placeholder (negative id),
@@ -295,7 +305,9 @@ export function ListDetailPage() {
         listId,
         reordered.map((it, i) => ({ id: it.id, position: i })),
       );
+      save.signalSaved();
     } catch (err) {
+      save.signalError(() => onDragEnd(e));
       toast.error(getApiError(err));
     }
   };
@@ -312,6 +324,7 @@ export function ListDetailPage() {
     try {
       await ListsApi.reset(listId);
       setItems((cur) => cur.map((i) => ({ ...i, is_checked: false })));
+      save.signalSaved();
     } catch (e) {
       toast.error(getApiError(e));
     }
@@ -345,6 +358,9 @@ export function ListDetailPage() {
       return;
     try {
       await ListsApi.remove(listId);
+      // Drop the cached freshness for the dashboard so its useEffect
+      // refetches on mount instead of reusing the now-stale list set.
+      invalidateFresh('lists');
       nav('/');
     } catch (e) {
       toast.error(getApiError(e));
@@ -362,6 +378,9 @@ export function ListDetailPage() {
         className="card p-6"
         style={{ borderTopColor: list.color || '#00c896', borderTopWidth: 4 }}
       >
+        <div className="mb-3">
+          <BackLink to="/" label="zu Listen" />
+        </div>
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3 min-w-0">
             {list.icon && <span className="text-3xl">{list.icon}</span>}
@@ -369,6 +388,7 @@ export function ListDetailPage() {
               <div className="flex items-center gap-3 flex-wrap">
                 <h1 className="text-2xl font-semibold truncate">{list.title}</h1>
                 <LiveIndicator connected={wsConnected} />
+                <SaveIndicator state={save.state} onRetry={save.retry} />
               </div>
               {!list.is_owner && (
                 <div className="text-xs text-muted">
