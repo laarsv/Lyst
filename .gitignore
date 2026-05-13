@@ -1,9 +1,50 @@
+# --- Environment ---
 .env
 .env.local
+.env.*.local
+
+# --- Python ---
 *.pyc
+*.pyo
+*.pyd
 __pycache__/
 .venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# --- Node ---
 node_modules/
+.npm/
+.pnpm-store/
+
+# --- Build artifacts ---
 dist/
+build/
 .vite/
+*.tsbuildinfo
+
+# --- Local databases ---
+*.db
+*.sqlite
+*.sqlite3
+
+# --- Self-hosted runtime data (kept outside the repo) ---
+/opt/appdata/
+data/
+backups/
+
+# --- OS / editor ---
 .DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*~
+
+# --- Coverage / logs ---
+coverage/
+*.log
+.nyc_output/

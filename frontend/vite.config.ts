@@ -40,7 +40,14 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5173,
     proxy: {
-      '/api': { target: 'http://localhost:8000', changeOrigin: true },
+      // Override via BACKEND_PROXY_TARGET when running vite inside docker
+      // (e.g. via docker-compose.dev.yml) so the proxy reaches the
+      // sibling `backend` service. Falls back to localhost for the
+      // host-side `npm run dev` workflow.
+      '/api': {
+        target: process.env.BACKEND_PROXY_TARGET || 'http://localhost:8000',
+        changeOrigin: true,
+      },
     },
   },
 });

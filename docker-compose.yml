@@ -1,10 +1,28 @@
+# =============================================================================
+#  Lyst — production stack
+# =============================================================================
+#  Edit .env (copy from .env.example), then:    docker compose up -d
+#
+#  Local development overrides live in docker-compose.dev.yml — bring them in
+#  with:                                         docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+# =============================================================================
+
+# Shared logging policy: rotate at 10 MB, keep 3 files. Keeps disk usage
+# bounded on long-running self-hosted boxes where nobody remembers to look.
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-lyst}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lyst}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
       POSTGRES_DB: ${POSTGRES_DB:-lyst}
     volumes:
       - lyst-db-data:/var/lib/postgresql/data
@@ -19,22 +37,24 @@ services:
       - "127.0.0.1:5432:5432"
 
   backend:
-    build: ./backend
+    build:
+      context: ./backend
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-lyst}:${POSTGRES_PASSWORD:-lyst}@db:5432/${POSTGRES_DB:-lyst}
-      SECRET_KEY: ${SECRET_KEY}
-      RESEND_API_KEY: ${RESEND_API_KEY}
-      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL}
-      FRONTEND_URL: ${FRONTEND_URL}
-      BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-lyst}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-lyst}}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set in .env}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
-      INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL}
-      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8091}
+      BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS:-http://localhost:8091}
+      INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:-admin@lyst.local}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:?INITIAL_ADMIN_PASSWORD must be set in .env}
       INITIAL_ADMIN_NAME: ${INITIAL_ADMIN_NAME:-Admin}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       OLLAMA_TEXT_MODEL: ${OLLAMA_TEXT_MODEL:-${OLLAMA_MODEL:-llama3.1:8b}}
@@ -44,23 +64,32 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-4-5}
     # Lets the backend reach services that are exposed on the host's published
-    # ports (e.g. an Ollama container running on this host) via the hostname
-    # `host.docker.internal`. Required on Linux/Proxmox-LXC; on Docker Desktop
-    # (Mac/Windows) this name is built-in.
+    # ports (e.g. an Ollama instance running on the host) via the hostname
+    # `host.docker.internal`. Required on Linux/Proxmox-LXC; Docker Desktop
+    # adds this automatically.
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    # Backend is reached via the frontend container's nginx (`/api/` → backend:8000)
-    # over the internal Docker network. No external port mapping is needed.
-    # If you want to debug the API directly from the host, add:
+    # No port mapping — the frontend's nginx reaches backend:8000 over the
+    # internal Docker network. To debug the API directly from the host, add:
     #   ports: ["127.0.0.1:8000:8000"]
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
-      - backend
+      # Wait for the backend's HEALTHCHECK so nginx isn't serving a 502
+      # window during the very first cold start. After that, restart loops
+      # are decoupled — nginx will lazy-resolve `backend` again.
+      backend:
+        condition: service_started
     ports:
-      - "8091:80"
+      # Host port 8091 → nginx-unprivileged on 8080 inside the container.
+      # Bind to all interfaces so a remote reverse proxy (NPM/Caddy/Traefik
+      # on another host) can reach it. Switch to "127.0.0.1:8091:8080" if
+      # your reverse proxy lives on the same machine.
+      - "8091:8080"
 
 volumes:
   lyst-db-data:

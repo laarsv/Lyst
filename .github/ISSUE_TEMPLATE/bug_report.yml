@@ -1,0 +1,117 @@
+name: Bug report
+description: Report something in Lyst that's broken or behaving unexpectedly
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug! Filling in as much of this
+        form as you can means we can usually fix the issue without an extra
+        round-trip. If you've already searched the existing issues and this
+        looks new, please continue.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear, concise description of the bug.
+      placeholder: When I do X, Y happens instead of Z.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Numbered, minimal steps from a freshly opened app.
+      placeholder: |
+        1. Log in as admin
+        2. Open list "Wocheneinkauf"
+        3. Type "200g Käse" in the input
+        4. Press Enter
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      placeholder: The item should be added with quantity 200, unit "g", text "Käse".
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: Include backend log lines and/or browser console output if relevant.
+      placeholder: |
+        The item is added as text "200g Käse" with no quantity or unit.
+        Browser console: (none)
+        Backend log:    (none)
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Lyst version
+      description: |
+        The git commit SHA you're running, or the release tag.
+        From inside the repo: `git rev-parse --short HEAD` or `git describe --tags`.
+      placeholder: e.g. v1.2.3 or 89bf8f8
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How are you running Lyst?
+      options:
+        - Docker Compose (default)
+        - Docker Compose (custom override)
+        - Bare metal / direct uvicorn + npm run dev
+        - Other (please describe in Additional context)
+    validations:
+      required: true
+
+  - type: input
+    id: browser
+    attributes:
+      label: Browser & OS (for frontend bugs)
+      placeholder: e.g. Firefox 124 on macOS 14, or iOS Safari 17
+    validations:
+      required: false
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment notes
+      description: |
+        Anything non-default about your setup that might be relevant —
+        reverse proxy (NPM/Caddy/Traefik), Postgres version if not the
+        bundled one, Ollama vs Anthropic provider, etc.
+      placeholder: Behind Nginx Proxy Manager, Ollama on the same host, qwen2.5:7b model.
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Screenshots, related issues, theories, anything else.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks before submitting
+      options:
+        - label: I searched existing issues and this isn't a duplicate.
+          required: true
+        - label: I'm running a recent version of Lyst (within the last few releases).
+          required: true
+        - label: I'm not reporting a security vulnerability here (those go via private vulnerability reporting).
+          required: true
