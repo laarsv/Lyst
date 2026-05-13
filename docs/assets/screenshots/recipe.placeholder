@@ -1,0 +1,12 @@
+REPLACE WITH: recipe.png
+
+Suggested shot: a recipe detail page with ingredients on the left and
+steps on the right. Bonus points for showing the scaling control or the
+"Cook Mode" entry button so the recipe-specific features are obvious.
+
+Spec:
+  - Format:    PNG, lossless or lightly compressed
+  - Width:     ~1600 px
+  - File size: ≤ 300 KB after optimisation
+
+Delete this file once recipe.png is in place.

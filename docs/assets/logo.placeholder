@@ -1,0 +1,10 @@
+REPLACE WITH: logo.png
+
+Spec:
+  - Format:     PNG with transparent background
+  - Size:       200×200 px (or any square; README scales to width=160)
+  - Subject:    The Lyst wordmark / icon used elsewhere in the app
+  - Optimised: ≤ 100 KB (run through `oxipng -o4` or pngquant)
+
+Once you drop the real `logo.png` in this directory, delete this file.
+The README.md in the repo root already references docs/assets/logo.png.

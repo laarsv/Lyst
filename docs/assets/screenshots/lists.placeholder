@@ -1,0 +1,14 @@
+REPLACE WITH: lists.png
+
+Suggested shot: the main shopping list view on desktop, with several items
+across different categories (Obst & Gemüse / Milchprodukte / etc.) so the
+auto-categorisation feature is visible at a glance. Mid-light theme, no
+personal data.
+
+Spec:
+  - Format:    PNG, lossless or lightly compressed
+  - Width:     ~1600 px (so the README's 80% inline embed stays sharp on
+               retina displays)
+  - File size: ≤ 300 KB after optimisation
+
+Delete this file once lists.png is in place.
