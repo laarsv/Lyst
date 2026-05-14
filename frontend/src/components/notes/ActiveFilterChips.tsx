@@ -1,7 +1,7 @@
 /** Row of active-filter chips shown directly below the mobile search bar.
  *  Tapping a chip's X clears that single filter; the row hides itself when
  *  no filters remain. */
-import { Archive, Folder, FolderOpen, Tag, X } from 'lucide-react';
+import { Archive, Folder, FolderOpen, Tag, Users, X } from 'lucide-react';
 import type { NoteFolder } from '@/types';
 import { useNotesFilters, type NotesScope } from '@/store/notesFilters';
 
@@ -35,6 +35,13 @@ export function ActiveFilterChips({ folders }: Props) {
       key: 'archive',
       label: 'Archiv',
       icon: <Archive size={12} />,
+      clear: () => setScope({ kind: 'all' }),
+    });
+  } else if (scope.kind === 'shared') {
+    chips.push({
+      key: 'shared',
+      label: 'Mit mir geteilt',
+      icon: <Users size={12} />,
       clear: () => setScope({ kind: 'all' }),
     });
   }

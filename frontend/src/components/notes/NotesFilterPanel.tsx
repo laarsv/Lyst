@@ -6,7 +6,7 @@
  *
  *  Folder management lives here too: each folder row carries a small edit
  *  affordance, plus a "+ Neuer Ordner" button below the list. */
-import { Pencil, Plus, X } from 'lucide-react';
+import { Pencil, Plus, Users, X } from 'lucide-react';
 import type { NoteFolder, Tag } from '@/types';
 import { BottomSheet } from '@/components/BottomSheet';
 import { useNotesFilters } from '@/store/notesFilters';
@@ -109,6 +109,21 @@ export function NotesFilterPanel({
               ))}
             </div>
           )}
+        </section>
+
+        {/* Shared */}
+        <section>
+          <SectionLabel>Sichtbarkeit</SectionLabel>
+          <label className="flex items-center justify-between gap-3 px-3 py-3 border border-line rounded-card bg-surface cursor-pointer">
+            <span className="text-sm inline-flex items-center gap-2">
+              <Users size={14} className="text-brand-700" />
+              Nur „Mit mir geteilt"
+            </span>
+            <Switch
+              checked={scope.kind === 'shared'}
+              onChange={(next) => setScope(next ? { kind: 'shared' } : { kind: 'all' })}
+            />
+          </label>
         </section>
 
         {/* Archive */}

@@ -142,3 +142,24 @@ def recipe_book_share_email(
         f"{sharer_name} hat dir ein Rezeptbuch geteilt",
         _BASE.format(title="Geteiltes Rezeptbuch", body=body),
     )
+
+
+def note_share_email(
+    sharer_name: str, note_title: str, share_url: str
+) -> tuple[str, str]:
+    """External-share email: sender shared a note with someone who does
+    not have a Lyst account. They get the public read-only link."""
+    body = (
+        f"<p><strong>{sharer_name}</strong> hat dir eine Notiz geteilt:</p>"
+        f'<p style="font-size:18px;margin:12px 0 4px 0;">"{note_title}"</p>'
+        f"<p>Du kannst sie direkt im Browser ansehen — kein Konto nötig:</p>"
+        f"{_btn(share_url, 'Notiz öffnen')}"
+        f"<p style='color:{_MUTED};font-size:14px;'>"
+        f"Falls du auch eigene Notizen verwalten möchtest, gibt es Lyst unter "
+        f"<a href='https://github.com/laarsv/Lyst' style='color:{_BRAND};'>"
+        f"github.com/laarsv/Lyst</a>.</p>"
+    )
+    return (
+        f"{sharer_name} hat dir eine Notiz geteilt: {note_title}",
+        _BASE.format(title=f"Notiz: {note_title}", body=body),
+    )

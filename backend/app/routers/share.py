@@ -212,3 +212,26 @@ async def public_recipe_book(token: str, db: AsyncSession = Depends(get_db)):
             ],
         ).model_dump(mode="json")
     )
+
+
+# =============================================================================
+#  Public note view (no auth) — alembic 0013
+# =============================================================================
+
+from app.schemas.note import PublicNote
+from app.services.note_share_service import get_public_note
+
+
+@router.get("/share/note/{token}")
+async def public_note(token: str, db: AsyncSession = Depends(get_db)):
+    note = await get_public_note(db, token)
+    if not note:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    return ok(
+        PublicNote(
+            title=note.title,
+            content=note.content or "",
+            tags=list(note.tags or []),
+            updated_at=note.updated_at,
+        ).model_dump(mode="json")
+    )

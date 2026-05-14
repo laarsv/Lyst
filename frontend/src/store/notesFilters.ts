@@ -9,7 +9,10 @@ export type NotesScope =
   | { kind: 'all' }
   | { kind: 'folder'; folderId: number }
   | { kind: 'uncategorized' }
-  | { kind: 'archive' };
+  | { kind: 'archive' }
+  /** "Mit mir geteilt" — only notes whose share_source is non-null. Applied
+   *  client-side because the backend already mixes own + shared rows. */
+  | { kind: 'shared' };
 
 interface State {
   q: string;

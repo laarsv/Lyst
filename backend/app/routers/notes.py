@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import require_user
 from app.core.responses import ok
@@ -14,6 +15,15 @@ from app.schemas.note import (
     NoteVersionListItem,
     NoteVersionOut,
 )
+from app.services.note_share_service import (
+    disable_share as _disable_note_share,
+    enable_share as _enable_note_share,
+    get_accessible_note,
+    list_accessible_notes,
+    list_internal_shares as _list_note_internal_shares,
+    revoke_internal_share as _revoke_note_internal_share,
+    share_note_with_email,
+)
 from app.services.note_version_service import (
     get_version,
     list_versions,
@@ -23,8 +33,15 @@ from app.services.note_version_service import (
 router = APIRouter(prefix="/notes", tags=["notes"])
 
 
-def _out(n: Note) -> dict:
-    return NoteOut.model_validate(n).model_dump(mode="json")
+def _out(
+    n: Note,
+    *,
+    share_source: str | None = None,
+    owner_name: str | None = None,
+) -> dict:
+    return NoteOut.model_validate(n).model_copy(
+        update={"share_source": share_source, "owner_name": owner_name}
+    ).model_dump(mode="json")
 
 
 @router.get("")
@@ -44,26 +61,21 @@ async def get_notes(
     - `folder_id` filters by folder; `uncategorized=true` shortcuts
       to "no folder assigned" (folder_id IS NULL).
     - Pinned notes always come first regardless of updated_at.
+    - Notes shared with the current user are mixed into the default
+      view (no folder/uncategorized/archived filter active) — they
+      ride the same pinned-first ordering. Folder/archived filters
+      are owner-side only.
     """
-    stmt = (
-        select(Note)
-        .where(Note.owner_id == user.id)
-        .where(Note.is_archived.is_(archived))
-        .order_by(Note.is_pinned.desc(), Note.updated_at.desc())
+    rows = await list_accessible_notes(
+        db,
+        user.id,
+        q=q,
+        tag=tag,
+        folder_id=folder_id,
+        uncategorized=uncategorized,
+        archived=archived,
     )
-    if q:
-        like = f"%{q.lower()}%"
-        stmt = stmt.where(
-            or_(func.lower(Note.title).like(like), func.lower(Note.content).like(like))
-        )
-    if tag:
-        stmt = stmt.where(Note.tags.any(tag))
-    if uncategorized:
-        stmt = stmt.where(Note.folder_id.is_(None))
-    elif folder_id is not None:
-        stmt = stmt.where(Note.folder_id == folder_id)
-    result = await db.execute(stmt)
-    return ok([_out(n) for n in result.scalars().all()])
+    return ok([_out(n, share_source=src, owner_name=name) for n, src, name in rows])
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -150,13 +162,18 @@ async def get_note(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(Note).where(Note.id == note_id, Note.owner_id == user.id)
-    )
-    note = result.scalar_one_or_none()
-    if not note:
+    """Owners see their note; recipients (notes shared with them) get the
+    same payload with share_source/owner_name set so the UI can render in
+    read-only mode."""
+    try:
+        note, share_source = await get_accessible_note(db, note_id, user.id)
+    except ValueError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    return ok(_out(note))
+    owner_name = None
+    if share_source is not None:
+        owner = await db.execute(select(User.name).where(User.id == note.owner_id))
+        owner_name = owner.scalar_one_or_none()
+    return ok(_out(note, share_source=share_source, owner_name=owner_name))
 
 
 @router.patch("/{note_id}")
@@ -456,3 +473,116 @@ async def post_ai_note_tags(
         if len(out) >= 5:
             break
     return ok({"tags": out})
+
+
+# =============================================================================
+#  Sharing — public link + email/internal (alembic 0013)
+# =============================================================================
+#
+# PRIVACY: the email-lookup is done EXCLUSIVELY in
+# note_share_service._user_by_email, on POST submit only, exact case-
+# insensitive match. There is no autocomplete, no /users/search, no
+# probe endpoint.
+
+from app.email.sender import send_email
+from app.email.templates import note_share_email
+from app.schemas.note import (
+    NoteInternalShareOut,
+    NoteShareByEmailRequest,
+    NoteShareByEmailResponse,
+)
+from app.schemas.share import ShareEnableResponse
+
+
+async def _load_owned_note_for_share(db: AsyncSession, note_id: int, user_id: int) -> Note:
+    """Owner-only fetch — share management is owner-side. Recipients of an
+    internal share have READ access to the note itself but no power over
+    its share state."""
+    res = await db.execute(
+        select(Note).where(Note.id == note_id, Note.owner_id == user_id)
+    )
+    note = res.scalar_one_or_none()
+    if not note:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    return note
+
+
+@router.post("/{note_id}/share/enable")
+async def post_share_enable(
+    note_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    note = await _load_owned_note_for_share(db, note_id, user.id)
+    token, url, qr = await _enable_note_share(db, note)
+    return ok(
+        ShareEnableResponse(share_token=token, share_url=url, qr_code_png_base64=qr).model_dump()
+    )
+
+
+@router.post("/{note_id}/share/disable")
+async def post_share_disable(
+    note_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    note = await _load_owned_note_for_share(db, note_id, user.id)
+    await _disable_note_share(db, note)
+    return ok({"message": "Share disabled"})
+
+
+@router.post("/{note_id}/share/email")
+async def post_share_by_email(
+    note_id: int,
+    payload: NoteShareByEmailRequest,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    note = await _load_owned_note_for_share(db, note_id, user.id)
+    try:
+        kind, name = await share_note_with_email(db, note, user, payload.email)
+    except ValueError as e:
+        if str(e) == "self-share":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Das ist deine eigene Adresse.",
+            )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    if kind == "external":
+        # share_token is now guaranteed to exist (service ensures it).
+        url = f"{settings.FRONTEND_URL}/share/note/{note.share_token}"
+        subject, html = note_share_email(user.name, note.title, url)
+        await send_email(payload.email, subject, html)
+
+    return ok(NoteShareByEmailResponse(type=kind, user_name=name).model_dump())
+
+
+@router.get("/{note_id}/shares")
+async def get_shares(
+    note_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await _load_owned_note_for_share(db, note_id, user.id)
+    rows = await _list_note_internal_shares(db, note_id)
+    return ok(
+        [
+            NoteInternalShareOut(
+                user_id=u.id, name=u.name, email=u.email, created_at=s.created_at
+            ).model_dump(mode="json")
+            for s, u in rows
+        ]
+    )
+
+
+@router.delete("/{note_id}/shares/{user_id}")
+async def del_share(
+    note_id: int,
+    user_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await _load_owned_note_for_share(db, note_id, user.id)
+    await _revoke_note_internal_share(db, note_id, user_id)
+    return ok({"message": "Share revoked"})

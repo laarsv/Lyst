@@ -90,6 +90,20 @@ export interface Note {
   is_archived: boolean;
   created_at: string;
   updated_at: string;
+  // Public sharing — alembic 0013.
+  share_enabled: boolean;
+  share_token: string | null;
+  // Recipient-perspective fields. share_source="individual" when the
+  // current user is viewing a note someone else shared with them.
+  share_source: 'individual' | null;
+  owner_name: string | null;
+}
+
+export interface PublicNoteData {
+  title: string;
+  content: string;
+  tags: string[];
+  updated_at: string;
 }
 
 export interface NoteFolder {

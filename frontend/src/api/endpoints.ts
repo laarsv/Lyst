@@ -27,6 +27,7 @@ import type {
   NoteVersionFull,
   NoteVersionListItem,
   PublicListData,
+  PublicNoteData,
   InternalShare,
   Recipe,
   PublicRecipeBookData,
@@ -259,6 +260,23 @@ export const NotesApi = {
     api.post<{ data: { title: string } }>(`/notes/${id}/ai/title`).then(unwrap),
   aiTags: (id: number) =>
     api.post<{ data: { tags: string[] } }>(`/notes/${id}/ai/tags`).then(unwrap),
+
+  // ----- Sharing (alembic 0013) -----
+  shareEnable: (id: number) =>
+    api.post<{ data: ShareInfo }>(`/notes/${id}/share/enable`).then(unwrap),
+  shareDisable: (id: number) =>
+    api.post(`/notes/${id}/share/disable`),
+  shareByEmail: (id: number, email: string) =>
+    api
+      .post<{ data: ShareByEmailResponse }>(`/notes/${id}/share/email`, { email })
+      .then(unwrap),
+  listShares: (id: number) =>
+    api.get<{ data: InternalShare[] }>(`/notes/${id}/shares`).then(unwrap),
+  revokeShare: (id: number, userId: number) =>
+    api.delete(`/notes/${id}/shares/${userId}`),
+  // Public read (no auth — same path scheme as recipes).
+  getPublic: (token: string) =>
+    api.get<{ data: PublicNoteData }>(`/share/note/${token}`).then(unwrap),
 };
 
 export interface NoteTitleResult {

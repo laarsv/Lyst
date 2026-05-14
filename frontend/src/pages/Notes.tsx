@@ -12,7 +12,8 @@ import { NoteActionsMenu } from '@/components/notes/NoteActionsMenu';
 import { NoteMobileLayout } from '@/components/notes/NoteMobileLayout';
 import { NoteSummaryModal } from '@/components/notes/NoteSummaryModal';
 import { FolderChip } from '@/components/notes/FolderChip';
-import { Loader2, Sparkles } from 'lucide-react';
+import { Loader2, Share2, Sparkles, Users } from 'lucide-react';
+import { ShareNotePanel } from '@/components/notes/ShareNotePanel';
 import { NotesFilterButton } from '@/components/notes/NotesFilterButton';
 import { NotesFilterPanel } from '@/components/notes/NotesFilterPanel';
 import { ActiveFilterChips } from '@/components/notes/ActiveFilterChips';
@@ -105,7 +106,10 @@ export function NotesPage() {
       if (scope.kind === 'folder') params.folder_id = scope.folderId;
       else if (scope.kind === 'uncategorized') params.uncategorized = true;
       else if (scope.kind === 'archive') params.archived = true;
-      setNotes(await NotesApi.list(params));
+      const all = await NotesApi.list(params);
+      // Client-side narrowing for "Mit mir geteilt" — backend already
+      // mixes own + shared rows so we just keep the share_source ones.
+      setNotes(scope.kind === 'shared' ? all.filter((n) => n.share_source) : all);
     } catch (e) {
       toast.error(getApiError(e));
     } finally {
@@ -256,6 +260,7 @@ export function NotesPage() {
     if (scope.kind === 'all') return 'Alle Notizen';
     if (scope.kind === 'archive') return 'Archiv';
     if (scope.kind === 'uncategorized') return 'Ohne Ordner';
+    if (scope.kind === 'shared') return 'Mit mir geteilt';
     const f = folders.find((x) => x.id === scope.folderId);
     return f ? f.name : 'Ordner';
   })();
@@ -431,6 +436,12 @@ export function NotesPage() {
                 onDrop={(noteId) => void moveNoteToFolder(noteId, f.id)}
               />
             ))}
+            <SidebarRow
+              active={scope.kind === 'shared'}
+              onClick={() => setScope({ kind: 'shared' })}
+              dot="#7c5fff"
+              label="Mit mir geteilt"
+            />
           </ul>
         </div>
 
@@ -638,7 +649,25 @@ function NoteCard({
       className="group relative card p-3 cursor-pointer hover:border-brand/60"
     >
       <div className="flex items-start justify-between gap-2">
-        <div className="font-medium truncate flex-1">{note.title || '(ohne Titel)'}</div>
+        <div className="font-medium truncate flex-1 flex items-center gap-1.5 min-w-0">
+          {note.share_source && (
+            <span
+              title={`Geteilt von ${note.owner_name ?? 'jemandem'}`}
+              className="shrink-0 text-brand-700"
+            >
+              <Users size={13} />
+            </span>
+          )}
+          <span className="truncate">{note.title || '(ohne Titel)'}</span>
+          {note.share_enabled && !note.share_source && (
+            <span
+              title="Öffentlich freigegeben"
+              className="shrink-0 text-brand-700/70"
+            >
+              <Share2 size={12} />
+            </span>
+          )}
+        </div>
         <button
           type="button"
           aria-label={note.is_pinned ? 'Pin entfernen' : 'Anpinnen'}
@@ -646,12 +675,12 @@ function NoteCard({
             e.stopPropagation();
             onTogglePin();
           }}
-          disabled={note.is_archived}
+          disabled={note.is_archived || !!note.share_source}
           className={`text-sm transition ${
             note.is_pinned
               ? 'opacity-100 text-brand-700'
               : 'opacity-0 group-hover:opacity-100 text-muted/70 hover:text-ink'
-          } ${note.is_archived ? 'cursor-not-allowed opacity-30' : ''}`}
+          } ${note.is_archived || note.share_source ? 'cursor-not-allowed opacity-30' : ''}`}
         >
           📌
         </button>
@@ -797,9 +826,13 @@ function NoteEditor({
   const [tagInput, setTagInput] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [titleSuggesting, setTitleSuggesting] = useState(false);
   const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
   const [tagsLoading, setTagsLoading] = useState(false);
+  // Recipients (note shared TO this user) get a read-only view: no edit
+  // controls, no AI buttons, no share actions.
+  const isRecipient = note.share_source !== null;
   // Lifted so both the chip and the kebab "Ordner ändern" entry pop the
   // same FolderPicker (one source of truth for the open state).
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
@@ -852,10 +885,22 @@ function NoteEditor({
             value={state.title}
             onChange={(e) => state.setTitle(e.target.value)}
             placeholder="Titel"
+            readOnly={isRecipient}
+            title={isRecipient ? 'Geteilte Notiz — schreibgeschützt' : undefined}
           />
+          {isRecipient && note.owner_name && (
+            <div
+              className="absolute -bottom-5 left-1 text-[11px] text-brand-700 inline-flex items-center gap-1"
+              title="Geteilte Notiz"
+            >
+              <Users size={11} />
+              <span>Geteilt von {note.owner_name} · schreibgeschützt</span>
+            </div>
+          )}
           {/* Feature 7 — Sparkles only appears when the title is empty
-              and the note has content the AI can read. */}
-          {!state.title.trim() && state.content.trim() && (
+              and the note has content the AI can read. Hidden for
+              recipients — they can't trigger AI on someone else's note. */}
+          {!isRecipient && !state.title.trim() && state.content.trim() && (
             <button
               type="button"
               onClick={suggestTitle}
@@ -893,100 +938,114 @@ function NoteEditor({
           onToggleArchive={onToggleArchive}
           onShowHistory={() => setHistoryOpen(true)}
           onDelete={onDelete}
-          onSummarize={() => setSummaryOpen(true)}
+          // Owner-only actions hidden for recipients of shared notes.
+          onSummarize={isRecipient ? undefined : () => setSummaryOpen(true)}
           canSummarize={!!state.content.trim()}
+          onShare={isRecipient ? undefined : () => setShareOpen(true)}
+          shareActive={note.share_enabled}
           buttonClassName="size-9"
         />
       </div>
 
       {/* Metadata row: folder chip + tag chips + "+ tag" input — all chip-
           shaped so they read as related. Wraps cleanly when the user adds
-          many tags. */}
+          many tags.  Recipients see read-only chips, no add input. */}
       <div className="flex flex-wrap items-center gap-1.5">
-        <FolderChip
-          folders={folders}
-          currentFolderId={note.folder_id}
-          onChange={(id) => onChange({ folder_id: id })}
-          onCreateFolder={onCreateFolder}
-          open={folderPickerOpen}
-          onOpenChange={setFolderPickerOpen}
-        />
+        {!isRecipient && (
+          <FolderChip
+            folders={folders}
+            currentFolderId={note.folder_id}
+            onChange={(id) => onChange({ folder_id: id })}
+            onCreateFolder={onCreateFolder}
+            open={folderPickerOpen}
+            onOpenChange={setFolderPickerOpen}
+          />
+        )}
         {state.tags.map((t) => (
           <span key={t} className="inline-flex items-center gap-1 text-xs bg-page px-2 py-1 rounded-full">
             #{t}
-            <button
-              onClick={() => state.setTags(state.tags.filter((x) => x !== t))}
-              className="text-muted/70 hover:text-danger"
-            >
-              ×
-            </button>
+            {!isRecipient && (
+              <button
+                onClick={() => state.setTags(state.tags.filter((x) => x !== t))}
+                className="text-muted/70 hover:text-danger"
+              >
+                ×
+              </button>
+            )}
           </span>
         ))}
-        <input
-          list="tag-suggestions"
-          className="px-2 py-1 text-xs border border-line rounded-full bg-surface outline-none focus:border-brand"
-          placeholder="+ tag"
-          value={tagInput}
-          onChange={(e) => setTagInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ',') {
-              e.preventDefault();
-              const v = tagInput.trim().replace(/^#/, '');
-              if (v && !state.tags.includes(v)) state.setTags([...state.tags, v]);
-              setTagInput('');
-            }
-          }}
-        />
-        <datalist id="tag-suggestions">
-          {availableTags.map((t) => (
-            <option key={t.id} value={t.name} />
-          ))}
-        </datalist>
-        {/* Feature 8 — Sparkles button + AI tag suggestions as tappable chips. */}
-        <button
-          type="button"
-          onClick={suggestTags}
-          disabled={tagsLoading}
-          title="Tags vorschlagen (KI)"
-          aria-label="Tags vorschlagen (KI)"
-          className="size-7 inline-flex items-center justify-center rounded-full text-muted hover:text-brand-700 hover:bg-page transition disabled:opacity-50"
-        >
-          {tagsLoading ? (
-            <Loader2 size={14} className="animate-spin" />
-          ) : (
-            <Sparkles size={14} />
-          )}
-        </button>
-        {tagSuggestions.length > 0 && (
-          <span className="basis-full flex flex-wrap gap-1 mt-1">
-            <span className="text-[10px] uppercase tracking-wider text-muted self-center">
-              Vorschläge:
-            </span>
-            {tagSuggestions.map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => {
-                  if (!state.tags.includes(t)) state.setTags([...state.tags, t]);
-                  setTagSuggestions((cur) => cur.filter((x) => x !== t));
-                }}
-                className="inline-flex items-center gap-1 text-xs bg-brand-50 text-brand-700 hover:bg-brand-100 px-2 py-1 rounded-full transition"
-              >
-                + #{t}
-              </button>
-            ))}
-          </span>
+        {!isRecipient && (
+          <>
+            <input
+              list="tag-suggestions"
+              className="px-2 py-1 text-xs border border-line rounded-full bg-surface outline-none focus:border-brand"
+              placeholder="+ tag"
+              value={tagInput}
+              onChange={(e) => setTagInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ',') {
+                  e.preventDefault();
+                  const v = tagInput.trim().replace(/^#/, '');
+                  if (v && !state.tags.includes(v)) state.setTags([...state.tags, v]);
+                  setTagInput('');
+                }
+              }}
+            />
+            <datalist id="tag-suggestions">
+              {availableTags.map((t) => (
+                <option key={t.id} value={t.name} />
+              ))}
+            </datalist>
+            {/* Feature 8 — Sparkles button + AI tag suggestions as tappable chips. */}
+            <button
+              type="button"
+              onClick={suggestTags}
+              disabled={tagsLoading}
+              title="Tags vorschlagen (KI)"
+              aria-label="Tags vorschlagen (KI)"
+              className="size-7 inline-flex items-center justify-center rounded-full text-muted hover:text-brand-700 hover:bg-page transition disabled:opacity-50"
+            >
+              {tagsLoading ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Sparkles size={14} />
+              )}
+            </button>
+            {tagSuggestions.length > 0 && (
+              <span className="basis-full flex flex-wrap gap-1 mt-1">
+                <span className="text-[10px] uppercase tracking-wider text-muted self-center">
+                  Vorschläge:
+                </span>
+                {tagSuggestions.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => {
+                      if (!state.tags.includes(t)) state.setTags([...state.tags, t]);
+                      setTagSuggestions((cur) => cur.filter((x) => x !== t));
+                    }}
+                    className="inline-flex items-center gap-1 text-xs bg-brand-50 text-brand-700 hover:bg-brand-100 px-2 py-1 rounded-full transition"
+                  >
+                    + #{t}
+                  </button>
+                ))}
+              </span>
+            )}
+          </>
         )}
       </div>
 
       {/* Compact icon-only toolbar — replaces the lib's built-in toolbar
-          and matches the mobile bottom toolbar for consistency. */}
-      <NoteToolbar
-        variant="desktop"
-        content={state.content}
-        setContent={state.setContent}
-        getTextarea={state.getTextarea}
-      />
+          and matches the mobile bottom toolbar for consistency.
+          Hidden for recipients (no edit affordance). */}
+      {!isRecipient && (
+        <NoteToolbar
+          variant="desktop"
+          content={state.content}
+          setContent={state.setContent}
+          getTextarea={state.getTextarea}
+        />
+      )}
 
       <div
         data-color-mode="light"
@@ -996,14 +1055,16 @@ function NoteEditor({
         <MDEditor
           value={state.content}
           onChange={(v) => {
+            if (isRecipient) return; // belt-and-suspenders; readOnly already blocks input
             const next = v ?? '';
             state.setContent(next);
             state.detectAutocomplete(next);
           }}
           height={500}
-          preview="live"
+          preview={isRecipient ? 'preview' : 'live'}
           hideToolbar
           textareaProps={{
+            readOnly: isRecipient,
             onKeyDown: state.onTextareaKeyDown,
             onClick: () => state.detectAutocomplete(state.content),
             onKeyUp: () => state.detectAutocomplete(state.content),
@@ -1115,6 +1176,29 @@ function NoteEditor({
           );
         }}
       />
+
+      {/* Sharing — owner-only. Mounted regardless of `shareOpen` so the
+          modal can animate; the panel itself bails when `open` is false. */}
+      {!isRecipient && (
+        <ShareNotePanel
+          open={shareOpen}
+          onClose={() => setShareOpen(false)}
+          note={note}
+          onUpdate={(patch) => {
+            // Forward share state changes through onChange so the parent's
+            // notes list stays in sync. We bypass the autosave path —
+            // share fields are already persisted server-side at /share/*.
+            for (const [k, v] of Object.entries(patch)) {
+              if (k === 'share_enabled' || k === 'share_token') {
+                // Mutating the prop is normally a no-no; the parent
+                // listens via the same updateNote pipeline, so we send
+                // a partial through onChange instead.
+                onChange({ [k]: v } as Partial<Note>);
+              }
+            }
+          }}
+        />
+      )}
     </>
   );
 }
@@ -1170,6 +1254,8 @@ function MobileNoteShell({
   });
   const [historyOpen, setHistoryOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const isRecipient = note.share_source !== null;
   return (
     <>
       <NoteMobileLayout
@@ -1182,8 +1268,10 @@ function MobileNoteShell({
         onDelete={onDelete}
         onTogglePin={onTogglePin}
         onToggleArchive={onToggleArchive}
-        onSummarize={() => setSummaryOpen(true)}
+        onSummarize={isRecipient ? undefined : () => setSummaryOpen(true)}
         onShowHistory={() => setHistoryOpen(true)}
+        onShare={isRecipient ? undefined : () => setShareOpen(true)}
+        shareActive={note.share_enabled}
         onBack={onBack}
         onOpenByTitle={onOpenByTitle}
         onCreateFolder={onCreateFolder}
@@ -1202,6 +1290,20 @@ function MobileNoteShell({
           state.setContent(`${summary}\n\n${state.content}`.trimStart());
         }}
       />
+      {!isRecipient && (
+        <ShareNotePanel
+          open={shareOpen}
+          onClose={() => setShareOpen(false)}
+          note={note}
+          onUpdate={(patch) => {
+            for (const [k, v] of Object.entries(patch)) {
+              if (k === 'share_enabled' || k === 'share_token') {
+                onChange({ [k]: v } as Partial<Note>);
+              }
+            }
+          }}
+        />
+      )}
     </>
   );
 }

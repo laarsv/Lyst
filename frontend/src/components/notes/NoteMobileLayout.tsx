@@ -14,7 +14,7 @@
  *  identical to the desktop split-view. */
 import { useEffect, useRef, useState } from 'react';
 import MDEditor from '@uiw/react-md-editor';
-import { ArrowLeft, Loader2, Pin, Sparkles, X } from 'lucide-react';
+import { ArrowLeft, Loader2, Pin, Sparkles, Users, X } from 'lucide-react';
 import type { Note, NoteFolder, Tag } from '@/types';
 import { NotesApi } from '@/api/endpoints';
 import { toast } from '@/components/Toast';
@@ -42,6 +42,10 @@ interface Props {
   onShowHistory: () => void;
   /** Optional — when provided, the kebab gets a "Zusammenfassen (KI)" entry. */
   onSummarize?: () => void;
+  /** Optional — when provided, the kebab gets a "Teilen" entry. Hide
+   *  for received-shared notes (recipient can't share what they don't own). */
+  onShare?: () => void;
+  shareActive?: boolean;
   onBack: () => void;
   onOpenByTitle: (title: string) => void;
   onCreateFolder: () => void;
@@ -59,10 +63,13 @@ export function NoteMobileLayout({
   onToggleArchive,
   onShowHistory,
   onSummarize,
+  onShare,
+  shareActive,
   onBack,
   onOpenByTitle,
   onCreateFolder,
 }: Props) {
+  const isRecipient = note.share_source !== null;
   const [mode, setMode] = useState<'edit' | 'preview'>('preview');
   const [titleEditing, setTitleEditing] = useState(false);
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
@@ -109,6 +116,11 @@ export function NoteMobileLayout({
     setTitleEditing(false);
   }, [note.id]);
 
+  // Recipients of shared notes can never enter edit mode — force preview.
+  useEffect(() => {
+    if (isRecipient && mode !== 'preview') setMode('preview');
+  }, [isRecipient, mode]);
+
   const handlePin = () => {
     if (note.is_archived) return;
     setPinPulse(true);
@@ -136,6 +148,8 @@ export function NoteMobileLayout({
           onChangeFolder={() => setFolderPickerOpen(true)}
           onSummarize={onSummarize}
           canSummarize={!!state.content.trim()}
+          onShare={onShare}
+          shareActive={shareActive}
           onToggleArchive={onToggleArchive}
           onShowHistory={onShowHistory}
           onDelete={onDelete}
@@ -157,6 +171,10 @@ export function NoteMobileLayout({
             placeholder="Titel"
             className="flex-1 bg-transparent text-xl font-semibold outline-none border-b border-brand pb-1"
           />
+        ) : isRecipient ? (
+          <div className="flex-1 text-left text-xl font-semibold truncate min-h-[2.25rem]">
+            {state.title || <span className="text-muted/70">(Ohne Titel)</span>}
+          </div>
         ) : (
           <button
             type="button"
@@ -166,8 +184,9 @@ export function NoteMobileLayout({
             {state.title || <span className="text-muted/70">Titel</span>}
           </button>
         )}
-        {/* Feature 7: Sparkles only when title is empty + content exists. */}
-        {!state.title.trim() && state.content.trim() && !titleEditing && (
+        {/* Feature 7: Sparkles only when title is empty + content exists.
+            Hidden for recipients — they can't trigger AI on someone else's note. */}
+        {!isRecipient && !state.title.trim() && state.content.trim() && !titleEditing && (
           <button
             type="button"
             onClick={suggestTitle}
@@ -200,8 +219,35 @@ export function NoteMobileLayout({
         </button>
       </div>
 
+      {/* Recipient badge — appears between the title and metadata rows. */}
+      {isRecipient && (
+        <div className="px-3 mt-1 shrink-0">
+          <span className="inline-flex items-center gap-1 text-[11px] text-brand-700 bg-brand-50 border border-brand-100 rounded-full px-2 py-0.5">
+            <Users size={11} />
+            Geteilt von {note.owner_name ?? 'jemandem'} · schreibgeschützt
+          </span>
+        </div>
+      )}
+
       {/* Metadata row: folder chip + tag chips + "+ tag" input. Folder
-          and tags are visually grouped — both are chip-shaped. */}
+          and tags are visually grouped — both are chip-shaped.
+          Hidden for recipients (they can't change the owner's metadata). */}
+      {isRecipient ? (
+        <div className="px-3 mt-2 shrink-0">
+          {state.tags.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {state.tags.map((t) => (
+                <span
+                  key={t}
+                  className="inline-flex items-center gap-1 text-xs bg-surface border border-line px-2 py-1 rounded-full text-muted"
+                >
+                  #{t}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
       <div className="flex flex-wrap items-center gap-1.5 px-3 mt-2 shrink-0">
         <FolderChip
           folders={folders}
@@ -280,8 +326,10 @@ export function NoteMobileLayout({
           </span>
         )}
       </div>
+      )}
 
-      {/* Mode toggle */}
+      {/* Mode toggle — hidden for recipients (always preview). */}
+      {!isRecipient && (
       <div className="px-3 mt-3 shrink-0">
         <div className="inline-flex bg-surface border border-line rounded-ctl p-0.5 text-sm">
           <ModeButton active={mode === 'edit'} onClick={() => setMode('edit')}>
@@ -292,6 +340,7 @@ export function NoteMobileLayout({
           </ModeButton>
         </div>
       </div>
+      )}
 
       {/* Content — fills the remaining space, scrolls. The bottom padding
           accounts for the sticky toolbar + iOS keyboard so the cursor

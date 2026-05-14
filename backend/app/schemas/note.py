@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class NoteBase(BaseModel):
@@ -31,6 +31,45 @@ class NoteOut(NoteBase):
     owner_id: int
     created_at: datetime
     updated_at: datetime
+    # Public-share state — alembic 0013. Same shape as Recipe.
+    share_enabled: bool = False
+    share_token: str | None = None
+    # Recipient-perspective fields. share_source="individual" when the
+    # current user is viewing a note someone else shared with them; null
+    # when they own it. owner_name only set in the recipient case.
+    share_source: str | None = None
+    owner_name: str | None = None
+
+
+# --- Public + internal sharing ---
+
+class PublicNote(BaseModel):
+    """Payload returned by GET /share/note/{token} — anyone-with-URL."""
+    title: str
+    content: str
+    tags: list[str]
+    updated_at: datetime
+
+
+class NoteShareByEmailRequest(BaseModel):
+    """Body for POST /notes/{id}/share/email."""
+    email: EmailStr
+
+
+class NoteShareByEmailResponse(BaseModel):
+    """Either an internal share got created (recipient is a Lyst user) or
+    the public link got emailed. Same shape as the recipe equivalent so
+    the frontend reuses the same toast logic."""
+    type: str  # "internal" | "external"
+    user_name: str | None = None
+
+
+class NoteInternalShareOut(BaseModel):
+    """One row of the "geteilt mit" list shown in the share panel."""
+    user_id: int
+    name: str
+    email: str
+    created_at: datetime
 
 
 # --- Folders ---

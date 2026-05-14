@@ -14,6 +14,7 @@ import { SettingsPage } from '@/pages/Settings';
 import { PublicSharePage } from '@/pages/PublicShare';
 import { PublicRecipePage } from '@/pages/PublicRecipe';
 import { PublicRecipeBookPage } from '@/pages/PublicRecipeBook';
+import { PublicNotePage } from '@/pages/PublicNote';
 import { AdminUsersPage } from '@/pages/admin/AdminUsers';
 import { AdminSettingsPage } from '@/pages/admin/AdminSettings';
 import { AppShell } from '@/components/AppShell';
@@ -37,6 +38,7 @@ export default function App() {
         <Route path="/s/:token" element={<PublicSharePage />} />
         <Route path="/share/recipe/:token" element={<PublicRecipePage />} />
         <Route path="/share/recipe-book/:token" element={<PublicRecipeBookPage />} />
+        <Route path="/share/note/:token" element={<PublicNotePage />} />
 
         <Route
           element={

@@ -1,7 +1,18 @@
+from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ARRAY, Boolean, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    ARRAY,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.sql import func
 
 from app.models.base import Base, TimestampMixin
 
@@ -25,6 +36,40 @@ class Note(Base, TimestampMixin):
     )
     is_pinned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    # Public sharing — alembic 0013. Same shape as Recipe.share_token.
+    share_token: Mapped[str | None] = mapped_column(
+        String(64), unique=True, nullable=True, index=True
+    )
+    share_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     owner: Mapped["User"] = relationship(back_populates="notes")
     folder: Mapped["NoteFolder | None"] = relationship(back_populates="notes")
+
+
+class NoteShare(Base):
+    """Internal share row — grants a Lyst user direct in-app access to one
+    note (read-only). Distinct from the public share_token, which gives
+    anyone-with-URL access. Cascading deletes from notes/users keep the
+    table free of orphans without cleanup jobs."""
+
+    __tablename__ = "note_shares"
+    __table_args__ = (
+        UniqueConstraint(
+            "note_id",
+            "shared_with_user_id",
+            name="uq_note_shares_note_user",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    note_id: Mapped[int] = mapped_column(
+        ForeignKey("notes.id", ondelete="CASCADE"), nullable=False
+    )
+    shared_with_user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

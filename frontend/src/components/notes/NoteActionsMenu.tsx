@@ -14,6 +14,7 @@ import {
   MoreVertical,
   Pin,
   PinOff,
+  Share2,
   Sparkles,
   Trash2,
   type LucideIcon,
@@ -34,6 +35,12 @@ interface Props {
   onSummarize?: () => void;
   /** Disable the summarize entry when there's nothing to summarize. */
   canSummarize?: boolean;
+  /** Optional — when provided, the menu shows a "Teilen" entry. Hide
+   *  for received-shared notes (recipient can't share something they
+   *  don't own). */
+  onShare?: () => void;
+  /** When true, the share entry is highlighted (sharing is currently on). */
+  shareActive?: boolean;
   buttonClassName?: string;
 }
 
@@ -56,6 +63,8 @@ export function NoteActionsMenu({
   onDelete,
   onSummarize,
   canSummarize = true,
+  onShare,
+  shareActive = false,
   buttonClassName = '',
 }: Props) {
   const isMobile = useMediaQuery('(max-width: 767.98px)');
@@ -98,6 +107,16 @@ export function NoteActionsMenu({
       onClick: onToggleArchive,
     },
     { key: 'history', label: 'Verlauf', icon: History, onClick: onShowHistory },
+    ...(onShare
+      ? [
+          {
+            key: 'share',
+            label: shareActive ? 'Teilen (aktiv)' : 'Teilen',
+            icon: Share2,
+            onClick: onShare,
+          },
+        ]
+      : []),
     ...(onSummarize
       ? [
           {
