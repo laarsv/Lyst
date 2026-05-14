@@ -108,4 +108,27 @@ html[data-theme="dark"] { color-scheme: dark; }
   margin-right: 0.4rem;
   vertical-align: -0.1em;
 }
-.wmde-markdown li.task-list-item { list-style: none; margin-left: -1.25rem; }
+/* Task list items: drop the bullet, but DON'T pull the row left of the
+   list's padding (the old -1.25rem margin clipped checkboxes off-screen
+   on narrow viewports). The parent ul keeps its standard padding so the
+   checkbox lines up with regular paragraph text. */
+.wmde-markdown li.task-list-item {
+  list-style: none;
+  /* Cancel the parent ul's padding-left for task lists only — keeps
+     the checkbox flush with surrounding paragraph text instead of
+     indented under a phantom bullet column. */
+  margin-left: -1.5rem;
+}
+/* Mobile / narrow viewports: keep the checkbox inside the content
+   padding even when the editor area is tight. The negative margin
+   above already compensates for the 1.5rem ul padding-left, so the
+   row sits flush with the rest of the content — no further offset. */
+@media (max-width: 480px) {
+  .wmde-markdown ul,
+  .wmde-markdown ol {
+    padding-left: 1.25rem;
+  }
+  .wmde-markdown li.task-list-item {
+    margin-left: -1.25rem;
+  }
+}

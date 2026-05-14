@@ -473,6 +473,12 @@ export function ListDetailPage() {
               placeholder={addItemPlaceholder(list.type)}
               value={text}
               onChange={(e) => setText(e.target.value)}
+              // Mobile keyboards disable these by default on inputs that
+              // look "structured" — explicitly turn them on so adding
+              // "200g Käse" doesn't ship with a lower-case K.
+              autoCapitalize="sentences"
+              autoCorrect="on"
+              spellCheck
             />
             <button className="btn-primary" type="submit" disabled={!text.trim()}>
               Hinzufügen
@@ -722,6 +728,9 @@ function BulkModal({
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder={bulkPlaceholder(listType)}
+          autoCapitalize="sentences"
+          autoCorrect="on"
+          spellCheck
         />
         <div className="flex justify-end gap-2">
           <button className="btn-secondary" onClick={onClose}>Abbrechen</button>

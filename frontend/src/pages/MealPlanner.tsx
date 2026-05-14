@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   DndContext,
@@ -13,6 +13,7 @@ import { MealPlansApi, RecipesApi } from '@/api/endpoints';
 import type { MealPlan, MealPlanEntry, MealType, RecipeSummary } from '@/types';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
+import { useOverviewQuery } from '@/hooks/useOverviewQuery';
 import {
   WEEKDAY_LABELS_DE,
   WEEKDAY_LABELS_DE_LONG,
@@ -50,19 +51,20 @@ export function MealPlannerPage() {
     }
   }, []);
 
-  useEffect(() => {
-    void loadPlan(weekStart);
-  }, [weekStart, loadPlan]);
+  // Network-first refresh for the meal plan; week change re-keys so the
+  // hook fires fresh fetches per week. Also picks up
+  // invalidateOverview('mealplans') from cross-page mutations.
+  useOverviewQuery(`mealplans:${isoDate(weekStart)}`, () => loadPlan(weekStart));
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        setRecipes(await RecipesApi.list());
-      } catch (e) {
-        toast.error(getApiError(e));
-      }
-    })();
-  }, []);
+  // Recipe sidebar mirrors the recipes overview — same key so a recipe
+  // mutation refreshes both surfaces in sync.
+  useOverviewQuery('recipes', async () => {
+    try {
+      setRecipes(await RecipesApi.list());
+    } catch (e) {
+      toast.error(getApiError(e));
+    }
+  });
 
   const filteredRecipes = useMemo(() => {
     if (!recipeQ) return recipes;

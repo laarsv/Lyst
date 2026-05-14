@@ -10,6 +10,7 @@
  *    a future flush retries it.
  */
 import { api } from '@/api/client';
+import { invalidateAllOverviews } from '@/hooks/useOverviewQuery';
 import { db, type QueuedOp, type QueuedOpKind } from './db';
 import { useSyncStatus } from './status';
 
@@ -142,7 +143,14 @@ export async function flush(): Promise<{ replayed: number; failed: number }> {
     useSyncStatus.getState().set({ syncing: false });
     await refreshCounters();
   }
-  if (replayed > 0) toaster.success('Alle Änderungen gespeichert');
+  if (replayed > 0) {
+    toaster.success('Alle Änderungen gespeichert');
+    // A queued op can affect any overview (list summary counters,
+    // recipe ingredient counts, etc.) — easiest correct thing is to
+    // refetch every mounted overview instead of guessing which keys
+    // might be stale.
+    invalidateAllOverviews();
+  }
   if (failed > 0) toaster.error(`${failed} Änderung${failed === 1 ? '' : 'en'} konnten nicht synchronisiert werden`);
   return { replayed, failed };
 }

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { AiListsApi, ListsApi } from '@/api/endpoints';
+import { useOverviewQuery } from '@/hooks/useOverviewQuery';
 import type { ListSummary, ListType } from '@/types';
 import { Modal } from '@/components/Modal';
 import { ListCard } from '@/components/lists/ListCard';
@@ -36,32 +37,36 @@ export function DashboardPage() {
   const nav = useNavigate();
   const confirmDialog = useConfirm();
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        setLists(await ListsApi.list());
-      } catch (e) {
-        toast.error(getApiError(e));
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+  // Network-first lists fetch — also fires on focus + on
+  // invalidateOverview('lists') from list-detail mutations.
+  useOverviewQuery('lists', async () => {
+    try {
+      setLists(await ListsApi.list());
+    } catch (e) {
+      toast.error(getApiError(e));
+    } finally {
+      setLoading(false);
+    }
+  });
 
-  // Lazy-load templates the first time the user switches to the segment.
-  // Subsequent toggles reuse the cached array; mutations (delete / create
-  // from template) update it locally.
-  useEffect(() => {
-    if (mode !== 'templates' || templatesLoaded) return;
-    void (async () => {
+  // Templates ride a separate key so switching segments doesn't refetch
+  // the wrong set, and so a "duplicate template" mutation can refresh
+  // just the templates list.
+  useOverviewQuery(
+    `templates:${mode === 'templates' ? 'on' : 'off'}`,
+    async () => {
+      // Lazy: only fetch when the segment is actually visible. Once the
+      // user opens it the first time we keep refreshing on subsequent
+      // mounts/focuses — that's the network-first contract.
+      if (mode !== 'templates') return;
       try {
         setTemplates(await ListsApi.templates());
         setTemplatesLoaded(true);
       } catch (e) {
         toast.error(getApiError(e));
       }
-    })();
-  }, [mode, templatesLoaded]);
+    },
+  );
 
   const filteredLists = useMemo(() => {
     return lists

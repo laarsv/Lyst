@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Download, Plus, Share2, Sparkles } from 'lucide-react';
 import { RecipesApi } from '@/api/endpoints';
@@ -8,6 +8,7 @@ import { ImportRecipeModal } from '@/components/recipes/ImportRecipeModal';
 import { SuggestRecipesModal } from '@/components/recipes/SuggestRecipesModal';
 import { ShareRecipeBookPanel } from '@/components/recipes/ShareRecipeBookPanel';
 import { IconAction } from '@/components/IconAction';
+import { useOverviewQuery } from '@/hooks/useOverviewQuery';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
 import { MEAL_TYPE_TAGS } from '@/data/recipeTags';
@@ -45,10 +46,10 @@ export function RecipesPage() {
     }
   };
 
-  useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter]);
+  // Network-first: refetches on mount, on focus, on filter change, and
+  // whenever invalidateOverview('recipes') fires from a detail-page
+  // mutation (delete, duplicate, leave-share, edit save).
+  useOverviewQuery(`recipes:${filter}`, () => load());
 
   // True iff at least one recipe in the loaded set was shared with the
   // current user — drives whether the "Mit mir geteilt" chip even renders.

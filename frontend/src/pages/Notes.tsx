@@ -24,6 +24,7 @@ import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useNoteEditingState } from '@/hooks/useNoteEditingState';
 import { invalidateFresh } from '@/hooks/useFreshOnMount';
 import { hasActiveFilters, useNotesFilters } from '@/store/notesFilters';
+import { invalidateOverview, useOverviewQuery } from '@/hooks/useOverviewQuery';
 import { Plus, Search } from 'lucide-react';
 import MDEditor from '@uiw/react-md-editor';
 import remarkGfm from 'remark-gfm';
@@ -128,10 +129,15 @@ export function NotesPage() {
     })();
   }, []);
 
-  useEffect(() => {
-    void loadNotes();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tagFilter, scope.kind, scope.kind === 'folder' ? scope.folderId : null]);
+  // Network-first refresh: refetches on mount, on focus, on cross-page
+  // mutation invalidation, and whenever filter scope/tag changes (the
+  // key encodes the filter so a different scope refetches as expected).
+  useOverviewQuery(
+    `notes:${scope.kind}:${
+      scope.kind === 'folder' ? scope.folderId : ''
+    }:${tagFilter ?? ''}`,
+    () => loadNotes(),
+  );
 
   const inList = useMemo(() => notes.find((n) => n.id === activeId) ?? null, [notes, activeId]);
   const [activeFallback, setActiveFallback] = useState<Note | null>(null);
@@ -359,6 +365,7 @@ export function NotesPage() {
               archive={scope.kind === 'archive'}
               pinned={pinned}
               others={others}
+              folders={folders}
               onSelect={(n) => setActiveId(n.id)}
               onTogglePin={togglePin}
               onToggleArchive={toggleArchive}
@@ -543,6 +550,7 @@ export function NotesPage() {
             archive={scope.kind === 'archive'}
             pinned={pinned}
             others={others}
+            folders={folders}
             onSelect={(n) => setActiveId(n.id)}
             onTogglePin={togglePin}
             onToggleArchive={toggleArchive}
@@ -586,6 +594,7 @@ function NoteList({
   archive,
   pinned,
   others,
+  folders,
   onSelect,
   onTogglePin,
   onToggleArchive,
@@ -595,6 +604,7 @@ function NoteList({
   archive: boolean;
   pinned: Note[];
   others: Note[];
+  folders: NoteFolder[];
   onSelect: (n: Note) => void;
   onTogglePin: (n: Note) => void;
   onToggleArchive: (n: Note) => void;
@@ -625,6 +635,7 @@ function NoteList({
               <NoteCard
                 key={n.id}
                 note={n}
+                folder={folders.find((f) => f.id === n.folder_id) ?? null}
                 onClick={() => onSelect(n)}
                 onTogglePin={() => onTogglePin(n)}
                 onToggleArchive={() => onToggleArchive(n)}
@@ -653,11 +664,15 @@ function NoteList({
 
 function NoteCard({
   note,
+  folder,
   onClick,
   onTogglePin,
   onToggleArchive,
 }: {
   note: Note;
+  /** Looked up by parent so we don't index-by-id 100x in render. null
+   *  when the note has no folder (Ohne Ordner). */
+  folder: NoteFolder | null;
   onClick: () => void;
   onTogglePin: () => void;
   onToggleArchive: () => void;
@@ -713,7 +728,22 @@ function NoteCard({
         {note.content.replace(/[#*_>`-]/g, '').slice(0, 80) || 'leer'}
       </div>
       <div className="mt-2 flex items-end justify-between gap-2">
-        <div className="flex flex-wrap gap-1 min-w-0">
+        <div className="flex flex-wrap items-center gap-1 min-w-0">
+          {/* Folder indicator — small color dot + name. Owner-side notes
+              only (recipients can't see the owner's folder). Notes
+              without a folder show nothing here to keep the row quiet. */}
+          {folder && !note.share_source && (
+            <span
+              className="inline-flex items-center gap-1 text-[10px] text-muted truncate max-w-[120px]"
+              title={`Ordner: ${folder.name}`}
+            >
+              <span
+                className="inline-block size-2 rounded-full shrink-0"
+                style={{ background: folder.color || '#00c896' }}
+              />
+              <span className="truncate">{folder.name}</span>
+            </span>
+          )}
           {note.tags.slice(0, 4).map((t) => (
             <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-page text-muted">
               #{t}
@@ -917,6 +947,11 @@ function NoteEditor({
             placeholder="Titel"
             readOnly={readOnly}
             title={readOnly ? 'Geteilte Notiz — schreibgeschützt' : undefined}
+            // Mobile keyboard hints — sentence-case + autocorrect on so
+            // tapping into the title behaves like any other text field.
+            autoCapitalize="sentences"
+            autoCorrect="on"
+            spellCheck
           />
           {isRecipient && note.owner_name && (
             <div
@@ -1101,6 +1136,12 @@ function NoteEditor({
           hideToolbar
           textareaProps={{
             readOnly,
+            // MDEditor's CodeMirror-ish wrapper disables these by default;
+            // forcing them on the underlying textarea gives mobile users
+            // the standard autocorrect / capitalise / spellcheck behaviour.
+            autoCapitalize: 'sentences',
+            autoCorrect: 'on',
+            spellCheck: true,
             onKeyDown: state.onTextareaKeyDown,
             onClick: () => state.detectAutocomplete(state.content),
             onKeyUp: () => state.detectAutocomplete(state.content),

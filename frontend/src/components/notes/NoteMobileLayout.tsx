@@ -189,6 +189,9 @@ export function NoteMobileLayout({
               if (e.key === 'Enter' || e.key === 'Escape') setTitleEditing(false);
             }}
             placeholder="Titel"
+            autoCapitalize="sentences"
+            autoCorrect="on"
+            spellCheck
             className="flex-1 bg-transparent text-xl font-semibold outline-none border-b border-brand pb-1"
           />
         ) : readOnly ? (
@@ -376,6 +379,12 @@ export function NoteMobileLayout({
               visibleDragbar={false}
               height={600}
               textareaProps={{
+                // MDEditor's textarea defaults disable mobile keyboard
+                // helpers — re-enable so iOS/Android behave like a normal
+                // text field (sentence caps, autocorrect, spell check).
+                autoCapitalize: 'sentences',
+                autoCorrect: 'on',
+                spellCheck: true,
                 onKeyDown: state.onTextareaKeyDown,
                 onClick: () => state.detectAutocomplete(state.content),
                 onKeyUp: () => state.detectAutocomplete(state.content),
