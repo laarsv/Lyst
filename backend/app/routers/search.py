@@ -43,10 +43,20 @@ async def global_search(
     like = f"%{needle.lower()}%"
 
     # ---------- Notes (own only, exclude archived) ----------
+    # Tags live in a Postgres ARRAY(String). Flatten them into a space-
+    # separated string and LIKE against that — same idiom as the recipes
+    # block below — so a query of "kw" matches a note tagged "#KW".
+    note_tags_blob = func.lower(func.array_to_string(Note.tags, " "))
     notes_stmt = (
         select(Note)
         .where(Note.owner_id == user.id, Note.is_archived.is_(False))
-        .where(or_(func.lower(Note.title).like(like), func.lower(Note.content).like(like)))
+        .where(
+            or_(
+                func.lower(Note.title).like(like),
+                func.lower(Note.content).like(like),
+                note_tags_blob.like(like),
+            )
+        )
         .order_by(Note.is_pinned.desc(), Note.updated_at.desc())
         .limit(PER_GROUP_LIMIT)
     )
@@ -60,6 +70,7 @@ async def global_search(
                 "snippet": _snippet(n.content, needle) or "",
                 "folder_id": n.folder_id,
                 "is_pinned": n.is_pinned,
+                "tags": list(n.tags or []),
             }
         )
 
@@ -123,6 +134,7 @@ async def global_search(
         .distinct()
         .subquery()
     )
+    recipe_tags_blob = func.lower(func.array_to_string(Recipe.tags, " "))
     recipes_stmt = (
         select(Recipe)
         .options(selectinload(Recipe.ingredients))
@@ -131,6 +143,7 @@ async def global_search(
             or_(
                 func.lower(Recipe.title).like(like),
                 func.lower(func.coalesce(Recipe.description, "")).like(like),
+                recipe_tags_blob.like(like),
                 Recipe.id.in_(select(matched_by_ingredient.c.recipe_id)),
             )
         )
@@ -152,6 +165,7 @@ async def global_search(
                 "image_url": r.image_url,
                 "snippet": _snippet(r.description or "", needle),
                 "matched_ingredient": ing_match,
+                "tags": list(r.tags or []),
             }
         )
 

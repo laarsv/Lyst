@@ -40,18 +40,28 @@ interface Action {
 }
 
 interface ApplyCtx {
+  /** Full content before the selection. */
   before: string;
+  /** Selected slice — empty string when caret is collapsed. */
   selection: string;
+  /** Full content after the selection. */
   after: string;
+  /** Absolute index of selection start in the full content (= before.length). */
+  selectionStart: number;
 }
 
 interface Patch {
-  /** Replacement for the original `[selection]` slice. */
+  /** Slice of the full content to replace, expressed as absolute indices.
+   *  Defaults to the original selection range. Used by line-prefix actions
+   *  that need to widen the replacement to start at the line boundary. */
+  rangeStart?: number;
+  rangeEnd?: number;
+  /** Text to splice in. */
   replacement: string;
   /** Where to put the cursor *inside* the replacement. Defaults to end. */
   cursorOffset?: number;
   /** When true, leave the existing selection range covering `replacement`
-   *  instead of collapsing the cursor. */
+   *  (handy for line-prefix on a multi-line selection). */
   selectReplacement?: boolean;
 }
 
@@ -60,108 +70,140 @@ const ACTIONS: Action[] = [
     key: 'bold',
     label: 'Fett',
     icon: Bold,
-    apply: ({ selection }) => wrap('**', '**', selection || 'Fett'),
+    apply: ({ selection }) => wrap('**', '**', selection),
   },
   {
     key: 'italic',
     label: 'Kursiv',
     icon: Italic,
-    apply: ({ selection }) => wrap('*', '*', selection || 'kursiv'),
+    apply: ({ selection }) => wrap('*', '*', selection),
   },
   {
     key: 'strike',
     label: 'Durchgestrichen',
     icon: Strikethrough,
-    apply: ({ selection }) => wrap('~~', '~~', selection || 'durchgestrichen'),
+    apply: ({ selection }) => wrap('~~', '~~', selection),
   },
   {
     key: 'h2',
     label: 'Überschrift',
     icon: Heading2,
-    apply: (ctx) => prefixLines(ctx, '## ', 'Überschrift'),
+    apply: (ctx) => linePrefix(ctx, '## '),
   },
   {
     key: 'link',
     label: 'Link',
     icon: LinkIcon,
-    apply: ({ selection }) => {
-      const text = selection || 'Linktext';
-      return { replacement: `[${text}](https://)`, cursorOffset: text.length + 3 };
-    },
+    apply: ({ selection }) =>
+      selection
+        ? // Selection becomes the link text; cursor jumps inside the URL parens.
+          { replacement: `[${selection}]()`, cursorOffset: selection.length + 3 }
+        : // No selection: empty `[]()`, cursor inside the brackets.
+          { replacement: '[]()', cursorOffset: 1 },
   },
   {
     key: 'quote',
     label: 'Zitat',
     icon: Quote,
-    apply: (ctx) => prefixLines(ctx, '> ', 'Zitat'),
+    apply: (ctx) => linePrefix(ctx, '> '),
   },
   {
     key: 'code',
     label: 'Inline-Code',
     icon: Code,
-    apply: ({ selection }) => wrap('`', '`', selection || 'code'),
+    apply: ({ selection }) => wrap('`', '`', selection),
   },
   {
     key: 'codeblock',
     label: 'Code-Block',
     icon: FileCode,
     apply: ({ selection }) => {
-      const body = selection || 'code';
-      return { replacement: `\n\`\`\`\n${body}\n\`\`\`\n`, selectReplacement: false };
+      // Empty: \n```\n\n```\n — cursor on the blank line between fences.
+      // With selection: wrap it inside the fences, cursor at end.
+      if (!selection) {
+        return { replacement: '\n```\n\n```\n', cursorOffset: 5 };
+      }
+      return { replacement: `\n\`\`\`\n${selection}\n\`\`\`\n` };
     },
   },
   {
     key: 'image',
     label: 'Bild',
     icon: ImageIcon,
-    apply: ({ selection }) => {
-      const alt = selection || 'Bild';
-      return { replacement: `![${alt}](https://)`, cursorOffset: alt.length + 4 };
-    },
+    apply: ({ selection }) =>
+      selection
+        ? { replacement: `![${selection}]()`, cursorOffset: 2 + selection.length + 2 }
+        : // No selection: '![]()' — cursor inside the alt-text brackets.
+          { replacement: '![]()', cursorOffset: 2 },
   },
   {
     key: 'table',
     label: 'Tabelle',
     icon: TableIcon,
     apply: () => ({
-      replacement:
-        '\n| Spalte 1 | Spalte 2 |\n| --- | --- |\n| Zelle | Zelle |\n',
+      // Empty cells, valid GFM table. Cursor lands in the first header cell
+      // so the user can start typing immediately.
+      replacement: '\n|  |  |\n| --- | --- |\n|  |  |\n',
+      cursorOffset: 3, // after "\n| "
     }),
   },
   {
     key: 'ul',
     label: 'Liste',
     icon: List,
-    apply: (ctx) => prefixLines(ctx, '- ', 'Eintrag'),
+    apply: (ctx) => linePrefix(ctx, '- '),
   },
   {
     key: 'ol',
     label: 'Nummerierte Liste',
     icon: ListOrdered,
-    apply: (ctx) => prefixLines(ctx, '1. ', 'Eintrag'),
+    apply: (ctx) => linePrefix(ctx, '1. '),
   },
   {
     key: 'task',
     label: 'Aufgabenliste',
     icon: ListChecks,
-    apply: (ctx) => prefixLines(ctx, '- [ ] ', 'Aufgabe'),
+    apply: (ctx) => linePrefix(ctx, '- [ ] '),
   },
 ];
 
-function wrap(prefix: string, suffix: string, body: string): Patch {
+/** Wrap selection (or insert empty wrapper) with prefix/suffix.
+ *  Empty selection → cursor sits between the markers.
+ *  Non-empty       → cursor sits at the end of the wrapped block. */
+function wrap(prefix: string, suffix: string, selection: string): Patch {
+  if (!selection) {
+    return { replacement: `${prefix}${suffix}`, cursorOffset: prefix.length };
+  }
   return {
-    replacement: `${prefix}${body}${suffix}`,
-    cursorOffset: prefix.length + body.length + suffix.length,
+    replacement: `${prefix}${selection}${suffix}`,
+    cursorOffset: prefix.length + selection.length + suffix.length,
   };
 }
 
-/** Prepend `prefix` to every line of the selection. If the selection is empty
- *  we drop in a placeholder so the line still renders something useful. */
-function prefixLines(ctx: ApplyCtx, prefix: string, placeholder: string): Patch {
-  const body = ctx.selection || placeholder;
-  const lines = body.split('\n');
+/** Line-oriented prefix (heading / quote / list).
+ *
+ *  Empty selection: insert `prefix` at the start of the current line, place
+ *  cursor right after the prefix so the user can type the heading text.
+ *
+ *  Non-empty selection: prepend `prefix` to every line in the selection,
+ *  keep the (now-prefixed) range selected. */
+function linePrefix(ctx: ApplyCtx, prefix: string): Patch {
+  if (!ctx.selection) {
+    // Find the start of the current line (the char after the last \n before
+    // the cursor, or 0 if no newline yet).
+    const lineStart = ctx.before.lastIndexOf('\n') + 1;
+    return {
+      rangeStart: lineStart,
+      rangeEnd: ctx.selectionStart,
+      // Re-emit the line's existing content (between lineStart and cursor)
+      // and prepend the prefix.
+      replacement: prefix + ctx.before.slice(lineStart),
+      cursorOffset: prefix.length + (ctx.selectionStart - lineStart),
+    };
+  }
+  const lines = ctx.selection.split('\n');
   const prefixed = lines.map((l) => `${prefix}${l}`).join('\n');
-  return { replacement: prefixed, selectReplacement: !!ctx.selection };
+  return { replacement: prefixed, selectReplacement: true };
 }
 
 export function NoteToolbar({
@@ -176,14 +218,20 @@ export function NoteToolbar({
   const apply = (action: Action) => {
     const ta = getTextarea();
     if (!ta) return;
-    const start = ta.selectionStart ?? content.length;
-    const end = ta.selectionEnd ?? start;
-    const before = content.slice(0, start);
-    const selection = content.slice(start, end);
-    const after = content.slice(end);
+    const selStart = ta.selectionStart ?? content.length;
+    const selEnd = ta.selectionEnd ?? selStart;
+    const before = content.slice(0, selStart);
+    const selection = content.slice(selStart, selEnd);
+    const after = content.slice(selEnd);
 
-    const patch = action.apply({ before, selection, after });
-    const next = before + patch.replacement + after;
+    const patch = action.apply({ before, selection, after, selectionStart: selStart });
+
+    // Line-prefix actions (heading, list, …) widen the replaced range to the
+    // start of the current line. Other actions just replace the selection.
+    const replaceStart = patch.rangeStart ?? selStart;
+    const replaceEnd = patch.rangeEnd ?? selEnd;
+    const next =
+      content.slice(0, replaceStart) + patch.replacement + content.slice(replaceEnd);
     setContent(next);
 
     // Restore focus + selection on next paint, after MDEditor's own re-render.
@@ -192,13 +240,13 @@ export function NoteToolbar({
       if (!ta2) return;
       ta2.focus();
       if (patch.selectReplacement) {
-        ta2.selectionStart = start;
-        ta2.selectionEnd = start + patch.replacement.length;
+        ta2.selectionStart = replaceStart;
+        ta2.selectionEnd = replaceStart + patch.replacement.length;
       } else if (patch.cursorOffset !== undefined) {
-        const pos = start + patch.cursorOffset;
+        const pos = replaceStart + patch.cursorOffset;
         ta2.selectionStart = ta2.selectionEnd = pos;
       } else {
-        const pos = start + patch.replacement.length;
+        const pos = replaceStart + patch.replacement.length;
         ta2.selectionStart = ta2.selectionEnd = pos;
       }
     });

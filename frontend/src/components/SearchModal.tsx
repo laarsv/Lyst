@@ -111,6 +111,7 @@ export function SearchModal({ open, onClose }: Props) {
                     icon="📝"
                     title={n.title || '(ohne Titel)'}
                     snippet={n.snippet}
+                    tags={n.tags}
                     onClick={() => go(`/notes?focus=${n.id}`)}
                   />
                 ))}
@@ -142,6 +143,7 @@ export function SearchModal({ open, onClose }: Props) {
                         ? `Zutat: ${r.matched_ingredient}`
                         : r.snippet ?? ''
                     }
+                    tags={r.tags}
                     onClick={() => go(`/recipes/${r.id}`)}
                   />
                 ))}
@@ -185,12 +187,14 @@ function ResultRow({
   icon,
   title,
   snippet,
+  tags,
   accent,
   onClick,
 }: {
   icon: string;
   title: string;
   snippet: string;
+  tags?: string[];
   accent?: string | null;
   onClick: () => void;
 }) {
@@ -206,6 +210,18 @@ function ResultRow({
         <span className="block font-medium truncate">{title}</span>
         {snippet && (
           <span className="block text-xs text-muted truncate">{snippet}</span>
+        )}
+        {tags && tags.length > 0 && (
+          <span className="mt-1 flex flex-wrap gap-1">
+            {tags.slice(0, 5).map((t) => (
+              <span
+                key={t}
+                className="text-[10px] leading-4 px-1.5 py-0.5 rounded-full bg-page text-muted border border-line"
+              >
+                #{t}
+              </span>
+            ))}
+          </span>
         )}
       </span>
     </button>

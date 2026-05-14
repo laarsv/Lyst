@@ -18,6 +18,7 @@ import { ArrowLeft, Pin, X } from 'lucide-react';
 import type { Note, NoteFolder, Tag } from '@/types';
 import type { NoteEditingState } from '@/hooks/useNoteEditingState';
 import { remarkWikilinks, parseWikilinkUrl } from '@/lib/wikilinks';
+import remarkGfm from 'remark-gfm';
 import { FolderChip } from './FolderChip';
 import { NoteActionsMenu } from './NoteActionsMenu';
 import { NoteToolbar } from './NoteToolbar';
@@ -243,7 +244,7 @@ export function NoteMobileLayout({
             <MDEditor.Markdown
               source={state.content || '_Leere Notiz._'}
               style={{ background: 'transparent' }}
-              remarkPlugins={[remarkWikilinks]}
+              remarkPlugins={[remarkGfm, remarkWikilinks]}
               components={{
                 a: ({ href, children, ...rest }: any) => {
                   const linked = parseWikilinkUrl(href);

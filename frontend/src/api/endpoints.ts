@@ -233,9 +233,31 @@ export interface NoteTitleResult {
 }
 export interface SearchResults {
   query: string;
-  notes: Array<{ id: number; title: string; snippet: string; folder_id: number | null; is_pinned: boolean }>;
-  lists: Array<{ id: number; title: string; icon: string | null; color: string | null; type: string; matched_item: string | null }>;
-  recipes: Array<{ id: number; title: string; category: string; image_url: string | null; snippet: string | null; matched_ingredient: string | null }>;
+  notes: Array<{
+    id: number;
+    title: string;
+    snippet: string;
+    folder_id: number | null;
+    is_pinned: boolean;
+    tags: string[];
+  }>;
+  lists: Array<{
+    id: number;
+    title: string;
+    icon: string | null;
+    color: string | null;
+    type: string;
+    matched_item: string | null;
+  }>;
+  recipes: Array<{
+    id: number;
+    title: string;
+    category: string;
+    image_url: string | null;
+    snippet: string | null;
+    matched_ingredient: string | null;
+    tags: string[];
+  }>;
 }
 
 export const SearchApi = {

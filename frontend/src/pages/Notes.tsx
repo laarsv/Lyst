@@ -23,6 +23,7 @@ import { invalidateFresh } from '@/hooks/useFreshOnMount';
 import { hasActiveFilters, useNotesFilters } from '@/store/notesFilters';
 import { Plus, Search } from 'lucide-react';
 import MDEditor from '@uiw/react-md-editor';
+import remarkGfm from 'remark-gfm';
 
 const NOTE_DRAG_TYPE = 'application/x-lyst-note-id';
 
@@ -921,7 +922,7 @@ function NoteEditor({
             placeholder: 'Inhalt… Tippe [[ um eine andere Notiz zu verlinken.',
           }}
           previewOptions={{
-            remarkPlugins: [remarkWikilinks],
+            remarkPlugins: [remarkGfm, remarkWikilinks],
             components: {
               a: ({ href, children, ...rest }: any) => {
                 const linked = parseWikilinkUrl(href);
