@@ -102,3 +102,43 @@ def test_email(triggered_by: str, recipient: str) -> tuple[str, str]:
         f"</p>"
     )
     return "lyst — Test-E-Mail", _BASE.format(title="Test-E-Mail", body=body)
+
+
+def recipe_share_email(
+    sharer_name: str, recipe_title: str, share_url: str
+) -> tuple[str, str]:
+    """External-share email: sender shared a recipe with someone who does
+    not have a Lyst account. They get the public link."""
+    body = (
+        f"<p><strong>{sharer_name}</strong> hat dir ein Rezept geteilt:</p>"
+        f'<p style="font-size:18px;margin:12px 0 4px 0;">"{recipe_title}"</p>'
+        f"<p>Du kannst es direkt im Browser ansehen — kein Konto nötig:</p>"
+        f"{_btn(share_url, 'Rezept öffnen')}"
+        f"<p style='color:{_MUTED};font-size:14px;'>"
+        f"Falls du auch eigene Rezepte verwalten möchtest, gibt es Lyst unter "
+        f"<a href='https://github.com/laarsv/Lyst' style='color:{_BRAND};'>"
+        f"github.com/laarsv/Lyst</a>.</p>"
+    )
+    return (
+        f"{sharer_name} hat dir ein Rezept geteilt: {recipe_title}",
+        _BASE.format(title=f"Rezept: {recipe_title}", body=body),
+    )
+
+
+def recipe_book_share_email(
+    sharer_name: str, share_url: str
+) -> tuple[str, str]:
+    """External-share email for a whole recipe book."""
+    body = (
+        f"<p><strong>{sharer_name}</strong> hat dir das gesamte Rezeptbuch geteilt.</p>"
+        f"<p>Du kannst alle Rezepte im Browser durchstöbern — kein Konto nötig:</p>"
+        f"{_btn(share_url, 'Rezeptbuch öffnen')}"
+        f"<p style='color:{_MUTED};font-size:14px;'>"
+        f"Falls du auch eigene Rezepte verwalten möchtest, gibt es Lyst unter "
+        f"<a href='https://github.com/laarsv/Lyst' style='color:{_BRAND};'>"
+        f"github.com/laarsv/Lyst</a>.</p>"
+    )
+    return (
+        f"{sharer_name} hat dir ein Rezeptbuch geteilt",
+        _BASE.format(title="Geteiltes Rezeptbuch", body=body),
+    )

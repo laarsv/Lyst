@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { Users } from 'lucide-react';
 import type { RecipeSummary } from '@/types';
 
 /** Recipe summary card. The old fixed `category` enum was migrated into
@@ -24,6 +25,12 @@ export function RecipeCard({ recipe }: { recipe: RecipeSummary }) {
       )}
       <div className="min-w-0">
         <div className="font-semibold text-ink truncate mb-1">{recipe.title}</div>
+        {recipe.share_source && recipe.owner_name && (
+          <div className="text-[11px] text-brand-700 inline-flex items-center gap-1 mb-1">
+            <Users size={11} />
+            <span>Geteilt von {recipe.owner_name}</span>
+          </div>
+        )}
         <div className="text-xs text-muted flex flex-wrap gap-x-3 gap-y-1">
           {totalTime > 0 && <span>⏱ {totalTime} Min</span>}
           <span>🍴 {recipe.servings} Pers.</span>

@@ -115,6 +115,10 @@ class RecipeSummary(RecipeBase):
     created_at: datetime
     updated_at: datetime
     ingredient_count: int = 0
+    # Recipient-perspective fields (alembic 0012). null/empty when the
+    # current user owns the row.
+    owner_name: str | None = None
+    share_source: str | None = None  # "individual" | "book" | None
 
 
 class RecipeOut(RecipeBase):
@@ -129,6 +133,10 @@ class RecipeOut(RecipeBase):
     nutrition_per_serving: NutritionTotals = Field(default_factory=NutritionTotals)
     share_enabled: bool = False
     share_token: str | None = None
+    # Recipient-perspective fields. Frontend treats `share_source` as the
+    # "this is read-only" trigger (the owner page can edit; recipients can't).
+    owner_name: str | None = None
+    share_source: str | None = None  # "individual" | "book" | None
 
 
 # --- Public share views (no auth) ---
@@ -236,3 +244,30 @@ class AiSuggestedStep(BaseModel):
 class AiVariationRequest(BaseModel):
     """The user's desired variation — preset string or free-form."""
     variation: str = Field(min_length=1, max_length=500)
+
+
+# ---------- Internal sharing (alembic 0012) ----------
+
+from pydantic import EmailStr
+
+
+class ShareByEmailRequest(BaseModel):
+    """POST /recipes/{id}/share/email and POST /recipes/share-book/email."""
+    email: EmailStr
+
+
+class ShareByEmailResponse(BaseModel):
+    """Either an internal share got created (recipient is a Lyst user) or
+    the public link got emailed. The shape lets the UI render the right
+    confirmation toast without leaking 'we sent the link' for the internal
+    case."""
+    type: str  # "internal" | "external"
+    user_name: str | None = None
+
+
+class InternalShareOut(BaseModel):
+    """One row of the "shared with these users" list shown in the panels."""
+    user_id: int
+    name: str
+    email: str
+    created_at: datetime

@@ -10,7 +10,13 @@ from app.models.meal_plan import MealPlan, MealPlanEntry, MealType
 from app.models.note import Note
 from app.models.note_folder import NoteFolder
 from app.models.note_version import NoteVersion
-from app.models.recipe import Recipe, RecipeIngredient, RecipeStep
+from app.models.recipe import (
+    Recipe,
+    RecipeBookShare,
+    RecipeIngredient,
+    RecipeShare,
+    RecipeStep,
+)
 from app.models.tag import Tag
 
 __all__ = [
@@ -25,7 +31,9 @@ __all__ = [
     "Reminder",
     "Note",
     "Recipe",
+    "RecipeBookShare",
     "RecipeIngredient",
+    "RecipeShare",
     "RecipeStep",
     "Tag",
     "AppSetting",

@@ -12,8 +12,10 @@ import { getApiError } from '@/api/client';
 import { MEAL_TYPE_TAGS } from '@/data/recipeTags';
 
 /** Filter state — kept as a plain string so the chip bar can show
- *  user-defined tags too. 'ALL' is the sentinel for "no tag filter". */
-type Filter = 'ALL' | string;
+ *  user-defined tags too. 'ALL' is the sentinel for "no tag filter".
+ *  'SHARED' is a client-side filter that only shows recipes someone
+ *  else shared with the current user (share_source != null). */
+type Filter = 'ALL' | 'SHARED' | string;
 
 export function RecipesPage() {
   const [recipes, setRecipes] = useState<RecipeSummary[]>([]);
@@ -27,9 +29,11 @@ export function RecipesPage() {
   const load = async () => {
     setLoading(true);
     try {
+      // 'SHARED' is a client-side narrowing — fetch the full set, then
+      // filter below. Tag filters go to the server.
       const r = await RecipesApi.list({
         q: q || undefined,
-        tag: filter === 'ALL' ? undefined : filter,
+        tag: filter === 'ALL' || filter === 'SHARED' ? undefined : filter,
       });
       setRecipes(r);
     } catch (e) {
@@ -43,6 +47,13 @@ export function RecipesPage() {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter]);
+
+  // True iff at least one recipe in the loaded set was shared with the
+  // current user — drives whether the "Mit mir geteilt" chip even renders.
+  const hasSharedRecipes = useMemo(
+    () => recipes.some((r) => r.share_source !== null),
+    [recipes],
+  );
 
   // Filter chips: meal-type tags first (matching the old fixed enum's UX),
   // then any other tags actually in use across the user's recipes —
@@ -73,12 +84,20 @@ export function RecipesPage() {
   }, [allRecipes, filter]);
 
   const visible = useMemo(() => {
-    if (!q) return recipes;
-    const needle = q.toLowerCase();
-    return recipes.filter(
-      (r) => r.title.toLowerCase().includes(needle) || r.tags.some((t) => t.toLowerCase().includes(needle)),
-    );
-  }, [recipes, q]);
+    let rows = recipes;
+    if (filter === 'SHARED') {
+      rows = rows.filter((r) => r.share_source !== null);
+    }
+    if (q) {
+      const needle = q.toLowerCase();
+      rows = rows.filter(
+        (r) =>
+          r.title.toLowerCase().includes(needle) ||
+          r.tags.some((t) => t.toLowerCase().includes(needle)),
+      );
+    }
+    return rows;
+  }, [recipes, q, filter]);
 
   return (
     <div>
@@ -122,6 +141,18 @@ export function RecipesPage() {
           >
             Alle
           </button>
+          {hasSharedRecipes && (
+            <button
+              onClick={() => setFilter('SHARED')}
+              className={`px-3 py-1.5 rounded-lg text-sm transition whitespace-nowrap ${
+                filter === 'SHARED'
+                  ? 'bg-surface shadow-sm font-medium text-brand-700'
+                  : 'text-muted'
+              }`}
+            >
+              Mit mir geteilt
+            </button>
+          )}
           {filterChips.map((tag) => (
             <button
               key={tag}

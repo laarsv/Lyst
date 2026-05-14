@@ -6,12 +6,12 @@
  *
  *  Parent owns the recipe so we surface state changes via `onUpdate`. */
 import { useEffect, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
 import { Modal } from '@/components/Modal';
 import { RecipesApi } from '@/api/endpoints';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
-import type { Recipe, ShareInfo } from '@/types';
+import type { InternalShare, Recipe, ShareInfo } from '@/types';
 
 interface Props {
   open: boolean;
@@ -23,6 +23,9 @@ interface Props {
 export function ShareRecipePanel({ open, onClose, recipe, onUpdate }: Props) {
   const [info, setInfo] = useState<ShareInfo | null>(null);
   const [loading, setLoading] = useState(false);
+  const [emailValue, setEmailValue] = useState('');
+  const [emailSubmitting, setEmailSubmitting] = useState(false);
+  const [shares, setShares] = useState<InternalShare[]>([]);
 
   useEffect(() => {
     if (!open) return;
@@ -34,7 +37,51 @@ export function ShareRecipePanel({ open, onClose, recipe, onUpdate }: Props) {
     } else {
       setInfo(null);
     }
-  }, [open, recipe.share_enabled, recipe.share_token]);
+    // Always pull the current internal-share list when the panel opens.
+    void RecipesApi.listShares(recipe.id)
+      .then(setShares)
+      .catch(() => setShares([]));
+  }, [open, recipe.id, recipe.share_enabled, recipe.share_token]);
+
+  const submitEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const email = emailValue.trim();
+    if (!email) return;
+    setEmailSubmitting(true);
+    try {
+      const r = await RecipesApi.shareByEmail(recipe.id, email);
+      if (r.type === 'internal') {
+        toast.success(
+          `An ${r.user_name ?? email} in Lyst geteilt — das Rezept erscheint jetzt in ihrer Bibliothek.`,
+        );
+        // Refresh the visible list.
+        const fresh = await RecipesApi.listShares(recipe.id).catch(() => shares);
+        setShares(fresh);
+      } else {
+        toast.success(
+          `${email} hat keinen Lyst-Account — der öffentliche Link wurde per E-Mail gesendet.`,
+        );
+        // Sending the public link auto-enables share_token; reflect that.
+        if (!recipe.share_enabled) {
+          onUpdate({ share_enabled: true });
+        }
+      }
+      setEmailValue('');
+    } catch (err) {
+      toast.error(getApiError(err));
+    } finally {
+      setEmailSubmitting(false);
+    }
+  };
+
+  const revoke = async (s: InternalShare) => {
+    try {
+      await RecipesApi.revokeShare(recipe.id, s.user_id);
+      setShares((cur) => cur.filter((x) => x.user_id !== s.user_id));
+    } catch (e) {
+      toast.error(getApiError(e));
+    }
+  };
 
   const enable = async () => {
     setLoading(true);
@@ -70,7 +117,66 @@ export function ShareRecipePanel({ open, onClose, recipe, onUpdate }: Props) {
 
   return (
     <Modal open={open} onClose={onClose} title="Rezept teilen" className="max-w-md">
-      <div className="space-y-3">
+      <div className="space-y-4">
+        {/* ── Per-email share ────────────────────────────────────────── */}
+        <section>
+          <h3 className="font-semibold">Per E-Mail teilen</h3>
+          <p className="text-xs text-muted mb-2">
+            Hat die Empfängerin einen Lyst-Account? Dann erscheint das
+            Rezept direkt in ihrer Bibliothek. Sonst senden wir den
+            öffentlichen Link an die angegebene Adresse.
+          </p>
+          <form onSubmit={submitEmail} className="flex gap-2">
+            <input
+              type="email"
+              required
+              className="input flex-1 text-sm"
+              placeholder="email@beispiel.de"
+              value={emailValue}
+              onChange={(e) => setEmailValue(e.target.value)}
+              disabled={emailSubmitting}
+            />
+            <button
+              type="submit"
+              className="btn-primary text-sm"
+              disabled={emailSubmitting || !emailValue.trim()}
+            >
+              {emailSubmitting ? 'Sende…' : 'Teilen'}
+            </button>
+          </form>
+          {shares.length > 0 && (
+            <div className="mt-3">
+              <div className="text-[10px] uppercase tracking-wider text-muted mb-1">
+                Geteilt mit
+              </div>
+              <ul className="border border-line rounded-ctl divide-y divide-line">
+                {shares.map((s) => (
+                  <li
+                    key={s.user_id}
+                    className="flex items-center justify-between gap-2 px-3 py-2 text-sm"
+                  >
+                    <span className="min-w-0">
+                      <span className="font-medium">{s.name}</span>
+                      <span className="text-muted ml-2 text-xs">{s.email}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => revoke(s)}
+                      className="size-6 inline-flex items-center justify-center rounded-full text-muted hover:text-danger hover:bg-page"
+                      aria-label={`Freigabe für ${s.name} entfernen`}
+                    >
+                      <X size={14} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+
+        <hr className="border-line" />
+
+        {/* ── Public link + QR ───────────────────────────────────────── */}
         <div className="flex items-center justify-between">
           <div>
             <h3 className="font-semibold">Öffentlich teilen</h3>

@@ -385,3 +385,294 @@ async def get_public_book(db: AsyncSession, token: str) -> tuple[User, list[tupl
         .order_by(Recipe.title)
     )
     return user, [(r, c) for r, c in rec_res.all()]
+
+
+# =============================================================================
+#  Internal sharing — alembic 0012
+# =============================================================================
+#
+# Two layers stack on top of the public-token sharing:
+#   1. Per-recipe internal share — RecipeShare row grants a Lyst user direct
+#      app-level read access to one recipe.
+#   2. Whole-book internal share — RecipeBookShare grants a user access to
+#      every recipe of the owner. New recipes created later show up too.
+#
+# All recipient access is READ-ONLY — write/delete still requires owner_id
+# match (existing get_recipe enforces that for mutations). Recipients use
+# get_accessible_recipe / list_accessible_recipes below.
+
+from sqlalchemy import and_ as _and
+from sqlalchemy.exc import IntegrityError as _IntegrityError
+
+from app.models.recipe import RecipeBookShare, RecipeShare
+
+
+# ---------- Recipient queries ----------
+
+async def get_accessible_recipe(
+    db: AsyncSession, recipe_id: int, user_id: int
+) -> tuple[Recipe, str | None]:
+    """Fetch a recipe the user owns OR has been shared (per-recipe or via
+    a book share). Returns (recipe, share_source) where share_source is
+    None when the user owns the recipe, "individual" or "book" otherwise.
+    Raises ValueError when there's no access."""
+    result = await db.execute(
+        select(Recipe)
+        .options(selectinload(Recipe.ingredients), selectinload(Recipe.steps))
+        .where(Recipe.id == recipe_id)
+    )
+    rec = result.scalar_one_or_none()
+    if not rec:
+        raise ValueError("Recipe not found")
+    if rec.owner_id == user_id:
+        return rec, None
+    # Individual share?
+    rs = await db.execute(
+        select(RecipeShare).where(
+            _and(
+                RecipeShare.recipe_id == recipe_id,
+                RecipeShare.shared_with_user_id == user_id,
+            )
+        )
+    )
+    if rs.scalar_one_or_none():
+        return rec, "individual"
+    # Book share?
+    bs = await db.execute(
+        select(RecipeBookShare).where(
+            _and(
+                RecipeBookShare.owner_id == rec.owner_id,
+                RecipeBookShare.shared_with_user_id == user_id,
+            )
+        )
+    )
+    if bs.scalar_one_or_none():
+        return rec, "book"
+    raise ValueError("Recipe not found")
+
+
+async def list_accessible_recipes(
+    db: AsyncSession,
+    user_id: int,
+    *,
+    q: str | None = None,
+    tag: str | None = None,
+) -> list[tuple[Recipe, int, str | None, str | None]]:
+    """Owned + shared recipes, with per-row share metadata.
+
+    Returns [(recipe, ingredient_count, share_source, owner_name)] where
+    share_source/owner_name are None for owned rows. De-dupes recipes that
+    arrive via both individual share AND book share — individual wins.
+    Sorted by updated_at desc, identical to the owner-only view."""
+
+    # ----- Owned recipes -----
+    own = await list_recipes(db, user_id, q=q, tag=tag)
+    by_id: dict[int, tuple[Recipe, int, str | None, str | None]] = {
+        r.id: (r, c, None, None) for r, c in own
+    }
+
+    # ----- Helper: query a set of recipe rows by id with ingredient_count -----
+    async def _fetch(recipe_ids: list[int]) -> list[tuple[Recipe, int]]:
+        if not recipe_ids:
+            return []
+        ingredient_count = func.count(RecipeIngredient.id).label("ingredient_count")
+        stmt = (
+            select(Recipe, ingredient_count)
+            .outerjoin(RecipeIngredient, RecipeIngredient.recipe_id == Recipe.id)
+            .where(Recipe.id.in_(recipe_ids))
+            .group_by(Recipe.id)
+        )
+        if q:
+            like = f"%{q.lower()}%"
+            stmt = stmt.where(
+                or_(func.lower(Recipe.title).like(like), Recipe.tags.any(q.lower())),
+            )
+        if tag:
+            stmt = stmt.where(Recipe.tags.any(tag))
+        result = await db.execute(stmt)
+        return [(r, c) for r, c in result.all()]
+
+    # ----- Recipes shared individually with user -----
+    ind_ids_res = await db.execute(
+        select(RecipeShare.recipe_id).where(
+            RecipeShare.shared_with_user_id == user_id
+        )
+    )
+    ind_ids = [rid for (rid,) in ind_ids_res.all()]
+    ind_rows = await _fetch(ind_ids)
+
+    # Look up owner names in one shot.
+    owner_ids: set[int] = set()
+    for r, _ in ind_rows:
+        owner_ids.add(r.owner_id)
+
+    # ----- Recipes from books shared with user -----
+    book_owners_res = await db.execute(
+        select(RecipeBookShare.owner_id).where(
+            RecipeBookShare.shared_with_user_id == user_id
+        )
+    )
+    book_owner_ids = [oid for (oid,) in book_owners_res.all()]
+    if book_owner_ids:
+        ingredient_count = func.count(RecipeIngredient.id).label("ingredient_count")
+        book_stmt = (
+            select(Recipe, ingredient_count)
+            .outerjoin(RecipeIngredient, RecipeIngredient.recipe_id == Recipe.id)
+            .where(Recipe.owner_id.in_(book_owner_ids))
+            .group_by(Recipe.id)
+        )
+        if q:
+            like = f"%{q.lower()}%"
+            book_stmt = book_stmt.where(
+                or_(func.lower(Recipe.title).like(like), Recipe.tags.any(q.lower())),
+            )
+        if tag:
+            book_stmt = book_stmt.where(Recipe.tags.any(tag))
+        book_res = await db.execute(book_stmt)
+        book_rows = [(r, c) for r, c in book_res.all()]
+        for r, _ in book_rows:
+            owner_ids.add(r.owner_id)
+    else:
+        book_rows = []
+
+    # Resolve owner names in one query (used to display "Geteilt von …").
+    name_by_id: dict[int, str] = {}
+    if owner_ids:
+        users_res = await db.execute(
+            select(User.id, User.name).where(User.id.in_(owner_ids))
+        )
+        name_by_id = {uid: name for uid, name in users_res.all()}
+
+    # Merge — own rows already in `by_id`. Individual shares take precedence
+    # over book shares (more specific signal).
+    for r, c in ind_rows:
+        if r.id in by_id:
+            continue  # owner sees their own copy, share is redundant
+        by_id[r.id] = (r, c, "individual", name_by_id.get(r.owner_id))
+    for r, c in book_rows:
+        if r.id in by_id:
+            continue
+        by_id[r.id] = (r, c, "book", name_by_id.get(r.owner_id))
+
+    rows = list(by_id.values())
+    rows.sort(key=lambda t: t[0].updated_at, reverse=True)
+    return rows
+
+
+# ---------- Email-based share ----------
+
+async def _user_by_email(db: AsyncSession, email: str) -> User | None:
+    """Exact, case-insensitive lookup. The whole point of this helper is to
+    stay the only path that maps email→user — keep autocompletion or
+    partial-match queries out of the API to avoid user enumeration."""
+    res = await db.execute(
+        select(User).where(func.lower(User.email) == email.strip().lower())
+    )
+    return res.scalar_one_or_none()
+
+
+async def share_recipe_with_email(
+    db: AsyncSession, rec: Recipe, owner: User, email: str
+) -> tuple[str, str | None]:
+    """Returns (kind, user_name) where kind is "internal" or "external".
+    External case is the caller's responsibility to actually send the
+    Resend email; this just ensures share_token is provisioned."""
+    target_email = email.strip().lower()
+    if target_email == owner.email.lower():
+        raise ValueError("self-share")
+
+    target = await _user_by_email(db, target_email)
+    if target is None:
+        # No matching user — caller will email the public link. Make sure
+        # one exists.
+        if not rec.share_token:
+            await enable_recipe_share(db, rec)
+        return "external", None
+
+    # Idempotent insert. The unique constraint catches concurrent inserts;
+    # we swallow the IntegrityError and treat it as "already shared".
+    db.add(RecipeShare(recipe_id=rec.id, shared_with_user_id=target.id))
+    try:
+        await db.commit()
+    except _IntegrityError:
+        await db.rollback()
+    return "internal", target.name
+
+
+async def share_book_with_email(
+    db: AsyncSession, owner: User, email: str
+) -> tuple[str, str | None]:
+    target_email = email.strip().lower()
+    if target_email == owner.email.lower():
+        raise ValueError("self-share")
+
+    target = await _user_by_email(db, target_email)
+    if target is None:
+        if not owner.recipe_book_share_token:
+            await enable_book_share(db, owner)
+        return "external", None
+
+    db.add(RecipeBookShare(owner_id=owner.id, shared_with_user_id=target.id))
+    try:
+        await db.commit()
+    except _IntegrityError:
+        await db.rollback()
+    return "internal", target.name
+
+
+async def list_recipe_internal_shares(
+    db: AsyncSession, recipe_id: int
+) -> list[tuple[RecipeShare, User]]:
+    res = await db.execute(
+        select(RecipeShare, User)
+        .join(User, RecipeShare.shared_with_user_id == User.id)
+        .where(RecipeShare.recipe_id == recipe_id)
+        .order_by(RecipeShare.created_at)
+    )
+    return [(s, u) for s, u in res.all()]
+
+
+async def revoke_recipe_internal_share(
+    db: AsyncSession, recipe_id: int, user_id: int
+) -> None:
+    res = await db.execute(
+        select(RecipeShare).where(
+            _and(
+                RecipeShare.recipe_id == recipe_id,
+                RecipeShare.shared_with_user_id == user_id,
+            )
+        )
+    )
+    row = res.scalar_one_or_none()
+    if row:
+        await db.delete(row)
+        await db.commit()
+
+
+async def list_book_internal_shares(
+    db: AsyncSession, owner_id: int
+) -> list[tuple[RecipeBookShare, User]]:
+    res = await db.execute(
+        select(RecipeBookShare, User)
+        .join(User, RecipeBookShare.shared_with_user_id == User.id)
+        .where(RecipeBookShare.owner_id == owner_id)
+        .order_by(RecipeBookShare.created_at)
+    )
+    return [(s, u) for s, u in res.all()]
+
+
+async def revoke_book_internal_share(
+    db: AsyncSession, owner_id: int, user_id: int
+) -> None:
+    res = await db.execute(
+        select(RecipeBookShare).where(
+            _and(
+                RecipeBookShare.owner_id == owner_id,
+                RecipeBookShare.shared_with_user_id == user_id,
+            )
+        )
+    )
+    row = res.scalar_one_or_none()
+    if row:
+        await db.delete(row)
+        await db.commit()

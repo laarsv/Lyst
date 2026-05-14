@@ -27,6 +27,7 @@ import type {
   NoteVersionFull,
   NoteVersionListItem,
   PublicListData,
+  InternalShare,
   Recipe,
   PublicRecipeBookData,
   PublicRecipeData,
@@ -35,6 +36,7 @@ import type {
   RecipeSummary,
   Reminder,
   RestoreSnapshotResponse,
+  ShareByEmailResponse,
   ShareInfo,
   Tag,
   User,
@@ -405,6 +407,25 @@ export const RecipesApi = {
     api.get<{ data: PublicRecipeData }>(`/share/recipe/${token}`).then(unwrap),
   getPublicBook: (token: string) =>
     api.get<{ data: PublicRecipeBookData }>(`/share/recipe-book/${token}`).then(unwrap),
+
+  // ----- Internal sharing by email (alembic 0012) -----
+  shareByEmail: (id: number, email: string) =>
+    api
+      .post<{ data: ShareByEmailResponse }>(`/recipes/${id}/share/email`, { email })
+      .then(unwrap),
+  listShares: (id: number) =>
+    api.get<{ data: InternalShare[] }>(`/recipes/${id}/shares`).then(unwrap),
+  revokeShare: (id: number, userId: number) =>
+    api.delete(`/recipes/${id}/shares/${userId}`),
+
+  shareBookByEmail: (email: string) =>
+    api
+      .post<{ data: ShareByEmailResponse }>('/recipes/share-book/email', { email })
+      .then(unwrap),
+  listBookShares: () =>
+    api.get<{ data: InternalShare[] }>('/recipes/share-book/shares').then(unwrap),
+  revokeBookShare: (userId: number) =>
+    api.delete(`/recipes/share-book/shares/${userId}`),
 
   // ingredients
   addIngredient: (

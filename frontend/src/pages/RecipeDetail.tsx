@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ChefHat, Copy, Loader2, Pencil, Share2, ShoppingCart, Sparkles, Trash2 } from 'lucide-react';
+import { ChefHat, Copy, Loader2, Pencil, Share2, ShoppingCart, Sparkles, Trash2, Users } from 'lucide-react';
 import { Modal } from '@/components/Modal';
 import { ShareRecipePanel } from '@/components/recipes/ShareRecipePanel';
 import { RecipesApi } from '@/api/endpoints';
@@ -91,6 +91,14 @@ export function RecipeDetailPage() {
               <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-2xl font-semibold">{recipe.title}</h1>
               </div>
+              {recipe.share_source && recipe.owner_name && (
+                <div className="text-xs text-brand-700 mt-1.5 inline-flex items-center gap-1">
+                  <Users size={12} />
+                  <span>
+                    Geteilt von {recipe.owner_name} · schreibgeschützt
+                  </span>
+                </div>
+              )}
               {recipe.description && <p className="text-muted mt-2">{recipe.description}</p>}
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted mt-3">
                 <span>🍴 {recipe.servings} Pers.</span>
@@ -116,9 +124,10 @@ export function RecipeDetailPage() {
                 </a>
               )}
             </div>
-            {/* Action row — icon-only to match the list-detail page. Kochen
-                starten stays slightly more prominent (filled brand colour)
-                because it's the primary action on this page. */}
+            {/* Action row — icon-only. Recipients (recipe is shared TO
+                them) only see the read-only-friendly subset: Kochen
+                starten, Zu Einkaufsliste, Duplizieren. Edit / Variante /
+                Teilen / Löschen are owner-only. */}
             <div className="flex flex-wrap gap-1.5">
               <IconAction
                 label="Kochen starten"
@@ -132,40 +141,54 @@ export function RecipeDetailPage() {
                 icon={ShoppingCart}
                 onClick={() => setCopyOpen(true)}
               />
-              <IconAction
-                label="Bearbeiten"
-                icon={Pencil}
-                onClick={() => nav(`/recipes/${recipe.id}/edit`)}
-              />
-              <IconAction
-                label="Duplizieren"
-                icon={Copy}
-                onClick={duplicate}
-              />
-              <IconAction
-                label="Variante (KI)"
-                icon={Sparkles}
-                onClick={() => setVariationOpen(true)}
-              />
-              <IconAction
-                label={recipe.share_enabled ? 'Teilen (aktiv)' : 'Teilen'}
-                icon={Share2}
-                onClick={() => setShareOpen(true)}
-                variant={recipe.share_enabled ? 'primary' : 'default'}
-              />
-              <IconAction
-                label="Löschen"
-                icon={Trash2}
-                onClick={remove}
-                variant="danger"
-              />
+              {!recipe.share_source && (
+                <>
+                  <IconAction
+                    label="Bearbeiten"
+                    icon={Pencil}
+                    onClick={() => nav(`/recipes/${recipe.id}/edit`)}
+                  />
+                  <IconAction
+                    label="Duplizieren"
+                    icon={Copy}
+                    onClick={duplicate}
+                  />
+                  <IconAction
+                    label="Variante (KI)"
+                    icon={Sparkles}
+                    onClick={() => setVariationOpen(true)}
+                  />
+                  <IconAction
+                    label={recipe.share_enabled ? 'Teilen (aktiv)' : 'Teilen'}
+                    icon={Share2}
+                    onClick={() => setShareOpen(true)}
+                    variant={recipe.share_enabled ? 'primary' : 'default'}
+                  />
+                  <IconAction
+                    label="Löschen"
+                    icon={Trash2}
+                    onClick={remove}
+                    variant="danger"
+                  />
+                </>
+              )}
+              {recipe.share_source && (
+                // Recipient can still copy a shared recipe into their own.
+                <IconAction
+                  label="Eigene Kopie speichern"
+                  icon={Copy}
+                  onClick={duplicate}
+                />
+              )}
             </div>
-            <ShareRecipePanel
-              open={shareOpen}
-              onClose={() => setShareOpen(false)}
-              recipe={recipe}
-              onUpdate={(patch) => setRecipe((cur) => (cur ? { ...cur, ...patch } : cur))}
-            />
+            {!recipe.share_source && (
+              <ShareRecipePanel
+                open={shareOpen}
+                onClose={() => setShareOpen(false)}
+                recipe={recipe}
+                onUpdate={(patch) => setRecipe((cur) => (cur ? { ...cur, ...patch } : cur))}
+              />
+            )}
             <RecipeVariationModal
               open={variationOpen}
               onClose={() => setVariationOpen(false)}

@@ -202,6 +202,11 @@ export interface RecipeSummary extends RecipeBase {
   created_at: string;
   updated_at: string;
   ingredient_count: number;
+  /** null when the current user owns the recipe; "individual" or "book"
+   *  when the recipe was shared via alembic 0012's internal-share rows. */
+  share_source: 'individual' | 'book' | null;
+  /** Display name of the owner — only set when share_source is non-null. */
+  owner_name: string | null;
 }
 
 export interface Recipe extends RecipeBase {
@@ -214,6 +219,25 @@ export interface Recipe extends RecipeBase {
   nutrition_per_serving: NutritionTotals;
   share_enabled: boolean;
   share_token: string | null;
+  /** Recipient-perspective fields — when set, the UI renders the recipe
+   *  read-only. Owner-side stays null. */
+  share_source: 'individual' | 'book' | null;
+  owner_name: string | null;
+}
+
+// ---------- Internal sharing (alembic 0012) ----------
+
+export interface ShareByEmailResponse {
+  type: 'internal' | 'external';
+  /** Only set when type='internal' — the matched user's display name. */
+  user_name: string | null;
+}
+
+export interface InternalShare {
+  user_id: number;
+  name: string;
+  email: string;
+  created_at: string;
 }
 
 // ---------- Public share payloads (recipe + recipe-book) ----------

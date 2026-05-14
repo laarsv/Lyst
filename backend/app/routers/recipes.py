@@ -43,12 +43,20 @@ from app.services.recipe_service import (
     delete_recipe,
     delete_step,
     duplicate_recipe,
+    get_accessible_recipe,
     get_ingredient,
     get_recipe,
     get_step,
+    list_accessible_recipes,
+    list_book_internal_shares,
+    list_recipe_internal_shares,
     list_recipes,
     reorder_ingredients,
     reorder_steps,
+    revoke_book_internal_share,
+    revoke_recipe_internal_share,
+    share_book_with_email,
+    share_recipe_with_email,
     update_ingredient,
     update_recipe,
     update_step,
@@ -57,9 +65,19 @@ from app.services.recipe_service import (
 router = APIRouter(prefix="/recipes", tags=["recipes"])
 
 
-def _summary(rec, ingredient_count: int) -> dict:
+def _summary(
+    rec,
+    ingredient_count: int,
+    *,
+    share_source: str | None = None,
+    owner_name: str | None = None,
+) -> dict:
     return RecipeSummary.model_validate(rec).model_copy(
-        update={"ingredient_count": ingredient_count}
+        update={
+            "ingredient_count": ingredient_count,
+            "share_source": share_source,
+            "owner_name": owner_name,
+        }
     ).model_dump(mode="json")
 
 
@@ -96,9 +114,18 @@ def _nutrition_per_serving(rec) -> NutritionTotals:
     )
 
 
-def _full(rec) -> dict:
+def _full(
+    rec,
+    *,
+    share_source: str | None = None,
+    owner_name: str | None = None,
+) -> dict:
     return RecipeOut.model_validate(rec).model_copy(
-        update={"nutrition_per_serving": _nutrition_per_serving(rec)}
+        update={
+            "nutrition_per_serving": _nutrition_per_serving(rec),
+            "share_source": share_source,
+            "owner_name": owner_name,
+        }
     ).model_dump(mode="json")
 
 
@@ -111,8 +138,11 @@ async def get_recipes(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    rows = await list_recipes(db, user.id, q=q, tag=tag)
-    return ok([_summary(r, c) for r, c in rows])
+    """Returns the user's own recipes plus anything shared with them
+    (per-recipe internal share or via a whole-book share). De-duped —
+    a recipe shared both ways is returned once with share_source="individual"."""
+    rows = await list_accessible_recipes(db, user.id, q=q, tag=tag)
+    return ok([_summary(r, c, share_source=src, owner_name=name) for r, c, src, name in rows])
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -134,11 +164,20 @@ async def get_recipe_route(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Owners see their recipe; recipients (individual or book share) get
+    the same payload with share_source/owner_name set so the UI can render
+    in read-only mode."""
     try:
-        rec = await get_recipe(db, recipe_id, user.id)
+        rec, share_source = await get_accessible_recipe(db, recipe_id, user.id)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    return ok(_full(rec))
+    owner_name = None
+    if share_source is not None:
+        # One small lookup — the listing endpoint batches these but here
+        # it's a single user.
+        owner = await db.execute(select(User.name).where(User.id == rec.owner_id))
+        owner_name = owner.scalar_one_or_none()
+    return ok(_full(rec, share_source=share_source, owner_name=owner_name))
 
 
 @router.patch("/{recipe_id}")
@@ -905,3 +944,146 @@ async def post_book_share_disable(
 ):
     await _disable_book_share(db, user)
     return ok({"message": "Book share disabled"})
+
+
+# =============================================================================
+#  Internal sharing — alembic 0012 (per-recipe + per-book)
+# =============================================================================
+#
+# PRIVACY: the email-lookup is done EXCLUSIVELY here, only on POST submit,
+# and only as an exact (case-insensitive) match. There is no autocomplete
+# endpoint, no partial-match, no "is this email registered?" probe. The
+# response always returns either "internal" + the recipient's name (when
+# the email matched a Lyst user) or "external" (when the link was emailed
+# to a non-user). External emails are sent via the existing Resend
+# integration; if Resend is not configured the link is logged.
+
+from app.email.sender import send_email
+from app.email.templates import recipe_book_share_email, recipe_share_email
+from app.schemas.recipe import (
+    InternalShareOut,
+    ShareByEmailRequest,
+    ShareByEmailResponse,
+)
+
+
+# ---------- Single recipe ----------
+
+@router.post("/{recipe_id}/share/email")
+async def post_share_recipe_by_email(
+    recipe_id: int,
+    payload: ShareByEmailRequest,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        rec = await get_recipe(db, recipe_id, user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+    try:
+        kind, name = await share_recipe_with_email(db, rec, user, payload.email)
+    except ValueError as e:
+        if str(e) == "self-share":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Das ist deine eigene Adresse.",
+            )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    if kind == "external":
+        # Send the public link via Resend. share_token is now guaranteed
+        # to exist because the service ensures it.
+        url = f"{settings.FRONTEND_URL}/share/recipe/{rec.share_token}"
+        subject, html = recipe_share_email(user.name, rec.title, url)
+        await send_email(payload.email, subject, html)
+
+    return ok(ShareByEmailResponse(type=kind, user_name=name).model_dump())
+
+
+@router.get("/{recipe_id}/shares")
+async def get_recipe_shares(
+    recipe_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        await get_recipe(db, recipe_id, user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    rows = await list_recipe_internal_shares(db, recipe_id)
+    return ok(
+        [
+            InternalShareOut(
+                user_id=u.id, name=u.name, email=u.email, created_at=s.created_at
+            ).model_dump(mode="json")
+            for s, u in rows
+        ]
+    )
+
+
+@router.delete("/{recipe_id}/shares/{user_id}")
+async def del_recipe_share(
+    recipe_id: int,
+    user_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        await get_recipe(db, recipe_id, user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    await revoke_recipe_internal_share(db, recipe_id, user_id)
+    return ok({"message": "Share revoked"})
+
+
+# ---------- Whole recipe book ----------
+
+@router.post("/share-book/email")
+async def post_share_book_by_email(
+    payload: ShareByEmailRequest,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        kind, name = await share_book_with_email(db, user, payload.email)
+    except ValueError as e:
+        if str(e) == "self-share":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Das ist deine eigene Adresse.",
+            )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    if kind == "external":
+        url = f"{settings.FRONTEND_URL}/share/recipe-book/{user.recipe_book_share_token}"
+        subject, html = recipe_book_share_email(user.name, url)
+        await send_email(payload.email, subject, html)
+
+    return ok(ShareByEmailResponse(type=kind, user_name=name).model_dump())
+
+
+@router.get("/share-book/shares")
+async def get_book_shares(
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    rows = await list_book_internal_shares(db, user.id)
+    return ok(
+        [
+            InternalShareOut(
+                user_id=u.id, name=u.name, email=u.email, created_at=s.created_at
+            ).model_dump(mode="json")
+            for s, u in rows
+        ]
+    )
+
+
+@router.delete("/share-book/shares/{user_id}")
+async def del_book_share(
+    user_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await revoke_book_internal_share(db, user.id, user_id)
+    return ok({"message": "Share revoked"})

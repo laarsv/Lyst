@@ -78,3 +78,72 @@ class RecipeStep(Base, TimestampMixin):
     position: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
 
     recipe: Mapped["Recipe"] = relationship(back_populates="steps")
+
+
+# =============================================================================
+#  Internal sharing — added in alembic 0012
+# =============================================================================
+#
+# Distinct from the public share_token columns on Recipe / User: these rows
+# grant a specific Lyst user direct in-app access to a recipe (RecipeShare)
+# or to the owner's whole recipe collection (RecipeBookShare). Read-only
+# for the recipient — write/delete still goes through ownership checks.
+
+from datetime import datetime
+from sqlalchemy import CheckConstraint, DateTime, UniqueConstraint
+from sqlalchemy.sql import func
+
+
+class RecipeShare(Base):
+    __tablename__ = "recipe_shares"
+    __table_args__ = (
+        UniqueConstraint(
+            "recipe_id",
+            "shared_with_user_id",
+            name="uq_recipe_shares_recipe_user",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    recipe_id: Mapped[int] = mapped_column(
+        ForeignKey("recipes.id", ondelete="CASCADE"), nullable=False
+    )
+    shared_with_user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class RecipeBookShare(Base):
+    __tablename__ = "recipe_book_shares"
+    __table_args__ = (
+        UniqueConstraint(
+            "owner_id",
+            "shared_with_user_id",
+            name="uq_recipe_book_shares_owner_user",
+        ),
+        # DB-level guard against pathological self-share rows. The service
+        # layer rejects them earlier with a friendly message; this is the
+        # belt to that suspenders.
+        CheckConstraint(
+            "owner_id <> shared_with_user_id",
+            name="ck_recipe_book_shares_no_self",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    shared_with_user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
