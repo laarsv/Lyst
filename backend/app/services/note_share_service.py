@@ -18,6 +18,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.models.collaborator import CollaboratorPermission
 from app.models.note import Note, NoteShare
 from app.models.user import User
 
@@ -61,16 +62,16 @@ async def get_public_note(db: AsyncSession, token: str) -> Note | None:
 
 async def get_accessible_note(
     db: AsyncSession, note_id: int, user_id: int
-) -> tuple[Note, str | None]:
-    """Owner OR shared-with. Returns (note, share_source) — share_source
-    is None when the user owns the note, "individual" otherwise. Raises
-    ValueError when there's no access."""
+) -> tuple[Note, str | None, CollaboratorPermission]:
+    """Owner OR shared-with. Returns (note, share_source, permission).
+    Owner -> (note, None, EDIT). Recipient -> (note, "individual", <row perm>).
+    Raises ValueError when there's no access."""
     res = await db.execute(select(Note).where(Note.id == note_id))
     note = res.scalar_one_or_none()
     if not note:
         raise ValueError("Note not found")
     if note.owner_id == user_id:
-        return note, None
+        return note, None, CollaboratorPermission.EDIT
     rs = await db.execute(
         select(NoteShare).where(
             and_(
@@ -79,8 +80,9 @@ async def get_accessible_note(
             )
         )
     )
-    if rs.scalar_one_or_none():
-        return note, "individual"
+    share = rs.scalar_one_or_none()
+    if share:
+        return note, "individual", share.permission
     raise ValueError("Note not found")
 
 
@@ -93,7 +95,7 @@ async def list_accessible_notes(
     folder_id: int | None = None,
     uncategorized: bool = False,
     archived: bool = False,
-) -> list[tuple[Note, str | None, str | None]]:
+) -> list[tuple[Note, str | None, str | None, CollaboratorPermission]]:
     """User's own notes + ones shared with them. Returns
     [(note, share_source, owner_name)] — share_source/owner_name are None
     for owned rows. Filters apply to owned notes only; shared notes always
@@ -121,7 +123,10 @@ async def list_accessible_notes(
         own_stmt = own_stmt.where(Note.tags.any(tag))
     own_stmt = own_stmt.order_by(Note.is_pinned.desc(), Note.updated_at.desc())
     own_res = await db.execute(own_stmt)
-    own = [(n, None, None) for n in own_res.scalars().all()]
+    own = [
+        (n, None, None, CollaboratorPermission.EDIT)
+        for n in own_res.scalars().all()
+    ]
 
     # Shared notes — recipients only see non-archived ones, and only when
     # no folder/uncategorized filter is active (those are owner-side
@@ -129,15 +134,19 @@ async def list_accessible_notes(
     if archived or folder_id is not None or uncategorized:
         return own
 
-    share_ids_res = await db.execute(
-        select(NoteShare.note_id).where(NoteShare.shared_with_user_id == user_id)
+    share_rows_res = await db.execute(
+        select(NoteShare.note_id, NoteShare.permission).where(
+            NoteShare.shared_with_user_id == user_id
+        )
     )
-    share_ids = [nid for (nid,) in share_ids_res.all()]
-    if not share_ids:
+    perm_by_note: dict[int, CollaboratorPermission] = {
+        nid: perm for nid, perm in share_rows_res.all()
+    }
+    if not perm_by_note:
         return own
 
     shared_stmt = select(Note).where(
-        Note.id.in_(share_ids), Note.is_archived.is_(False)
+        Note.id.in_(list(perm_by_note.keys())), Note.is_archived.is_(False)
     )
     if q:
         like = f"%{q.lower()}%"
@@ -163,7 +172,13 @@ async def list_accessible_notes(
         name_by_id = {uid: name for uid, name in names_res.all()}
 
     rows = own + [
-        (n, "individual", name_by_id.get(n.owner_id)) for n in shared_notes
+        (
+            n,
+            "individual",
+            name_by_id.get(n.owner_id),
+            perm_by_note[n.id],
+        )
+        for n in shared_notes
     ]
     rows.sort(key=lambda t: (not t[0].is_pinned, -t[0].updated_at.timestamp()))
     return rows
@@ -182,10 +197,16 @@ async def _user_by_email(db: AsyncSession, email: str) -> User | None:
 
 
 async def share_note_with_email(
-    db: AsyncSession, note: Note, owner: User, email: str
+    db: AsyncSession,
+    note: Note,
+    owner: User,
+    email: str,
+    permission: CollaboratorPermission = CollaboratorPermission.VIEW,
 ) -> tuple[str, str | None]:
     """Returns (kind, user_name). External case ensures share_token exists
-    so the caller can email the public link."""
+    so the caller can email the public link. If a share already exists
+    for this (note, user), this call updates the permission rather than
+    erroring — matches the "no-op idempotent" behavior the UI assumes."""
     target_email = email.strip().lower()
     if target_email == owner.email.lower():
         raise ValueError("self-share")
@@ -196,13 +217,56 @@ async def share_note_with_email(
             await enable_share(db, note)
         return "external", None
 
-    db.add(NoteShare(note_id=note.id, shared_with_user_id=target.id))
-    try:
-        await db.commit()
-    except IntegrityError:
-        # Unique constraint — already shared with this user. No-op.
-        await db.rollback()
+    existing = await db.execute(
+        select(NoteShare).where(
+            and_(
+                NoteShare.note_id == note.id,
+                NoteShare.shared_with_user_id == target.id,
+            )
+        )
+    )
+    row = existing.scalar_one_or_none()
+    if row:
+        if row.permission != permission:
+            row.permission = permission
+            await db.commit()
+    else:
+        db.add(
+            NoteShare(
+                note_id=note.id,
+                shared_with_user_id=target.id,
+                permission=permission,
+            )
+        )
+        try:
+            await db.commit()
+        except IntegrityError:
+            # Race with a concurrent insert — treat as already shared.
+            await db.rollback()
     return "internal", target.name
+
+
+async def update_internal_share_permission(
+    db: AsyncSession,
+    note_id: int,
+    user_id: int,
+    permission: CollaboratorPermission,
+) -> bool:
+    """Returns True when a row was updated; False when no share exists."""
+    res = await db.execute(
+        select(NoteShare).where(
+            and_(
+                NoteShare.note_id == note_id,
+                NoteShare.shared_with_user_id == user_id,
+            )
+        )
+    )
+    row = res.scalar_one_or_none()
+    if not row:
+        return False
+    row.permission = permission
+    await db.commit()
+    return True
 
 
 async def list_internal_shares(
@@ -232,3 +296,25 @@ async def revoke_internal_share(
     if row:
         await db.delete(row)
         await db.commit()
+
+
+async def leave_internal_share(
+    db: AsyncSession, note_id: int, user_id: int
+) -> bool:
+    """Recipient-initiated removal — same effect as revoke but reachable
+    by the recipient themselves. Returns True when a row was actually
+    removed (lets the caller distinguish 'wasn't shared' from 'left')."""
+    res = await db.execute(
+        select(NoteShare).where(
+            and_(
+                NoteShare.note_id == note_id,
+                NoteShare.shared_with_user_id == user_id,
+            )
+        )
+    )
+    row = res.scalar_one_or_none()
+    if not row:
+        return False
+    await db.delete(row)
+    await db.commit()
+    return True

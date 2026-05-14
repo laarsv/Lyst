@@ -404,18 +404,34 @@ async def get_public_book(db: AsyncSession, token: str) -> tuple[User, list[tupl
 from sqlalchemy import and_ as _and
 from sqlalchemy.exc import IntegrityError as _IntegrityError
 
+from app.models.collaborator import CollaboratorPermission
 from app.models.recipe import RecipeBookShare, RecipeShare
+
+
+def _max_perm(
+    a: CollaboratorPermission | None, b: CollaboratorPermission | None
+) -> CollaboratorPermission | None:
+    """Higher permission wins when a recipe is reachable via both an
+    individual and a book share. EDIT > VIEW; None is "no access"."""
+    if a is None:
+        return b
+    if b is None:
+        return a
+    return CollaboratorPermission.EDIT if (
+        a == CollaboratorPermission.EDIT or b == CollaboratorPermission.EDIT
+    ) else CollaboratorPermission.VIEW
 
 
 # ---------- Recipient queries ----------
 
 async def get_accessible_recipe(
     db: AsyncSession, recipe_id: int, user_id: int
-) -> tuple[Recipe, str | None]:
+) -> tuple[Recipe, str | None, CollaboratorPermission]:
     """Fetch a recipe the user owns OR has been shared (per-recipe or via
-    a book share). Returns (recipe, share_source) where share_source is
-    None when the user owns the recipe, "individual" or "book" otherwise.
-    Raises ValueError when there's no access."""
+    a book share). Returns (recipe, share_source, permission). Owner gets
+    EDIT. Recipient with both individual + book shares: higher perm wins,
+    share_source = "individual" (more specific signal).  Raises ValueError
+    when there's no access."""
     result = await db.execute(
         select(Recipe)
         .options(selectinload(Recipe.ingredients), selectinload(Recipe.steps))
@@ -425,8 +441,11 @@ async def get_accessible_recipe(
     if not rec:
         raise ValueError("Recipe not found")
     if rec.owner_id == user_id:
-        return rec, None
-    # Individual share?
+        return rec, None, CollaboratorPermission.EDIT
+
+    ind_perm: CollaboratorPermission | None = None
+    book_perm: CollaboratorPermission | None = None
+
     rs = await db.execute(
         select(RecipeShare).where(
             _and(
@@ -435,9 +454,10 @@ async def get_accessible_recipe(
             )
         )
     )
-    if rs.scalar_one_or_none():
-        return rec, "individual"
-    # Book share?
+    ind_share = rs.scalar_one_or_none()
+    if ind_share:
+        ind_perm = ind_share.permission
+
     bs = await db.execute(
         select(RecipeBookShare).where(
             _and(
@@ -446,9 +466,15 @@ async def get_accessible_recipe(
             )
         )
     )
-    if bs.scalar_one_or_none():
-        return rec, "book"
-    raise ValueError("Recipe not found")
+    book_share = bs.scalar_one_or_none()
+    if book_share:
+        book_perm = book_share.permission
+
+    perm = _max_perm(ind_perm, book_perm)
+    if perm is None:
+        raise ValueError("Recipe not found")
+    source = "individual" if ind_share else "book"
+    return rec, source, perm
 
 
 async def list_accessible_recipes(
@@ -457,7 +483,7 @@ async def list_accessible_recipes(
     *,
     q: str | None = None,
     tag: str | None = None,
-) -> list[tuple[Recipe, int, str | None, str | None]]:
+) -> list[tuple[Recipe, int, str | None, str | None, CollaboratorPermission]]:
     """Owned + shared recipes, with per-row share metadata.
 
     Returns [(recipe, ingredient_count, share_source, owner_name)] where
@@ -467,8 +493,10 @@ async def list_accessible_recipes(
 
     # ----- Owned recipes -----
     own = await list_recipes(db, user_id, q=q, tag=tag)
-    by_id: dict[int, tuple[Recipe, int, str | None, str | None]] = {
-        r.id: (r, c, None, None) for r, c in own
+    by_id: dict[
+        int, tuple[Recipe, int, str | None, str | None, CollaboratorPermission]
+    ] = {
+        r.id: (r, c, None, None, CollaboratorPermission.EDIT) for r, c in own
     }
 
     # ----- Helper: query a set of recipe rows by id with ingredient_count -----
@@ -493,13 +521,15 @@ async def list_accessible_recipes(
         return [(r, c) for r, c in result.all()]
 
     # ----- Recipes shared individually with user -----
-    ind_ids_res = await db.execute(
-        select(RecipeShare.recipe_id).where(
+    ind_rows_res = await db.execute(
+        select(RecipeShare.recipe_id, RecipeShare.permission).where(
             RecipeShare.shared_with_user_id == user_id
         )
     )
-    ind_ids = [rid for (rid,) in ind_ids_res.all()]
-    ind_rows = await _fetch(ind_ids)
+    ind_perm_by_recipe: dict[int, CollaboratorPermission] = {
+        rid: perm for rid, perm in ind_rows_res.all()
+    }
+    ind_rows = await _fetch(list(ind_perm_by_recipe.keys()))
 
     # Look up owner names in one shot.
     owner_ids: set[int] = set()
@@ -508,11 +538,14 @@ async def list_accessible_recipes(
 
     # ----- Recipes from books shared with user -----
     book_owners_res = await db.execute(
-        select(RecipeBookShare.owner_id).where(
+        select(RecipeBookShare.owner_id, RecipeBookShare.permission).where(
             RecipeBookShare.shared_with_user_id == user_id
         )
     )
-    book_owner_ids = [oid for (oid,) in book_owners_res.all()]
+    book_perm_by_owner: dict[int, CollaboratorPermission] = {
+        oid: perm for oid, perm in book_owners_res.all()
+    }
+    book_owner_ids = list(book_perm_by_owner.keys())
     if book_owner_ids:
         ingredient_count = func.count(RecipeIngredient.id).label("ingredient_count")
         book_stmt = (
@@ -544,15 +577,25 @@ async def list_accessible_recipes(
         name_by_id = {uid: name for uid, name in users_res.all()}
 
     # Merge — own rows already in `by_id`. Individual shares take precedence
-    # over book shares (more specific signal).
+    # over book shares (more specific signal); permission combines per
+    # _max_perm so a recipient with EDIT via book + VIEW via individual
+    # ends up with EDIT.
     for r, c in ind_rows:
         if r.id in by_id:
             continue  # owner sees their own copy, share is redundant
-        by_id[r.id] = (r, c, "individual", name_by_id.get(r.owner_id))
+        ind_perm = ind_perm_by_recipe.get(r.id)
+        book_perm = book_perm_by_owner.get(r.owner_id)
+        perm = _max_perm(ind_perm, book_perm) or CollaboratorPermission.VIEW
+        by_id[r.id] = (
+            r, c, "individual", name_by_id.get(r.owner_id), perm,
+        )
     for r, c in book_rows:
         if r.id in by_id:
             continue
-        by_id[r.id] = (r, c, "book", name_by_id.get(r.owner_id))
+        perm = book_perm_by_owner.get(r.owner_id) or CollaboratorPermission.VIEW
+        by_id[r.id] = (
+            r, c, "book", name_by_id.get(r.owner_id), perm,
+        )
 
     rows = list(by_id.values())
     rows.sort(key=lambda t: t[0].updated_at, reverse=True)
@@ -572,11 +615,16 @@ async def _user_by_email(db: AsyncSession, email: str) -> User | None:
 
 
 async def share_recipe_with_email(
-    db: AsyncSession, rec: Recipe, owner: User, email: str
+    db: AsyncSession,
+    rec: Recipe,
+    owner: User,
+    email: str,
+    permission: CollaboratorPermission = CollaboratorPermission.VIEW,
 ) -> tuple[str, str | None]:
     """Returns (kind, user_name) where kind is "internal" or "external".
     External case is the caller's responsibility to actually send the
-    Resend email; this just ensures share_token is provisioned."""
+    Resend email; this just ensures share_token is provisioned. Re-sharing
+    with the same address updates the permission rather than 409-ing."""
     target_email = email.strip().lower()
     if target_email == owner.email.lower():
         raise ValueError("self-share")
@@ -589,18 +637,39 @@ async def share_recipe_with_email(
             await enable_recipe_share(db, rec)
         return "external", None
 
-    # Idempotent insert. The unique constraint catches concurrent inserts;
-    # we swallow the IntegrityError and treat it as "already shared".
-    db.add(RecipeShare(recipe_id=rec.id, shared_with_user_id=target.id))
-    try:
-        await db.commit()
-    except _IntegrityError:
-        await db.rollback()
+    existing = await db.execute(
+        select(RecipeShare).where(
+            _and(
+                RecipeShare.recipe_id == rec.id,
+                RecipeShare.shared_with_user_id == target.id,
+            )
+        )
+    )
+    row = existing.scalar_one_or_none()
+    if row:
+        if row.permission != permission:
+            row.permission = permission
+            await db.commit()
+    else:
+        db.add(
+            RecipeShare(
+                recipe_id=rec.id,
+                shared_with_user_id=target.id,
+                permission=permission,
+            )
+        )
+        try:
+            await db.commit()
+        except _IntegrityError:
+            await db.rollback()
     return "internal", target.name
 
 
 async def share_book_with_email(
-    db: AsyncSession, owner: User, email: str
+    db: AsyncSession,
+    owner: User,
+    email: str,
+    permission: CollaboratorPermission = CollaboratorPermission.VIEW,
 ) -> tuple[str, str | None]:
     target_email = email.strip().lower()
     if target_email == owner.email.lower():
@@ -612,12 +681,114 @@ async def share_book_with_email(
             await enable_book_share(db, owner)
         return "external", None
 
-    db.add(RecipeBookShare(owner_id=owner.id, shared_with_user_id=target.id))
-    try:
-        await db.commit()
-    except _IntegrityError:
-        await db.rollback()
+    existing = await db.execute(
+        select(RecipeBookShare).where(
+            _and(
+                RecipeBookShare.owner_id == owner.id,
+                RecipeBookShare.shared_with_user_id == target.id,
+            )
+        )
+    )
+    row = existing.scalar_one_or_none()
+    if row:
+        if row.permission != permission:
+            row.permission = permission
+            await db.commit()
+    else:
+        db.add(
+            RecipeBookShare(
+                owner_id=owner.id,
+                shared_with_user_id=target.id,
+                permission=permission,
+            )
+        )
+        try:
+            await db.commit()
+        except _IntegrityError:
+            await db.rollback()
     return "internal", target.name
+
+
+async def update_recipe_internal_share_permission(
+    db: AsyncSession,
+    recipe_id: int,
+    user_id: int,
+    permission: CollaboratorPermission,
+) -> bool:
+    res = await db.execute(
+        select(RecipeShare).where(
+            _and(
+                RecipeShare.recipe_id == recipe_id,
+                RecipeShare.shared_with_user_id == user_id,
+            )
+        )
+    )
+    row = res.scalar_one_or_none()
+    if not row:
+        return False
+    row.permission = permission
+    await db.commit()
+    return True
+
+
+async def update_book_internal_share_permission(
+    db: AsyncSession,
+    owner_id: int,
+    user_id: int,
+    permission: CollaboratorPermission,
+) -> bool:
+    res = await db.execute(
+        select(RecipeBookShare).where(
+            _and(
+                RecipeBookShare.owner_id == owner_id,
+                RecipeBookShare.shared_with_user_id == user_id,
+            )
+        )
+    )
+    row = res.scalar_one_or_none()
+    if not row:
+        return False
+    row.permission = permission
+    await db.commit()
+    return True
+
+
+async def leave_recipe_internal_share(
+    db: AsyncSession, recipe_id: int, user_id: int
+) -> bool:
+    res = await db.execute(
+        select(RecipeShare).where(
+            _and(
+                RecipeShare.recipe_id == recipe_id,
+                RecipeShare.shared_with_user_id == user_id,
+            )
+        )
+    )
+    row = res.scalar_one_or_none()
+    if not row:
+        return False
+    await db.delete(row)
+    await db.commit()
+    return True
+
+
+async def leave_book_internal_share(
+    db: AsyncSession, owner_id: int, user_id: int
+) -> bool:
+    res = await db.execute(
+        select(RecipeBookShare).where(
+            _and(
+                RecipeBookShare.owner_id == owner_id,
+                RecipeBookShare.shared_with_user_id == user_id,
+            )
+        )
+    )
+    row = res.scalar_one_or_none()
+    if not row:
+        return False
+    await db.delete(row)
+    await db.commit()
+    return True
 
 
 async def list_recipe_internal_shares(

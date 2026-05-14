@@ -11,7 +11,7 @@ import { Modal } from '@/components/Modal';
 import { RecipesApi } from '@/api/endpoints';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
-import type { InternalShare, Recipe, ShareInfo } from '@/types';
+import type { CollaboratorPermission, InternalShare, Recipe, ShareInfo } from '@/types';
 
 interface Props {
   open: boolean;
@@ -24,6 +24,7 @@ export function ShareRecipePanel({ open, onClose, recipe, onUpdate }: Props) {
   const [info, setInfo] = useState<ShareInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [emailValue, setEmailValue] = useState('');
+  const [emailPerm, setEmailPerm] = useState<CollaboratorPermission>('VIEW');
   const [emailSubmitting, setEmailSubmitting] = useState(false);
   const [shares, setShares] = useState<InternalShare[]>([]);
 
@@ -49,10 +50,11 @@ export function ShareRecipePanel({ open, onClose, recipe, onUpdate }: Props) {
     if (!email) return;
     setEmailSubmitting(true);
     try {
-      const r = await RecipesApi.shareByEmail(recipe.id, email);
+      const r = await RecipesApi.shareByEmail(recipe.id, email, emailPerm);
       if (r.type === 'internal') {
+        const permLabel = emailPerm === 'EDIT' ? 'mit Bearbeitungsrecht' : 'zum Lesen';
         toast.success(
-          `An ${r.user_name ?? email} in Lyst geteilt — das Rezept erscheint jetzt in ihrer Bibliothek.`,
+          `An ${r.user_name ?? email} in Lyst geteilt (${permLabel}).`,
         );
         // Refresh the visible list.
         const fresh = await RecipesApi.listShares(recipe.id).catch(() => shares);
@@ -71,6 +73,17 @@ export function ShareRecipePanel({ open, onClose, recipe, onUpdate }: Props) {
       toast.error(getApiError(err));
     } finally {
       setEmailSubmitting(false);
+    }
+  };
+
+  const setRowPerm = async (s: InternalShare, next: CollaboratorPermission) => {
+    if (next === s.permission) return;
+    setShares((cur) => cur.map((x) => (x.user_id === s.user_id ? { ...x, permission: next } : x)));
+    try {
+      await RecipesApi.patchShare(recipe.id, s.user_id, next);
+    } catch (err) {
+      setShares((cur) => cur.map((x) => (x.user_id === s.user_id ? { ...x, permission: s.permission } : x)));
+      toast.error(getApiError(err));
     }
   };
 
@@ -126,16 +139,26 @@ export function ShareRecipePanel({ open, onClose, recipe, onUpdate }: Props) {
             Rezept direkt in ihrer Bibliothek. Sonst senden wir den
             öffentlichen Link an die angegebene Adresse.
           </p>
-          <form onSubmit={submitEmail} className="flex gap-2">
+          <form onSubmit={submitEmail} className="flex flex-wrap gap-2">
             <input
               type="email"
               required
-              className="input flex-1 text-sm"
+              className="input flex-1 min-w-[160px] text-sm"
               placeholder="email@beispiel.de"
               value={emailValue}
               onChange={(e) => setEmailValue(e.target.value)}
               disabled={emailSubmitting}
             />
+            <select
+              className="input w-32 text-sm"
+              value={emailPerm}
+              onChange={(e) => setEmailPerm(e.target.value as CollaboratorPermission)}
+              disabled={emailSubmitting}
+              title="Berechtigung — gilt nur für Lyst-Nutzer:innen, öffentliche Links sind immer schreibgeschützt."
+            >
+              <option value="VIEW">Ansehen</option>
+              <option value="EDIT">Bearbeiten</option>
+            </select>
             <button
               type="submit"
               className="btn-primary text-sm"
@@ -155,10 +178,21 @@ export function ShareRecipePanel({ open, onClose, recipe, onUpdate }: Props) {
                     key={s.user_id}
                     className="flex items-center justify-between gap-2 px-3 py-2 text-sm"
                   >
-                    <span className="min-w-0">
+                    <span className="min-w-0 flex-1">
                       <span className="font-medium">{s.name}</span>
                       <span className="text-muted ml-2 text-xs">{s.email}</span>
                     </span>
+                    <select
+                      className="text-xs border border-line rounded px-1.5 py-0.5 bg-surface"
+                      value={s.permission}
+                      onChange={(e) =>
+                        setRowPerm(s, e.target.value as CollaboratorPermission)
+                      }
+                      aria-label={`Berechtigung für ${s.name}`}
+                    >
+                      <option value="VIEW">Ansehen</option>
+                      <option value="EDIT">Bearbeiten</option>
+                    </select>
                     <button
                       type="button"
                       onClick={() => revoke(s)}

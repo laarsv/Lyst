@@ -133,10 +133,12 @@ class RecipeOut(RecipeBase):
     nutrition_per_serving: NutritionTotals = Field(default_factory=NutritionTotals)
     share_enabled: bool = False
     share_token: str | None = None
-    # Recipient-perspective fields. Frontend treats `share_source` as the
-    # "this is read-only" trigger (the owner page can edit; recipients can't).
+    # Recipient-perspective fields. share_source drives the "is this mine?"
+    # check; share_permission decides what a recipient may DO (view-only vs
+    # full edit minus delete-resource and re-share).
     owner_name: str | None = None
     share_source: str | None = None  # "individual" | "book" | None
+    share_permission: "CollaboratorPermission | None" = None
 
 
 # --- Public share views (no auth) ---
@@ -246,14 +248,17 @@ class AiVariationRequest(BaseModel):
     variation: str = Field(min_length=1, max_length=500)
 
 
-# ---------- Internal sharing (alembic 0012) ----------
+# ---------- Internal sharing (alembic 0012, permissions added in 0014) ----
 
 from pydantic import EmailStr
+
+from app.models.collaborator import CollaboratorPermission
 
 
 class ShareByEmailRequest(BaseModel):
     """POST /recipes/{id}/share/email and POST /recipes/share-book/email."""
     email: EmailStr
+    permission: CollaboratorPermission = CollaboratorPermission.VIEW
 
 
 class ShareByEmailResponse(BaseModel):
@@ -265,9 +270,20 @@ class ShareByEmailResponse(BaseModel):
     user_name: str | None = None
 
 
+class ShareUpdateRequest(BaseModel):
+    """PATCH /recipes/{id}/shares/{user_id} and the recipe-book equivalent."""
+    permission: CollaboratorPermission
+
+
 class InternalShareOut(BaseModel):
     """One row of the "shared with these users" list shown in the panels."""
     user_id: int
     name: str
     email: str
+    permission: CollaboratorPermission
     created_at: datetime
+
+
+# Late-binding so the forward ref on RecipeOut.share_permission resolves
+# even though we import CollaboratorPermission below the class definition.
+RecipeOut.model_rebuild()

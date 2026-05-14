@@ -11,6 +11,7 @@ import {
   ArchiveRestore,
   FolderOpen,
   History,
+  LogOut,
   MoreVertical,
   Pin,
   PinOff,
@@ -28,8 +29,11 @@ interface Props {
   onTogglePin: () => void;
   onChangeFolder: () => void;
   onToggleArchive: () => void;
-  onShowHistory: () => void;
-  onDelete: () => void;
+  /** Optional — owner-only history. Hide for recipients. */
+  onShowHistory?: () => void;
+  /** Optional — owner-only "Notiz löschen". Hide for recipients (they
+   *  use onLeaveShare instead). */
+  onDelete?: () => void;
   /** Optional — when provided, the menu shows a "Zusammenfassen (KI)"
    *  entry that calls this callback. Disabled when the note is empty. */
   onSummarize?: () => void;
@@ -41,6 +45,12 @@ interface Props {
   onShare?: () => void;
   /** When true, the share entry is highlighted (sharing is currently on). */
   shareActive?: boolean;
+  /** Optional — recipient-only "Freigabe verlassen". */
+  onLeaveShare?: () => void;
+  /** True when the note was shared TO this user — hides owner-only
+   *  options (pin, folder, archive). The individual flags above let
+   *  the parent override per-item, but this one is the bulk switch. */
+  isRecipient?: boolean;
   buttonClassName?: string;
 }
 
@@ -65,6 +75,8 @@ export function NoteActionsMenu({
   canSummarize = true,
   onShare,
   shareActive = false,
+  onLeaveShare,
+  isRecipient = false,
   buttonClassName = '',
 }: Props) {
   const isMobile = useMediaQuery('(max-width: 767.98px)');
@@ -92,21 +104,28 @@ export function NoteActionsMenu({
   }, [open, isMobile]);
 
   const items: Item[] = [
-    {
-      key: 'pin',
-      label: isPinned ? 'Pin entfernen' : 'Anpinnen',
-      icon: isPinned ? PinOff : Pin,
-      onClick: onTogglePin,
-      disabled: isArchived,
-    },
-    { key: 'folder', label: 'Ordner ändern', icon: FolderOpen, onClick: onChangeFolder },
-    {
-      key: 'archive',
-      label: isArchived ? 'Wiederherstellen' : 'Archivieren',
-      icon: isArchived ? ArchiveRestore : Archive,
-      onClick: onToggleArchive,
-    },
-    { key: 'history', label: 'Verlauf', icon: History, onClick: onShowHistory },
+    // Owner-only metadata: pin, folder, archive. Hidden for recipients.
+    ...(!isRecipient
+      ? [
+          {
+            key: 'pin',
+            label: isPinned ? 'Pin entfernen' : 'Anpinnen',
+            icon: isPinned ? PinOff : Pin,
+            onClick: onTogglePin,
+            disabled: isArchived,
+          },
+          { key: 'folder', label: 'Ordner ändern', icon: FolderOpen, onClick: onChangeFolder },
+          {
+            key: 'archive',
+            label: isArchived ? 'Wiederherstellen' : 'Archivieren',
+            icon: isArchived ? ArchiveRestore : Archive,
+            onClick: onToggleArchive,
+          },
+        ]
+      : []),
+    ...(onShowHistory
+      ? [{ key: 'history', label: 'Verlauf', icon: History, onClick: onShowHistory }]
+      : []),
     ...(onShare
       ? [
           {
@@ -128,7 +147,20 @@ export function NoteActionsMenu({
           },
         ]
       : []),
-    { key: 'delete', label: 'Löschen', icon: Trash2, onClick: onDelete, danger: true },
+    ...(onLeaveShare
+      ? [
+          {
+            key: 'leave',
+            label: 'Freigabe verlassen',
+            icon: LogOut,
+            onClick: onLeaveShare,
+            danger: true,
+          },
+        ]
+      : []),
+    ...(onDelete
+      ? [{ key: 'delete', label: 'Löschen', icon: Trash2, onClick: onDelete, danger: true }]
+      : []),
   ];
 
   const fire = (it: Item) => {

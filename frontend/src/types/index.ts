@@ -97,6 +97,9 @@ export interface Note {
   // current user is viewing a note someone else shared with them.
   share_source: 'individual' | null;
   owner_name: string | null;
+  /** Effective permission for the current viewer. Owner -> 'EDIT'; for
+   *  recipients it's whatever the share row carries (alembic 0014). */
+  share_permission: CollaboratorPermission | null;
 }
 
 export interface PublicNoteData {
@@ -233,10 +236,13 @@ export interface Recipe extends RecipeBase {
   nutrition_per_serving: NutritionTotals;
   share_enabled: boolean;
   share_token: string | null;
-  /** Recipient-perspective fields — when set, the UI renders the recipe
-   *  read-only. Owner-side stays null. */
+  /** Recipient-perspective fields. share_source drives the "is this
+   *  someone else's recipe" check; share_permission decides what a
+   *  recipient may DO (view-only vs full edit minus delete-resource and
+   *  re-share). Owner-side: share_source=null, share_permission='EDIT'. */
   share_source: 'individual' | 'book' | null;
   owner_name: string | null;
+  share_permission: CollaboratorPermission | null;
 }
 
 // ---------- Internal sharing (alembic 0012) ----------
@@ -251,6 +257,9 @@ export interface InternalShare {
   user_id: number;
   name: string;
   email: string;
+  /** Granted permission for this recipient (alembic 0014). VIEW for
+   *  every share row created before the migration. */
+  permission: CollaboratorPermission;
   created_at: string;
 }
 

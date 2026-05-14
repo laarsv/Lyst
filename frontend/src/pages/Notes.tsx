@@ -249,6 +249,28 @@ export function NotesPage() {
     await updateNote(n, { is_pinned: !n.is_pinned });
   };
 
+  const leaveShare = async (n: Note) => {
+    if (
+      !(await confirmDialog({
+        title: 'Diese Freigabe verlassen?',
+        message:
+          'Die Notiz verschwindet aus deiner Ansicht. Der Besitzer kann sie dir erneut freigeben.',
+        confirmLabel: 'Verlassen',
+        variant: 'danger',
+      }))
+    )
+      return;
+    try {
+      await NotesApi.leaveShare(n.id);
+      setNotes((cur) => cur.filter((x) => x.id !== n.id));
+      if (activeId === n.id) setActiveId(null);
+      invalidateFresh('notes');
+      toast.success('Freigabe verlassen');
+    } catch (e) {
+      toast.error(getApiError(e));
+    }
+  };
+
   const toggleArchive = async (n: Note) => {
     await updateNote(n, { is_archived: !n.is_archived });
   };
@@ -280,6 +302,7 @@ export function NotesPage() {
         onDelete={() => removeNote(active!)}
         onTogglePin={() => togglePin(active!)}
         onToggleArchive={() => toggleArchive(active!)}
+        onLeaveShare={() => leaveShare(active!)}
         onBack={() => setActiveId(null)}
         onOpenByTitle={openByTitle}
         onCreateFolder={() => setFolderModal({ open: true, edit: null })}
@@ -503,6 +526,7 @@ export function NotesPage() {
             onDelete={() => removeNote(active)}
             onTogglePin={() => togglePin(active)}
             onToggleArchive={() => toggleArchive(active)}
+            onLeaveShare={() => leaveShare(active)}
             onBack={() => setActiveId(null)}
             onOpenByTitle={openByTitle}
             onCreateFolder={() => setFolderModal({ open: true, edit: null })}
@@ -800,6 +824,7 @@ function NoteEditor({
   onDelete,
   onTogglePin,
   onToggleArchive,
+  onLeaveShare,
   onBack,
   onOpenByTitle,
   onRestored,
@@ -812,6 +837,7 @@ function NoteEditor({
   onDelete: () => void;
   onTogglePin: () => void;
   onToggleArchive: () => void;
+  onLeaveShare: () => void;
   onBack: () => void;
   onOpenByTitle: (title: string) => void;
   onRestored: (n: Note) => void;
@@ -830,9 +856,13 @@ function NoteEditor({
   const [titleSuggesting, setTitleSuggesting] = useState(false);
   const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
   const [tagsLoading, setTagsLoading] = useState(false);
-  // Recipients (note shared TO this user) get a read-only view: no edit
-  // controls, no AI buttons, no share actions.
+  // Recipients (note shared TO this user) get a permission-aware view:
+  //   - VIEW recipients: read-only — no edit controls, no AI, no share, no metadata
+  //   - EDIT recipients: can edit content + use AI; still no share/delete/folder/pin
+  // `isRecipient` gates owner-only chrome; `canEdit` gates content edits.
   const isRecipient = note.share_source !== null;
+  const canEdit = !isRecipient || note.share_permission === 'EDIT';
+  const readOnly = !canEdit;
   // Lifted so both the chip and the kebab "Ordner ändern" entry pop the
   // same FolderPicker (one source of truth for the open state).
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
@@ -885,8 +915,8 @@ function NoteEditor({
             value={state.title}
             onChange={(e) => state.setTitle(e.target.value)}
             placeholder="Titel"
-            readOnly={isRecipient}
-            title={isRecipient ? 'Geteilte Notiz — schreibgeschützt' : undefined}
+            readOnly={readOnly}
+            title={readOnly ? 'Geteilte Notiz — schreibgeschützt' : undefined}
           />
           {isRecipient && note.owner_name && (
             <div
@@ -894,13 +924,15 @@ function NoteEditor({
               title="Geteilte Notiz"
             >
               <Users size={11} />
-              <span>Geteilt von {note.owner_name} · schreibgeschützt</span>
+              <span>
+                Geteilt von {note.owner_name}
+                {canEdit ? ' · Bearbeitung erlaubt' : ' · schreibgeschützt'}
+              </span>
             </div>
           )}
-          {/* Feature 7 — Sparkles only appears when the title is empty
-              and the note has content the AI can read. Hidden for
-              recipients — they can't trigger AI on someone else's note. */}
-          {!isRecipient && !state.title.trim() && state.content.trim() && (
+          {/* Title sparkles — visible whenever the user can edit content
+              (owner OR EDIT recipient) and the title is empty. */}
+          {canEdit && !state.title.trim() && state.content.trim() && (
             <button
               type="button"
               onClick={suggestTitle}
@@ -933,23 +965,27 @@ function NoteEditor({
         <NoteActionsMenu
           isPinned={note.is_pinned}
           isArchived={note.is_archived}
+          isRecipient={isRecipient}
           onTogglePin={onTogglePin}
           onChangeFolder={() => setFolderPickerOpen(true)}
           onToggleArchive={onToggleArchive}
-          onShowHistory={() => setHistoryOpen(true)}
-          onDelete={onDelete}
-          // Owner-only actions hidden for recipients of shared notes.
-          onSummarize={isRecipient ? undefined : () => setSummaryOpen(true)}
+          onShowHistory={isRecipient ? undefined : () => setHistoryOpen(true)}
+          onDelete={isRecipient ? undefined : onDelete}
+          // Summarize / AI tags = content-edit operation, allowed for EDIT.
+          onSummarize={canEdit ? () => setSummaryOpen(true) : undefined}
           canSummarize={!!state.content.trim()}
+          // Share-management = owner-only.
           onShare={isRecipient ? undefined : () => setShareOpen(true)}
           shareActive={note.share_enabled}
+          onLeaveShare={isRecipient ? onLeaveShare : undefined}
           buttonClassName="size-9"
         />
       </div>
 
       {/* Metadata row: folder chip + tag chips + "+ tag" input — all chip-
           shaped so they read as related. Wraps cleanly when the user adds
-          many tags.  Recipients see read-only chips, no add input. */}
+          many tags. Folder is owner-only (recipients can't reorganise the
+          owner's notes); tag editing follows canEdit. */}
       <div className="flex flex-wrap items-center gap-1.5">
         {!isRecipient && (
           <FolderChip
@@ -964,7 +1000,7 @@ function NoteEditor({
         {state.tags.map((t) => (
           <span key={t} className="inline-flex items-center gap-1 text-xs bg-page px-2 py-1 rounded-full">
             #{t}
-            {!isRecipient && (
+            {canEdit && (
               <button
                 onClick={() => state.setTags(state.tags.filter((x) => x !== t))}
                 className="text-muted/70 hover:text-danger"
@@ -974,7 +1010,7 @@ function NoteEditor({
             )}
           </span>
         ))}
-        {!isRecipient && (
+        {canEdit && (
           <>
             <input
               list="tag-suggestions"
@@ -1037,8 +1073,8 @@ function NoteEditor({
 
       {/* Compact icon-only toolbar — replaces the lib's built-in toolbar
           and matches the mobile bottom toolbar for consistency.
-          Hidden for recipients (no edit affordance). */}
-      {!isRecipient && (
+          Hidden for VIEW recipients (no edit affordance). */}
+      {canEdit && (
         <NoteToolbar
           variant="desktop"
           content={state.content}
@@ -1055,16 +1091,16 @@ function NoteEditor({
         <MDEditor
           value={state.content}
           onChange={(v) => {
-            if (isRecipient) return; // belt-and-suspenders; readOnly already blocks input
+            if (readOnly) return; // belt-and-suspenders; readOnly already blocks input
             const next = v ?? '';
             state.setContent(next);
             state.detectAutocomplete(next);
           }}
           height={500}
-          preview={isRecipient ? 'preview' : 'live'}
+          preview={readOnly ? 'preview' : 'live'}
           hideToolbar
           textareaProps={{
-            readOnly: isRecipient,
+            readOnly,
             onKeyDown: state.onTextareaKeyDown,
             onClick: () => state.detectAutocomplete(state.content),
             onKeyUp: () => state.detectAutocomplete(state.content),
@@ -1229,6 +1265,7 @@ function MobileNoteShell({
   onDelete,
   onTogglePin,
   onToggleArchive,
+  onLeaveShare,
   onBack,
   onOpenByTitle,
   onRestored,
@@ -1241,6 +1278,7 @@ function MobileNoteShell({
   onDelete: () => void;
   onTogglePin: () => void;
   onToggleArchive: () => void;
+  onLeaveShare: () => void;
   onBack: () => void;
   onOpenByTitle: (title: string) => void;
   onRestored: (n: Note) => void;
@@ -1256,6 +1294,7 @@ function MobileNoteShell({
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const isRecipient = note.share_source !== null;
+  const canEdit = !isRecipient || note.share_permission === 'EDIT';
   return (
     <>
       <NoteMobileLayout
@@ -1265,13 +1304,16 @@ function MobileNoteShell({
         availableTags={availableTags}
         folders={folders}
         onChange={onChange}
-        onDelete={onDelete}
+        onDelete={isRecipient ? undefined : onDelete}
         onTogglePin={onTogglePin}
         onToggleArchive={onToggleArchive}
-        onSummarize={isRecipient ? undefined : () => setSummaryOpen(true)}
-        onShowHistory={() => setHistoryOpen(true)}
+        onSummarize={canEdit ? () => setSummaryOpen(true) : undefined}
+        onShowHistory={isRecipient ? undefined : () => setHistoryOpen(true)}
         onShare={isRecipient ? undefined : () => setShareOpen(true)}
         shareActive={note.share_enabled}
+        onLeaveShare={isRecipient ? onLeaveShare : undefined}
+        isRecipient={isRecipient}
+        canEdit={canEdit}
         onBack={onBack}
         onOpenByTitle={onOpenByTitle}
         onCreateFolder={onCreateFolder}

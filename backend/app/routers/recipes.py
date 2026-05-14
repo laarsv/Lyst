@@ -6,6 +6,7 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.dependencies import require_user
 from app.core.responses import ok
+from app.models.collaborator import CollaboratorPermission
 from app.models.recipe import Recipe
 from app.models.user import User
 from app.schemas.recipe import (
@@ -65,6 +66,43 @@ from app.services.recipe_service import (
 router = APIRouter(prefix="/recipes", tags=["recipes"])
 
 
+# =============================================================================
+#  Permission helpers (alembic 0014)
+# =============================================================================
+#
+# All mutating endpoints route through one of these so the checks stay
+# uniform — recipients with EDIT can modify content, recipients with VIEW
+# can only read, and owner-only actions (delete, share-management) keep
+# their original gate.
+
+async def _require_recipe_edit(
+    db: AsyncSession, recipe_id: int, user_id: int
+) -> Recipe:
+    """Owner OR EDIT recipient. Use for content-mutating endpoints."""
+    try:
+        rec, _, perm = await get_accessible_recipe(db, recipe_id, user_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    if perm != CollaboratorPermission.EDIT:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Du hast keine Bearbeitungsrechte für dieses Rezept.",
+        )
+    return rec
+
+
+async def _recipe_with_any_access(
+    db: AsyncSession, recipe_id: int, user_id: int
+) -> Recipe:
+    """Owner OR any-permission recipient. Use for read-derivative writes
+    that create resources owned by the caller (duplicate, copy-to-list)."""
+    try:
+        rec, _, _ = await get_accessible_recipe(db, recipe_id, user_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    return rec
+
+
 def _summary(
     rec,
     ingredient_count: int,
@@ -72,6 +110,7 @@ def _summary(
     share_source: str | None = None,
     owner_name: str | None = None,
 ) -> dict:
+    # share_permission lives on RecipeOut only — RecipeSummary stays compact.
     return RecipeSummary.model_validate(rec).model_copy(
         update={
             "ingredient_count": ingredient_count,
@@ -119,12 +158,14 @@ def _full(
     *,
     share_source: str | None = None,
     owner_name: str | None = None,
+    share_permission: CollaboratorPermission | None = None,
 ) -> dict:
     return RecipeOut.model_validate(rec).model_copy(
         update={
             "nutrition_per_serving": _nutrition_per_serving(rec),
             "share_source": share_source,
             "owner_name": owner_name,
+            "share_permission": share_permission,
         }
     ).model_dump(mode="json")
 
@@ -142,7 +183,12 @@ async def get_recipes(
     (per-recipe internal share or via a whole-book share). De-duped —
     a recipe shared both ways is returned once with share_source="individual"."""
     rows = await list_accessible_recipes(db, user.id, q=q, tag=tag)
-    return ok([_summary(r, c, share_source=src, owner_name=name) for r, c, src, name in rows])
+    # Permission isn't surfaced on the summary — the detail endpoint adds it
+    # when the user opens a specific recipe.
+    return ok([
+        _summary(r, c, share_source=src, owner_name=name)
+        for r, c, src, name, _perm in rows
+    ])
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -168,7 +214,7 @@ async def get_recipe_route(
     the same payload with share_source/owner_name set so the UI can render
     in read-only mode."""
     try:
-        rec, share_source = await get_accessible_recipe(db, recipe_id, user.id)
+        rec, share_source, perm = await get_accessible_recipe(db, recipe_id, user.id)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     owner_name = None
@@ -177,7 +223,14 @@ async def get_recipe_route(
         # it's a single user.
         owner = await db.execute(select(User.name).where(User.id == rec.owner_id))
         owner_name = owner.scalar_one_or_none()
-    return ok(_full(rec, share_source=share_source, owner_name=owner_name))
+    return ok(
+        _full(
+            rec,
+            share_source=share_source,
+            owner_name=owner_name,
+            share_permission=perm,
+        )
+    )
 
 
 @router.patch("/{recipe_id}")
@@ -187,13 +240,23 @@ async def patch_recipe(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    try:
-        rec = await get_recipe(db, recipe_id, user.id)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    rec = await _require_recipe_edit(db, recipe_id, user.id)
     rec = await update_recipe(db, rec, **payload.model_dump(exclude_unset=True))
-    rec = await get_recipe(db, recipe_id, user.id)
-    return ok(_full(rec))
+    # Re-load through the access path so the response carries fresh
+    # share_source/permission for recipient editors.
+    rec, share_source, perm = await get_accessible_recipe(db, recipe_id, user.id)
+    owner_name = None
+    if share_source is not None:
+        owner = await db.execute(select(User.name).where(User.id == rec.owner_id))
+        owner_name = owner.scalar_one_or_none()
+    return ok(
+        _full(
+            rec,
+            share_source=share_source,
+            owner_name=owner_name,
+            share_permission=perm,
+        )
+    )
 
 
 @router.delete("/{recipe_id}")
@@ -217,10 +280,9 @@ async def post_duplicate(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    try:
-        src = await get_recipe(db, recipe_id, user.id)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    # Open to recipients (any access) — the dup is created in their own
+    # account and the source isn't mutated.
+    src = await _recipe_with_any_access(db, recipe_id, user.id)
     new = await duplicate_recipe(db, src, user.id, payload.title)
     return ok(_full(new))
 
@@ -234,10 +296,7 @@ async def post_ingredient(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    try:
-        await get_recipe(db, recipe_id, user.id)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    await _require_recipe_edit(db, recipe_id, user.id)
     ing = await add_ingredient(db, recipe_id, **payload.model_dump())
     return ok(IngredientOut.model_validate(ing).model_dump(mode="json"))
 
@@ -249,10 +308,7 @@ async def patch_ingredients_reorder(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    try:
-        await get_recipe(db, recipe_id, user.id)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    await _require_recipe_edit(db, recipe_id, user.id)
     await reorder_ingredients(db, recipe_id, [(i.id, i.position) for i in payload.items])
     return ok({"message": "Reordered"})
 
@@ -265,10 +321,7 @@ async def patch_ingredient(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    try:
-        await get_recipe(db, recipe_id, user.id)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    await _require_recipe_edit(db, recipe_id, user.id)
     ing = await get_ingredient(db, recipe_id, ing_id)
     if not ing:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ingredient not found")
@@ -283,10 +336,9 @@ async def del_ingredient(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    try:
-        await get_recipe(db, recipe_id, user.id)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    # Spec: deleting an individual ingredient counts as "modifying content"
+    # — EDIT recipients allowed.
+    await _require_recipe_edit(db, recipe_id, user.id)
     ing = await get_ingredient(db, recipe_id, ing_id)
     if not ing:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ingredient not found")
@@ -303,10 +355,7 @@ async def post_step(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    try:
-        await get_recipe(db, recipe_id, user.id)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    await _require_recipe_edit(db, recipe_id, user.id)
     step = await add_step(db, recipe_id, payload.description)
     return ok(StepOut.model_validate(step).model_dump(mode="json"))
 
@@ -318,10 +367,7 @@ async def patch_steps_reorder(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    try:
-        await get_recipe(db, recipe_id, user.id)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    await _require_recipe_edit(db, recipe_id, user.id)
     await reorder_steps(db, recipe_id, [(i.id, i.position) for i in payload.items])
     return ok({"message": "Reordered"})
 
@@ -334,10 +380,7 @@ async def patch_step(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    try:
-        await get_recipe(db, recipe_id, user.id)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    await _require_recipe_edit(db, recipe_id, user.id)
     step = await get_step(db, recipe_id, step_id)
     if not step:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Step not found")
@@ -352,10 +395,7 @@ async def del_step(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    try:
-        await get_recipe(db, recipe_id, user.id)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    await _require_recipe_edit(db, recipe_id, user.id)
     step = await get_step(db, recipe_id, step_id)
     if not step:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Step not found")
@@ -448,10 +488,7 @@ async def post_recipe_image(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    try:
-        rec = await get_recipe(db, recipe_id, user.id)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    rec = await _require_recipe_edit(db, recipe_id, user.id)
 
     if file.content_type not in ALLOWED_IMAGE_EXTS:
         raise HTTPException(
@@ -492,10 +529,14 @@ async def post_recipe_image(
     rec.image_url = f"/static/recipes/{recipe_id}/{fname}"
     await db.commit()
     await db.refresh(rec)
-    # Ingredients/steps for the full recipe response — matches the patch
-    # endpoint's load pattern.
-    full = await get_recipe(db, recipe_id, user.id)
-    return ok(_full(full))
+    full, share_source, perm = await get_accessible_recipe(db, recipe_id, user.id)
+    owner_name = None
+    if share_source is not None:
+        owner = await db.execute(select(User.name).where(User.id == full.owner_id))
+        owner_name = owner.scalar_one_or_none()
+    return ok(
+        _full(full, share_source=share_source, owner_name=owner_name, share_permission=perm)
+    )
 
 
 @router.delete("/{recipe_id}/image", status_code=status.HTTP_200_OK)
@@ -504,16 +545,19 @@ async def del_recipe_image(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    try:
-        rec = await get_recipe(db, recipe_id, user.id)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    rec = await _require_recipe_edit(db, recipe_id, user.id)
     _delete_owned_image(rec.image_url)
     rec.image_url = None
     await db.commit()
     await db.refresh(rec)
-    full = await get_recipe(db, recipe_id, user.id)
-    return ok(_full(full))
+    full, share_source, perm = await get_accessible_recipe(db, recipe_id, user.id)
+    owner_name = None
+    if share_source is not None:
+        owner = await db.execute(select(User.name).where(User.id == full.owner_id))
+        owner_name = owner.scalar_one_or_none()
+    return ok(
+        _full(full, share_source=share_source, owner_name=owner_name, share_permission=perm)
+    )
 
 
 # ---------- "Was kann ich kochen?" ----------
@@ -563,10 +607,8 @@ async def post_copy_to_list(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    try:
-        rec = await get_recipe(db, recipe_id, user.id)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    # Recipients (any access) can copy ingredients to their own shopping list.
+    rec = await _recipe_with_any_access(db, recipe_id, user.id)
     try:
         target, added = await copy_to_list(
             db,
@@ -645,10 +687,7 @@ async def post_ai_suggest_ingredients(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    try:
-        rec = await get_recipe(db, recipe_id, user.id)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    rec = await _require_recipe_edit(db, recipe_id, user.id)
 
     user_prompt = (
         f"Rezept: {rec.title}\n"
@@ -685,10 +724,7 @@ async def post_ai_suggest_steps(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    try:
-        rec = await get_recipe(db, recipe_id, user.id)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    rec = await _require_recipe_edit(db, recipe_id, user.id)
 
     user_prompt = (
         f"Rezept: {rec.title}\n"
@@ -747,10 +783,9 @@ async def post_ai_variation(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    try:
-        rec = await get_recipe(db, recipe_id, user.id)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    # Variation generates a new payload but is essentially read+inference;
+    # the caller decides whether to persist it as a duplicate.
+    rec = await _recipe_with_any_access(db, recipe_id, user.id)
 
     user_prompt = (
         f"Original-Rezept:\n"
@@ -807,10 +842,7 @@ async def post_ai_recipe_tags(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    try:
-        rec = await get_recipe(db, recipe_id, user.id)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    rec = await _require_recipe_edit(db, recipe_id, user.id)
 
     user_prompt = (
         f"Titel: {rec.title}\n"
@@ -931,6 +963,13 @@ from app.schemas.recipe import (
     InternalShareOut,
     ShareByEmailRequest,
     ShareByEmailResponse,
+    ShareUpdateRequest,
+)
+from app.services.recipe_service import (
+    leave_book_internal_share,
+    leave_recipe_internal_share,
+    update_book_internal_share_permission,
+    update_recipe_internal_share_permission,
 )
 
 
@@ -949,7 +988,9 @@ async def post_share_recipe_by_email(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
     try:
-        kind, name = await share_recipe_with_email(db, rec, user, payload.email)
+        kind, name = await share_recipe_with_email(
+            db, rec, user, payload.email, payload.permission
+        )
     except ValueError as e:
         if str(e) == "self-share":
             raise HTTPException(
@@ -982,7 +1023,11 @@ async def get_recipe_shares(
     return ok(
         [
             InternalShareOut(
-                user_id=u.id, name=u.name, email=u.email, created_at=s.created_at
+                user_id=u.id,
+                name=u.name,
+                email=u.email,
+                permission=s.permission,
+                created_at=s.created_at,
             ).model_dump(mode="json")
             for s, u in rows
         ]
@@ -1013,7 +1058,9 @@ async def post_share_book_by_email(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        kind, name = await share_book_with_email(db, user, payload.email)
+        kind, name = await share_book_with_email(
+            db, user, payload.email, payload.permission
+        )
     except ValueError as e:
         if str(e) == "self-share":
             raise HTTPException(
@@ -1039,7 +1086,11 @@ async def get_book_shares(
     return ok(
         [
             InternalShareOut(
-                user_id=u.id, name=u.name, email=u.email, created_at=s.created_at
+                user_id=u.id,
+                name=u.name,
+                email=u.email,
+                permission=s.permission,
+                created_at=s.created_at,
             ).model_dump(mode="json")
             for s, u in rows
         ]
@@ -1054,3 +1105,77 @@ async def del_book_share(
 ):
     await revoke_book_internal_share(db, user.id, user_id)
     return ok({"message": "Share revoked"})
+
+
+# =============================================================================
+#  Permission updates + recipient-initiated leave (alembic 0014)
+# =============================================================================
+#
+# Path-order note: FastAPI returns 422 (not "try the next route") when an
+# int path converter fails, so any literal-path route ("/shares/me") MUST
+# be registered BEFORE "/shares/{user_id:int}". Same goes for the book
+# variant.
+
+@router.delete("/{recipe_id}/shares/me")
+async def leave_recipe_share(
+    recipe_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Recipient-initiated removal of their own RecipeShare row. Idempotent."""
+    await leave_recipe_internal_share(db, recipe_id, user.id)
+    return ok({"message": "Left share"})
+
+
+@router.patch("/{recipe_id}/shares/{user_id}")
+async def patch_recipe_share(
+    recipe_id: int,
+    user_id: int,
+    payload: ShareUpdateRequest,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    # Owner-only — recipients can't change anyone's permission, including
+    # their own.
+    try:
+        await get_recipe(db, recipe_id, user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    updated = await update_recipe_internal_share_permission(
+        db, recipe_id, user_id, payload.permission
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Share not found"
+        )
+    return ok({"message": "Permission updated"})
+
+
+@router.delete("/share-book/shares/me/{owner_id}")
+async def leave_book_share(
+    owner_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Recipient leaves a book share. Path includes the owner_id so the
+    recipient identifies which sender's book to drop — RecipeBookShare's
+    natural key is (owner_id, shared_with_user_id). Registered before the
+    /shares/{user_id} route to avoid the int-converter-422 trap."""
+    await leave_book_internal_share(db, owner_id, user.id)
+    return ok({"message": "Left share"})
+
+
+@router.patch("/share-book/shares/{user_id}")
+async def patch_book_share(
+    user_id: int,
+    payload: ShareUpdateRequest,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    updated = await update_book_internal_share_permission(
+        db, user.id, user_id, payload.permission
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Share not found"
+        )

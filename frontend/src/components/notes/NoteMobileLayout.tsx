@@ -36,16 +36,25 @@ interface Props {
   availableTags: Tag[];
   folders: NoteFolder[];
   onChange: (patch: Partial<Note>) => void | Promise<boolean | void>;
-  onDelete: () => void;
+  /** Optional — owner-only "Notiz löschen". Recipients use onLeaveShare. */
+  onDelete?: () => void;
   onTogglePin: () => void;
   onToggleArchive: () => void;
-  onShowHistory: () => void;
+  /** Optional — owner-only history. */
+  onShowHistory?: () => void;
   /** Optional — when provided, the kebab gets a "Zusammenfassen (KI)" entry. */
   onSummarize?: () => void;
   /** Optional — when provided, the kebab gets a "Teilen" entry. Hide
    *  for received-shared notes (recipient can't share what they don't own). */
   onShare?: () => void;
   shareActive?: boolean;
+  /** Optional — recipient-only "Freigabe verlassen". */
+  onLeaveShare?: () => void;
+  /** Owner-only chrome (folder, pin, archive entries) gates on this. */
+  isRecipient?: boolean;
+  /** Content-edit gate (title, mode toggle, edit body, AI buttons, tag
+   *  editor). Owner OR EDIT recipient -> true. */
+  canEdit?: boolean;
   onBack: () => void;
   onOpenByTitle: (title: string) => void;
   onCreateFolder: () => void;
@@ -65,11 +74,19 @@ export function NoteMobileLayout({
   onSummarize,
   onShare,
   shareActive,
+  onLeaveShare,
+  isRecipient: isRecipientProp,
+  canEdit: canEditProp,
   onBack,
   onOpenByTitle,
   onCreateFolder,
 }: Props) {
-  const isRecipient = note.share_source !== null;
+  // Fallback derivation when the parent doesn't pass the new flags
+  // (keeps older callsites working). Defaults match the pre-permission
+  // behavior: anyone shared with = read-only.
+  const isRecipient = isRecipientProp ?? note.share_source !== null;
+  const canEdit = canEditProp ?? !isRecipient;
+  const readOnly = !canEdit;
   const [mode, setMode] = useState<'edit' | 'preview'>('preview');
   const [titleEditing, setTitleEditing] = useState(false);
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
@@ -116,10 +133,11 @@ export function NoteMobileLayout({
     setTitleEditing(false);
   }, [note.id]);
 
-  // Recipients of shared notes can never enter edit mode — force preview.
+  // VIEW recipients can never enter edit mode — force preview. EDIT
+  // recipients get the same toggle as owners.
   useEffect(() => {
-    if (isRecipient && mode !== 'preview') setMode('preview');
-  }, [isRecipient, mode]);
+    if (readOnly && mode !== 'preview') setMode('preview');
+  }, [readOnly, mode]);
 
   const handlePin = () => {
     if (note.is_archived) return;
@@ -144,12 +162,14 @@ export function NoteMobileLayout({
         <NoteActionsMenu
           isPinned={note.is_pinned}
           isArchived={note.is_archived}
+          isRecipient={isRecipient}
           onTogglePin={handlePin}
           onChangeFolder={() => setFolderPickerOpen(true)}
           onSummarize={onSummarize}
           canSummarize={!!state.content.trim()}
           onShare={onShare}
           shareActive={shareActive}
+          onLeaveShare={onLeaveShare}
           onToggleArchive={onToggleArchive}
           onShowHistory={onShowHistory}
           onDelete={onDelete}
@@ -171,7 +191,7 @@ export function NoteMobileLayout({
             placeholder="Titel"
             className="flex-1 bg-transparent text-xl font-semibold outline-none border-b border-brand pb-1"
           />
-        ) : isRecipient ? (
+        ) : readOnly ? (
           <div className="flex-1 text-left text-xl font-semibold truncate min-h-[2.25rem]">
             {state.title || <span className="text-muted/70">(Ohne Titel)</span>}
           </div>
@@ -184,9 +204,9 @@ export function NoteMobileLayout({
             {state.title || <span className="text-muted/70">Titel</span>}
           </button>
         )}
-        {/* Feature 7: Sparkles only when title is empty + content exists.
-            Hidden for recipients — they can't trigger AI on someone else's note. */}
-        {!isRecipient && !state.title.trim() && state.content.trim() && !titleEditing && (
+        {/* Sparkles only when title is empty + content exists. Allowed for
+            owner OR EDIT recipient — both can mutate the title. */}
+        {canEdit && !state.title.trim() && state.content.trim() && !titleEditing && (
           <button
             type="button"
             onClick={suggestTitle}
@@ -219,117 +239,110 @@ export function NoteMobileLayout({
         </button>
       </div>
 
-      {/* Recipient badge — appears between the title and metadata rows. */}
+      {/* Recipient badge — sits between title and metadata rows. Text
+          adapts to permission level. */}
       {isRecipient && (
         <div className="px-3 mt-1 shrink-0">
           <span className="inline-flex items-center gap-1 text-[11px] text-brand-700 bg-brand-50 border border-brand-100 rounded-full px-2 py-0.5">
             <Users size={11} />
-            Geteilt von {note.owner_name ?? 'jemandem'} · schreibgeschützt
+            Geteilt von {note.owner_name ?? 'jemandem'}
+            {canEdit ? ' · Bearbeitung erlaubt' : ' · schreibgeschützt'}
           </span>
         </div>
       )}
 
-      {/* Metadata row: folder chip + tag chips + "+ tag" input. Folder
-          and tags are visually grouped — both are chip-shaped.
-          Hidden for recipients (they can't change the owner's metadata). */}
-      {isRecipient ? (
-        <div className="px-3 mt-2 shrink-0">
-          {state.tags.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              {state.tags.map((t) => (
-                <span
-                  key={t}
-                  className="inline-flex items-center gap-1 text-xs bg-surface border border-line px-2 py-1 rounded-full text-muted"
-                >
-                  #{t}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      ) : (
+      {/* Metadata row: folder chip + tag chips + "+ tag" input. Folder is
+          owner-only (recipients can't reorganise the owner's notes); tag
+          editing follows canEdit so EDIT recipients can manage tags. */}
       <div className="flex flex-wrap items-center gap-1.5 px-3 mt-2 shrink-0">
-        <FolderChip
-          folders={folders}
-          currentFolderId={note.folder_id}
-          onChange={(id) => onChange({ folder_id: id })}
-          onCreateFolder={onCreateFolder}
-          open={folderPickerOpen}
-          onOpenChange={setFolderPickerOpen}
-        />
+        {!isRecipient && (
+          <FolderChip
+            folders={folders}
+            currentFolderId={note.folder_id}
+            onChange={(id) => onChange({ folder_id: id })}
+            onCreateFolder={onCreateFolder}
+            open={folderPickerOpen}
+            onOpenChange={setFolderPickerOpen}
+          />
+        )}
         {state.tags.map((t) => (
           <span
             key={t}
             className="inline-flex items-center gap-1 text-xs bg-surface border border-line px-2 py-1 rounded-full"
           >
             #{t}
-            <button
-              type="button"
-              onClick={() => state.setTags(state.tags.filter((x) => x !== t))}
-              className="text-muted/70 hover:text-danger -mr-0.5"
-              aria-label={`Tag ${t} entfernen`}
-            >
-              <X size={12} />
-            </button>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => state.setTags(state.tags.filter((x) => x !== t))}
+                className="text-muted/70 hover:text-danger -mr-0.5"
+                aria-label={`Tag ${t} entfernen`}
+              >
+                <X size={12} />
+              </button>
+            )}
           </span>
         ))}
-        <input
-          list="tag-suggestions-mobile"
-          className="px-2 py-1 text-xs border border-line rounded-full bg-surface outline-none focus:border-brand min-w-[80px]"
-          placeholder="+ tag"
-          value={tagInput}
-          onChange={(e) => setTagInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ',') {
-              e.preventDefault();
-              const v = tagInput.trim().replace(/^#/, '');
-              if (v && !state.tags.includes(v)) state.setTags([...state.tags, v]);
-              setTagInput('');
-            }
-          }}
-        />
-        <datalist id="tag-suggestions-mobile">
-          {availableTags.map((t) => (
-            <option key={t.id} value={t.name} />
-          ))}
-        </datalist>
-        {/* Feature 8: AI tag suggestions. */}
-        <button
-          type="button"
-          onClick={suggestTags}
-          disabled={tagsLoading}
-          title="Tags vorschlagen (KI)"
-          aria-label="Tags vorschlagen (KI)"
-          className="size-7 inline-flex items-center justify-center rounded-full text-muted hover:text-brand-700 hover:bg-page transition disabled:opacity-50"
-        >
-          {tagsLoading ? (
-            <Loader2 size={14} className="animate-spin" />
-          ) : (
-            <Sparkles size={14} />
-          )}
-        </button>
-        {tagSuggestions.length > 0 && (
-          <span className="basis-full flex flex-wrap gap-1 mt-1">
-            {tagSuggestions.map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => {
-                  if (!state.tags.includes(t)) state.setTags([...state.tags, t]);
-                  setTagSuggestions((cur) => cur.filter((x) => x !== t));
-                }}
-                className="inline-flex items-center gap-1 text-xs bg-brand-50 text-brand-700 hover:bg-brand-100 px-2 py-1 rounded-full transition"
-              >
-                + #{t}
-              </button>
-            ))}
-          </span>
+        {canEdit && (
+          <>
+            <input
+              list="tag-suggestions-mobile"
+              className="px-2 py-1 text-xs border border-line rounded-full bg-surface outline-none focus:border-brand min-w-[80px]"
+              placeholder="+ tag"
+              value={tagInput}
+              onChange={(e) => setTagInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ',') {
+                  e.preventDefault();
+                  const v = tagInput.trim().replace(/^#/, '');
+                  if (v && !state.tags.includes(v)) state.setTags([...state.tags, v]);
+                  setTagInput('');
+                }
+              }}
+            />
+            <datalist id="tag-suggestions-mobile">
+              {availableTags.map((t) => (
+                <option key={t.id} value={t.name} />
+              ))}
+            </datalist>
+            {/* AI tag suggestions. */}
+            <button
+              type="button"
+              onClick={suggestTags}
+              disabled={tagsLoading}
+              title="Tags vorschlagen (KI)"
+              aria-label="Tags vorschlagen (KI)"
+              className="size-7 inline-flex items-center justify-center rounded-full text-muted hover:text-brand-700 hover:bg-page transition disabled:opacity-50"
+            >
+              {tagsLoading ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Sparkles size={14} />
+              )}
+            </button>
+            {tagSuggestions.length > 0 && (
+              <span className="basis-full flex flex-wrap gap-1 mt-1">
+                {tagSuggestions.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => {
+                      if (!state.tags.includes(t)) state.setTags([...state.tags, t]);
+                      setTagSuggestions((cur) => cur.filter((x) => x !== t));
+                    }}
+                    className="inline-flex items-center gap-1 text-xs bg-brand-50 text-brand-700 hover:bg-brand-100 px-2 py-1 rounded-full transition"
+                  >
+                    + #{t}
+                  </button>
+                ))}
+              </span>
+            )}
+          </>
         )}
       </div>
-      )}
 
-      {/* Mode toggle — hidden for recipients (always preview). */}
-      {!isRecipient && (
+      {/* Mode toggle — only when content edits are possible. */}
+      {canEdit && (
       <div className="px-3 mt-3 shrink-0">
         <div className="inline-flex bg-surface border border-line rounded-ctl p-0.5 text-sm">
           <ModeButton active={mode === 'edit'} onClick={() => setMode('edit')}>

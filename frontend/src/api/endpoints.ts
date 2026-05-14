@@ -261,19 +261,25 @@ export const NotesApi = {
   aiTags: (id: number) =>
     api.post<{ data: { tags: string[] } }>(`/notes/${id}/ai/tags`).then(unwrap),
 
-  // ----- Sharing (alembic 0013) -----
+  // ----- Sharing (alembic 0013, permission added in 0014) -----
   shareEnable: (id: number) =>
     api.post<{ data: ShareInfo }>(`/notes/${id}/share/enable`).then(unwrap),
   shareDisable: (id: number) =>
     api.post(`/notes/${id}/share/disable`),
-  shareByEmail: (id: number, email: string) =>
+  shareByEmail: (id: number, email: string, permission: CollaboratorPermission = 'VIEW') =>
     api
-      .post<{ data: ShareByEmailResponse }>(`/notes/${id}/share/email`, { email })
+      .post<{ data: ShareByEmailResponse }>(`/notes/${id}/share/email`, { email, permission })
       .then(unwrap),
   listShares: (id: number) =>
     api.get<{ data: InternalShare[] }>(`/notes/${id}/shares`).then(unwrap),
+  /** Owner: flip a recipient between VIEW and EDIT. */
+  patchShare: (id: number, userId: number, permission: CollaboratorPermission) =>
+    api.patch(`/notes/${id}/shares/${userId}`, { permission }),
   revokeShare: (id: number, userId: number) =>
     api.delete(`/notes/${id}/shares/${userId}`),
+  /** Recipient leaves a share that was granted to them. */
+  leaveShare: (id: number) =>
+    api.delete(`/notes/${id}/shares/me`),
   // Public read (no auth — same path scheme as recipes).
   getPublic: (token: string) =>
     api.get<{ data: PublicNoteData }>(`/share/note/${token}`).then(unwrap),
@@ -426,24 +432,35 @@ export const RecipesApi = {
   getPublicBook: (token: string) =>
     api.get<{ data: PublicRecipeBookData }>(`/share/recipe-book/${token}`).then(unwrap),
 
-  // ----- Internal sharing by email (alembic 0012) -----
-  shareByEmail: (id: number, email: string) =>
+  // ----- Internal sharing by email (alembic 0012, permissions in 0014) -----
+  shareByEmail: (id: number, email: string, permission: CollaboratorPermission = 'VIEW') =>
     api
-      .post<{ data: ShareByEmailResponse }>(`/recipes/${id}/share/email`, { email })
+      .post<{ data: ShareByEmailResponse }>(`/recipes/${id}/share/email`, { email, permission })
       .then(unwrap),
   listShares: (id: number) =>
     api.get<{ data: InternalShare[] }>(`/recipes/${id}/shares`).then(unwrap),
+  patchShare: (id: number, userId: number, permission: CollaboratorPermission) =>
+    api.patch(`/recipes/${id}/shares/${userId}`, { permission }),
   revokeShare: (id: number, userId: number) =>
     api.delete(`/recipes/${id}/shares/${userId}`),
+  /** Recipient leaves an individual recipe share. */
+  leaveShare: (id: number) =>
+    api.delete(`/recipes/${id}/shares/me`),
 
-  shareBookByEmail: (email: string) =>
+  shareBookByEmail: (email: string, permission: CollaboratorPermission = 'VIEW') =>
     api
-      .post<{ data: ShareByEmailResponse }>('/recipes/share-book/email', { email })
+      .post<{ data: ShareByEmailResponse }>('/recipes/share-book/email', { email, permission })
       .then(unwrap),
   listBookShares: () =>
     api.get<{ data: InternalShare[] }>('/recipes/share-book/shares').then(unwrap),
+  patchBookShare: (userId: number, permission: CollaboratorPermission) =>
+    api.patch(`/recipes/share-book/shares/${userId}`, { permission }),
   revokeBookShare: (userId: number) =>
     api.delete(`/recipes/share-book/shares/${userId}`),
+  /** Recipient leaves a whole-book share by the given owner — drops every
+   *  recipe shared via that owner's book in one shot. */
+  leaveBookShare: (ownerId: number) =>
+    api.delete(`/recipes/share-book/shares/me/${ownerId}`),
 
   // ingredients
   addIngredient: (

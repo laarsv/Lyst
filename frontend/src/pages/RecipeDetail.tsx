@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ChefHat, Copy, Loader2, Pencil, Share2, ShoppingCart, Sparkles, Trash2, Users } from 'lucide-react';
+import { ChefHat, Copy, Loader2, LogOut, Pencil, Share2, ShoppingCart, Sparkles, Trash2, Users } from 'lucide-react';
 import { Modal } from '@/components/Modal';
 import { ShareRecipePanel } from '@/components/recipes/ShareRecipePanel';
 import { RecipesApi } from '@/api/endpoints';
@@ -63,6 +63,41 @@ export function RecipeDetailPage() {
     }
   };
 
+  /** Recipient-initiated leave. Individual shares drop just this recipe;
+   *  book shares drop the WHOLE book (you can't carve a hole in someone
+   *  else's book). The confirm text spells that out so the user doesn't
+   *  expect a per-recipe-only effect. */
+  const leaveShare = async () => {
+    if (!recipe) return;
+    const isBook = recipe.share_source === 'book';
+    const ownerLabel = recipe.owner_name ?? 'der Person';
+    if (
+      !(await confirmDialog({
+        title: isBook
+          ? `Geteiltes Rezeptbuch von ${ownerLabel} verlassen?`
+          : 'Diese Freigabe verlassen?',
+        message: isBook
+          ? `Alle Rezepte aus diesem Rezeptbuch verschwinden aus deiner Ansicht. ${ownerLabel} kann dir das Buch erneut freigeben.`
+          : 'Das Rezept verschwindet aus deiner Ansicht. Der Besitzer kann es dir erneut freigeben.',
+        confirmLabel: isBook ? 'Rezeptbuch verlassen' : 'Verlassen',
+        variant: 'danger',
+      }))
+    )
+      return;
+    try {
+      if (isBook) {
+        await RecipesApi.leaveBookShare(recipe.owner_id);
+      } else {
+        await RecipesApi.leaveShare(recipe.id);
+      }
+      invalidateFresh('recipes');
+      toast.success('Freigabe verlassen');
+      nav('/recipes');
+    } catch (e) {
+      toast.error(getApiError(e));
+    }
+  };
+
   const duplicate = async () => {
     if (!recipe) return;
     try {
@@ -95,7 +130,10 @@ export function RecipeDetailPage() {
                 <div className="text-xs text-brand-700 mt-1.5 inline-flex items-center gap-1">
                   <Users size={12} />
                   <span>
-                    Geteilt von {recipe.owner_name} · schreibgeschützt
+                    Geteilt von {recipe.owner_name}
+                    {recipe.share_permission === 'EDIT'
+                      ? ' · Bearbeitung erlaubt'
+                      : ' · schreibgeschützt'}
                   </span>
                 </div>
               )}
@@ -124,63 +162,76 @@ export function RecipeDetailPage() {
                 </a>
               )}
             </div>
-            {/* Action row — icon-only. Recipients (recipe is shared TO
-                them) only see the read-only-friendly subset: Kochen
-                starten, Zu Einkaufsliste, Duplizieren. Edit / Variante /
-                Teilen / Löschen are owner-only. */}
-            <div className="flex flex-wrap gap-1.5">
-              <IconAction
-                label="Kochen starten"
-                icon={ChefHat}
-                onClick={() => setCookOpen(true)}
-                variant="primary"
-                disabled={recipe.steps.length === 0}
-              />
-              <IconAction
-                label="Zu Einkaufsliste hinzufügen"
-                icon={ShoppingCart}
-                onClick={() => setCopyOpen(true)}
-              />
-              {!recipe.share_source && (
-                <>
+            {/* Action row — icon-only. Three permission tiers:
+                  - owner (no share_source): everything
+                  - EDIT recipient: edit + variation + duplicate (no
+                    re-share, no delete-resource); plus "Freigabe verlassen"
+                  - VIEW recipient: only the read-friendly subset; plus
+                    "Freigabe verlassen"
+                Owner-only flags: Teilen, Löschen-des-ganzen-Rezepts. */}
+            {(() => {
+              const isRecipient = !!recipe.share_source;
+              const canEdit = !isRecipient || recipe.share_permission === 'EDIT';
+              return (
+                <div className="flex flex-wrap gap-1.5">
                   <IconAction
-                    label="Bearbeiten"
-                    icon={Pencil}
-                    onClick={() => nav(`/recipes/${recipe.id}/edit`)}
+                    label="Kochen starten"
+                    icon={ChefHat}
+                    onClick={() => setCookOpen(true)}
+                    variant="primary"
+                    disabled={recipe.steps.length === 0}
                   />
                   <IconAction
-                    label="Duplizieren"
+                    label="Zu Einkaufsliste hinzufügen"
+                    icon={ShoppingCart}
+                    onClick={() => setCopyOpen(true)}
+                  />
+                  {canEdit && (
+                    <IconAction
+                      label="Bearbeiten"
+                      icon={Pencil}
+                      onClick={() => nav(`/recipes/${recipe.id}/edit`)}
+                    />
+                  )}
+                  <IconAction
+                    label={isRecipient ? 'Eigene Kopie speichern' : 'Duplizieren'}
                     icon={Copy}
                     onClick={duplicate}
                   />
-                  <IconAction
-                    label="Variante (KI)"
-                    icon={Sparkles}
-                    onClick={() => setVariationOpen(true)}
-                  />
-                  <IconAction
-                    label={recipe.share_enabled ? 'Teilen (aktiv)' : 'Teilen'}
-                    icon={Share2}
-                    onClick={() => setShareOpen(true)}
-                    variant={recipe.share_enabled ? 'primary' : 'default'}
-                  />
-                  <IconAction
-                    label="Löschen"
-                    icon={Trash2}
-                    onClick={remove}
-                    variant="danger"
-                  />
-                </>
-              )}
-              {recipe.share_source && (
-                // Recipient can still copy a shared recipe into their own.
-                <IconAction
-                  label="Eigene Kopie speichern"
-                  icon={Copy}
-                  onClick={duplicate}
-                />
-              )}
-            </div>
+                  {canEdit && (
+                    <IconAction
+                      label="Variante (KI)"
+                      icon={Sparkles}
+                      onClick={() => setVariationOpen(true)}
+                    />
+                  )}
+                  {!isRecipient && (
+                    <>
+                      <IconAction
+                        label={recipe.share_enabled ? 'Teilen (aktiv)' : 'Teilen'}
+                        icon={Share2}
+                        onClick={() => setShareOpen(true)}
+                        variant={recipe.share_enabled ? 'primary' : 'default'}
+                      />
+                      <IconAction
+                        label="Löschen"
+                        icon={Trash2}
+                        onClick={remove}
+                        variant="danger"
+                      />
+                    </>
+                  )}
+                  {isRecipient && (
+                    <IconAction
+                      label="Freigabe verlassen"
+                      icon={LogOut}
+                      onClick={leaveShare}
+                      variant="danger"
+                    />
+                  )}
+                </div>
+              );
+            })()}
             {!recipe.share_source && (
               <ShareRecipePanel
                 open={shareOpen}

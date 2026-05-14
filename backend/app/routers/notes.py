@@ -6,6 +6,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import require_user
 from app.core.responses import ok
+from app.models.collaborator import CollaboratorPermission
 from app.models.note import Note
 from app.models.user import User
 from app.schemas.note import (
@@ -38,10 +39,34 @@ def _out(
     *,
     share_source: str | None = None,
     owner_name: str | None = None,
+    share_permission: "CollaboratorPermission | None" = None,
 ) -> dict:
     return NoteOut.model_validate(n).model_copy(
-        update={"share_source": share_source, "owner_name": owner_name}
+        update={
+            "share_source": share_source,
+            "owner_name": owner_name,
+            "share_permission": share_permission,
+        }
     ).model_dump(mode="json")
+
+
+# ---------- Permission helpers (alembic 0014) ----------
+
+async def _require_note_edit(
+    db: AsyncSession, note_id: int, user_id: int
+) -> tuple[Note, str | None, "CollaboratorPermission"]:
+    """Owner OR EDIT recipient. Returns (note, share_source, perm).
+    Raises 403 for VIEW recipients, 404 when there's no access at all."""
+    try:
+        note, src, perm = await get_accessible_note(db, note_id, user_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    if perm != CollaboratorPermission.EDIT:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Du hast keine Bearbeitungsrechte für diese Notiz.",
+        )
+    return note, src, perm
 
 
 @router.get("")
@@ -75,7 +100,12 @@ async def get_notes(
         uncategorized=uncategorized,
         archived=archived,
     )
-    return ok([_out(n, share_source=src, owner_name=name) for n, src, name in rows])
+    return ok(
+        [
+            _out(n, share_source=src, owner_name=name, share_permission=perm)
+            for n, src, name, perm in rows
+        ]
+    )
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -166,14 +196,21 @@ async def get_note(
     same payload with share_source/owner_name set so the UI can render in
     read-only mode."""
     try:
-        note, share_source = await get_accessible_note(db, note_id, user.id)
+        note, share_source, perm = await get_accessible_note(db, note_id, user.id)
     except ValueError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     owner_name = None
     if share_source is not None:
         owner = await db.execute(select(User.name).where(User.id == note.owner_id))
         owner_name = owner.scalar_one_or_none()
-    return ok(_out(note, share_source=share_source, owner_name=owner_name))
+    return ok(
+        _out(
+            note,
+            share_source=share_source,
+            owner_name=owner_name,
+            share_permission=perm,
+        )
+    )
 
 
 @router.patch("/{note_id}")
@@ -183,13 +220,16 @@ async def patch_note(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(Note).where(Note.id == note_id, Note.owner_id == user.id)
-    )
-    note = result.scalar_one_or_none()
-    if not note:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    note, share_source, perm = await _require_note_edit(db, note_id, user.id)
     patch = payload.model_dump(exclude_unset=True)
+
+    # Owner-only fields: folder, pin, archive. Recipients can edit content
+    # but can't reorganise the owner's notes — silently drop those fields
+    # from the patch rather than 403'ing the whole save.
+    if share_source is not None:
+        for owner_only in ("folder_id", "is_pinned", "is_archived"):
+            patch.pop(owner_only, None)
+
     if "folder_id" in patch and patch["folder_id"] is not None:
         await _ensure_folder_owned(db, patch["folder_id"], user.id)
     # Spec: an archived note cannot be pinned. Apply both directions:
@@ -211,7 +251,18 @@ async def patch_note(
         setattr(note, k, v)
     await db.commit()
     await db.refresh(note)
-    return ok(_out(note))
+    owner_name = None
+    if share_source is not None:
+        owner = await db.execute(select(User.name).where(User.id == note.owner_id))
+        owner_name = owner.scalar_one_or_none()
+    return ok(
+        _out(
+            note,
+            share_source=share_source,
+            owner_name=owner_name,
+            share_permission=perm,
+        )
+    )
 
 
 # ---------- Version history ----------
@@ -324,6 +375,13 @@ async def _load_owned_note(db: AsyncSession, note_id: int, owner_id: int) -> Not
     return note
 
 
+async def _load_editable_note(db: AsyncSession, note_id: int, user_id: int) -> Note:
+    """Owner OR EDIT recipient — covers AI endpoints which generate content
+    that the user typically applies in-place."""
+    note, _, _ = await _require_note_edit(db, note_id, user_id)
+    return note
+
+
 def _truncate_for_prompt(text: str, max_chars: int = 4000) -> str:
     """LLM context is finite — long notes get clipped at a sensible boundary
     (sentence-ish). Truncated marker tells the model not to hallucinate
@@ -352,7 +410,7 @@ async def post_ai_summarize(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    note = await _load_owned_note(db, note_id, user.id)
+    note = await _load_editable_note(db, note_id, user.id)
     if not (note.content or "").strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -394,7 +452,7 @@ async def post_ai_title(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    note = await _load_owned_note(db, note_id, user.id)
+    note = await _load_editable_note(db, note_id, user.id)
     if not (note.content or "").strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -434,7 +492,7 @@ async def post_ai_note_tags(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    note = await _load_owned_note(db, note_id, user.id)
+    note = await _load_editable_note(db, note_id, user.id)
     body = (note.content or "").strip()
     if not (note.title.strip() or body):
         raise HTTPException(
@@ -490,8 +548,13 @@ from app.schemas.note import (
     NoteInternalShareOut,
     NoteShareByEmailRequest,
     NoteShareByEmailResponse,
+    NoteShareUpdateRequest,
 )
 from app.schemas.share import ShareEnableResponse
+from app.services.note_share_service import (
+    leave_internal_share as _leave_note_internal_share,
+    update_internal_share_permission as _update_note_internal_share_permission,
+)
 
 
 async def _load_owned_note_for_share(db: AsyncSession, note_id: int, user_id: int) -> Note:
@@ -540,7 +603,9 @@ async def post_share_by_email(
 ):
     note = await _load_owned_note_for_share(db, note_id, user.id)
     try:
-        kind, name = await share_note_with_email(db, note, user, payload.email)
+        kind, name = await share_note_with_email(
+            db, note, user, payload.email, payload.permission
+        )
     except ValueError as e:
         if str(e) == "self-share":
             raise HTTPException(
@@ -569,11 +634,51 @@ async def get_shares(
     return ok(
         [
             NoteInternalShareOut(
-                user_id=u.id, name=u.name, email=u.email, created_at=s.created_at
+                user_id=u.id,
+                name=u.name,
+                email=u.email,
+                permission=s.permission,
+                created_at=s.created_at,
             ).model_dump(mode="json")
             for s, u in rows
         ]
     )
+
+
+# Path-order note: /shares/me MUST be registered before /shares/{user_id:int}
+# — FastAPI returns 422 (not "try the next route") when an int converter
+# fails, so the literal-path route has to win.
+
+@router.delete("/{note_id}/shares/me")
+async def leave_note_share(
+    note_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Recipient-initiated removal of their own NoteShare row. Idempotent
+    — returns OK whether or not a row existed."""
+    await _leave_note_internal_share(db, note_id, user.id)
+    return ok({"message": "Left share"})
+
+
+@router.patch("/{note_id}/shares/{user_id}")
+async def patch_note_share(
+    note_id: int,
+    user_id: int,
+    payload: NoteShareUpdateRequest,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Owner-only: flip a recipient between VIEW and EDIT."""
+    await _load_owned_note_for_share(db, note_id, user.id)
+    updated = await _update_note_internal_share_permission(
+        db, note_id, user_id, payload.permission
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Share not found"
+        )
+    return ok({"message": "Permission updated"})
 
 
 @router.delete("/{note_id}/shares/{user_id}")

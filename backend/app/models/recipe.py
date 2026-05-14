@@ -81,17 +81,20 @@ class RecipeStep(Base, TimestampMixin):
 
 
 # =============================================================================
-#  Internal sharing — added in alembic 0012
+#  Internal sharing — added in alembic 0012, permission column in 0014
 # =============================================================================
 #
 # Distinct from the public share_token columns on Recipe / User: these rows
 # grant a specific Lyst user direct in-app access to a recipe (RecipeShare)
-# or to the owner's whole recipe collection (RecipeBookShare). Read-only
-# for the recipient — write/delete still goes through ownership checks.
+# or to the owner's whole recipe collection (RecipeBookShare). Each grant
+# carries a VIEW/EDIT permission (alembic 0014, reusing the
+# `collaborator_permission` enum from list collaborators).
 
 from datetime import datetime
-from sqlalchemy import CheckConstraint, DateTime, UniqueConstraint
+from sqlalchemy import CheckConstraint, DateTime, Enum, UniqueConstraint
 from sqlalchemy.sql import func
+
+from app.models.collaborator import CollaboratorPermission
 
 
 class RecipeShare(Base):
@@ -112,6 +115,11 @@ class RecipeShare(Base):
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
+    )
+    permission: Mapped[CollaboratorPermission] = mapped_column(
+        Enum(CollaboratorPermission, name="collaborator_permission", create_type=False),
+        nullable=False,
+        default=CollaboratorPermission.VIEW,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -143,6 +151,11 @@ class RecipeBookShare(Base):
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
+    )
+    permission: Mapped[CollaboratorPermission] = mapped_column(
+        Enum(CollaboratorPermission, name="collaborator_permission", create_type=False),
+        nullable=False,
+        default=CollaboratorPermission.VIEW,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

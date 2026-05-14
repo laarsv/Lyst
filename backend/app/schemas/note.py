@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
+from app.models.collaborator import CollaboratorPermission
+
 
 class NoteBase(BaseModel):
     title: str = Field(min_length=1, max_length=255)
@@ -39,6 +41,10 @@ class NoteOut(NoteBase):
     # when they own it. owner_name only set in the recipient case.
     share_source: str | None = None
     owner_name: str | None = None
+    # Effective permission of the current viewer. Owner -> EDIT;
+    # recipient -> whatever the share row carries. None == no relationship,
+    # which only happens before share_source/owner_name fields are set.
+    share_permission: CollaboratorPermission | None = None
 
 
 # --- Public + internal sharing ---
@@ -54,6 +60,7 @@ class PublicNote(BaseModel):
 class NoteShareByEmailRequest(BaseModel):
     """Body for POST /notes/{id}/share/email."""
     email: EmailStr
+    permission: CollaboratorPermission = CollaboratorPermission.VIEW
 
 
 class NoteShareByEmailResponse(BaseModel):
@@ -64,11 +71,18 @@ class NoteShareByEmailResponse(BaseModel):
     user_name: str | None = None
 
 
+class NoteShareUpdateRequest(BaseModel):
+    """Body for PATCH /notes/{id}/shares/{user_id} — owner can flip a
+    recipient between VIEW and EDIT without re-creating the row."""
+    permission: CollaboratorPermission
+
+
 class NoteInternalShareOut(BaseModel):
     """One row of the "geteilt mit" list shown in the share panel."""
     user_id: int
     name: str
     email: str
+    permission: CollaboratorPermission
     created_at: datetime
 
 

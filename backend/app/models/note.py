@@ -5,6 +5,7 @@ from sqlalchemy import (
     ARRAY,
     Boolean,
     DateTime,
+    Enum,
     ForeignKey,
     Integer,
     String,
@@ -15,6 +16,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.models.base import Base, TimestampMixin
+from app.models.collaborator import CollaboratorPermission
 
 if TYPE_CHECKING:
     from app.models.note_folder import NoteFolder
@@ -48,9 +50,10 @@ class Note(Base, TimestampMixin):
 
 class NoteShare(Base):
     """Internal share row — grants a Lyst user direct in-app access to one
-    note (read-only). Distinct from the public share_token, which gives
-    anyone-with-URL access. Cascading deletes from notes/users keep the
-    table free of orphans without cleanup jobs."""
+    note. Carries a VIEW/EDIT permission (alembic 0014). Distinct from the
+    public share_token, which gives anyone-with-URL read-only access.
+    Cascading deletes from notes/users keep the table free of orphans
+    without cleanup jobs."""
 
     __tablename__ = "note_shares"
     __table_args__ = (
@@ -69,6 +72,11 @@ class NoteShare(Base):
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
+    )
+    permission: Mapped[CollaboratorPermission] = mapped_column(
+        Enum(CollaboratorPermission, name="collaborator_permission", create_type=False),
+        nullable=False,
+        default=CollaboratorPermission.VIEW,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
