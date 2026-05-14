@@ -10,7 +10,7 @@ import {
 } from '@dnd-kit/core';
 import { SortableContext, arrayMove, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { AiListsApi, ItemsApi, ListsApi } from '@/api/endpoints';
-import type { ListItem, ListSummary } from '@/types';
+import type { ListItem, ListSummary, ListType } from '@/types';
 import { SortableItem } from '@/components/lists/SortableItem';
 import { ListSettingsPanel } from '@/components/lists/ListSettingsPanel';
 import { Modal } from '@/components/Modal';
@@ -470,7 +470,7 @@ export function ListDetailPage() {
           <div className="flex gap-2">
             <input
               className="input flex-1"
-              placeholder='Eintrag hinzufügen, z. B. „200g Käse" oder „2 Pack Butter"…'
+              placeholder={addItemPlaceholder(list.type)}
               value={text}
               onChange={(e) => setText(e.target.value)}
             />
@@ -582,6 +582,7 @@ export function ListDetailPage() {
 
       <BulkModal
         open={bulkOpen}
+        listType={list.type}
         onClose={() => setBulkOpen(false)}
         onSubmit={async (lines) => {
           // Apply the same parser the single-item input uses, so "200g Käse"
@@ -694,10 +695,12 @@ function CategoryGroupedList({
 
 function BulkModal({
   open,
+  listType,
   onClose,
   onSubmit,
 }: {
   open: boolean;
+  listType: ListType;
   onClose: () => void;
   onSubmit: (lines: string[]) => Promise<void>;
 }) {
@@ -711,15 +714,14 @@ function BulkModal({
     <Modal open={open} onClose={onClose} title="Mehrere Einträge">
       <div className="space-y-3">
         <p className="text-sm text-muted">
-          Eine Zeile = ein Eintrag. Menge und Einheit werden automatisch
-          erkannt — z. B. „200g Käse", „2 Pack Butter" oder „3x Eier".
+          {bulkHelp(listType)}
         </p>
         <textarea
           ref={ref}
           className="input min-h-[180px] font-mono text-sm"
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder={'200g Käse\n1,5 kg Mehl\n2 Pack Butter\nJoghurt'}
+          placeholder={bulkPlaceholder(listType)}
         />
         <div className="flex justify-end gap-2">
           <button className="btn-secondary" onClick={onClose}>Abbrechen</button>
@@ -735,5 +737,40 @@ function BulkModal({
       </div>
     </Modal>
   );
+}
+
+function addItemPlaceholder(t: ListType): string {
+  switch (t) {
+    case 'SHOPPING':
+      return 'Eintrag hinzufügen, z. B. „200g Käse"…';
+    case 'PACKING':
+      return 'Eintrag hinzufügen, z. B. „Wanderschuhe"…';
+    case 'CHECKLIST':
+      return 'Aufgabe hinzufügen, z. B. „Tickets buchen"…';
+    case 'CUSTOM':
+    default:
+      return 'Eintrag hinzufügen…';
+  }
+}
+
+function bulkPlaceholder(t: ListType): string {
+  switch (t) {
+    case 'SHOPPING':
+      return '200g Käse\n1,5 kg Mehl\n2 Pack Butter\nJoghurt';
+    case 'PACKING':
+      return 'Wanderschuhe\nRegenjacke\n2 T-Shirts\nZahnbürste';
+    case 'CHECKLIST':
+      return 'Tickets buchen\nKoffer packen\nNachbarn Bescheid sagen';
+    case 'CUSTOM':
+    default:
+      return 'Eintrag\nWeiterer Eintrag\n…';
+  }
+}
+
+function bulkHelp(t: ListType): string {
+  if (t === 'SHOPPING' || t === 'PACKING') {
+    return 'Eine Zeile = ein Eintrag. Menge und Einheit werden automatisch erkannt — z. B. „200g Käse", „2 Pack Butter" oder „3x Eier".';
+  }
+  return 'Eine Zeile = ein Eintrag.';
 }
 
