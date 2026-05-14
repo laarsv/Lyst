@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Share2 } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Download, Plus, Share2, Sparkles } from 'lucide-react';
 import { RecipesApi } from '@/api/endpoints';
 import type { RecipeSummary } from '@/types';
 import { RecipeCard } from '@/components/recipes/RecipeCard';
 import { ImportRecipeModal } from '@/components/recipes/ImportRecipeModal';
 import { SuggestRecipesModal } from '@/components/recipes/SuggestRecipesModal';
 import { ShareRecipeBookPanel } from '@/components/recipes/ShareRecipeBookPanel';
+import { IconAction } from '@/components/IconAction';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
 import { MEAL_TYPE_TAGS } from '@/data/recipeTags';
@@ -18,6 +19,7 @@ import { MEAL_TYPE_TAGS } from '@/data/recipeTags';
 type Filter = 'ALL' | 'SHARED' | string;
 
 export function RecipesPage() {
+  const nav = useNavigate();
   const [recipes, setRecipes] = useState<RecipeSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
@@ -103,23 +105,28 @@ export function RecipesPage() {
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h1 className="text-2xl font-semibold">Rezepte</h1>
-        <div className="flex gap-2 flex-wrap items-center">
-          <button
-            type="button"
+        <div className="flex flex-wrap gap-1.5 items-center">
+          <IconAction
+            label="Rezeptbuch teilen"
+            icon={Share2}
             onClick={() => setBookShareOpen(true)}
-            title="Rezeptbuch teilen"
-            aria-label="Rezeptbuch teilen"
-            className="size-10 inline-flex items-center justify-center rounded-ctl border border-line text-muted hover:text-brand-700 hover:bg-page transition"
-          >
-            <Share2 size={18} />
-          </button>
-          <button className="btn-secondary" onClick={() => setSuggestOpen(true)}>
-            Was kann ich kochen?
-          </button>
-          <button className="btn-secondary" onClick={() => setImportOpen(true)}>
-            Importieren
-          </button>
-          <Link to="/recipes/new" className="btn-primary">+ Neues Rezept</Link>
+          />
+          <IconAction
+            label="Was kann ich kochen? (KI)"
+            icon={Sparkles}
+            onClick={() => setSuggestOpen(true)}
+          />
+          <IconAction
+            label="Importieren"
+            icon={Download}
+            onClick={() => setImportOpen(true)}
+          />
+          <IconAction
+            label="Neues Rezept"
+            icon={Plus}
+            onClick={() => nav('/recipes/new')}
+            variant="primary"
+          />
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2 mb-6">
