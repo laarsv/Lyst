@@ -1,9 +1,11 @@
 import logging
+import pathlib
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -66,6 +68,14 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 @app.get("/api/health")
 async def health():
     return {"data": {"status": "ok", "app": settings.APP_NAME}, "error": None}
+
+
+# Serve user-uploaded files (recipe images today; can host more later) from
+# /static/. The directory is bind-mounted in docker-compose so files survive
+# container rebuilds. URL stored in DB looks like /static/recipes/123/uuid.jpg.
+UPLOADS_DIR = pathlib.Path("/app/uploads")
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(UPLOADS_DIR)), name="static")
 
 
 PREFIX = "/api"

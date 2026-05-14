@@ -16,12 +16,23 @@ interface Props {
 
 type Mode = 'existing' | 'new';
 
+// When the recipe doesn't define servings (e.g. an AI-imported recipe with
+// a missing field), the stepper defaults to 2 and we cap the picker at 20
+// — backend's copy_to_list already keeps the scaling factor at 1.0 in that
+// case, so ingredients are added as-is regardless of the chosen number.
+const FALLBACK_SERVINGS = 2;
+const FALLBACK_MAX = 20;
+const NORMAL_MAX = 999;
+
 export function CopyToListModal({ open, recipe, onClose }: Props) {
   const [shoppingLists, setShoppingLists] = useState<ListSummary[]>([]);
   const [mode, setMode] = useState<Mode>('new');
   const [selectedListId, setSelectedListId] = useState<number | null>(null);
   const [newTitle, setNewTitle] = useState('');
-  const [servings, setServings] = useState(recipe.servings);
+  const sourceUnknown = !recipe.servings || recipe.servings <= 0;
+  const sourceServings = sourceUnknown ? FALLBACK_SERVINGS : recipe.servings;
+  const maxServings = sourceUnknown ? FALLBACK_MAX : NORMAL_MAX;
+  const [servings, setServings] = useState(sourceServings);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const nav = useNavigate();
@@ -29,7 +40,7 @@ export function CopyToListModal({ open, recipe, onClose }: Props) {
 
   useEffect(() => {
     if (!open) return;
-    setServings(recipe.servings);
+    setServings(sourceServings);
     setNewTitle(`Einkauf: ${recipe.title}`);
     setSelected(new Set(recipe.ingredients.map((i) => i.id)));
     void (async () => {
@@ -47,11 +58,15 @@ export function CopyToListModal({ open, recipe, onClose }: Props) {
         toast.error(getApiError(e));
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, recipe]);
 
+  // Mirror the backend's behaviour: factor is 1.0 (no scaling) whenever
+  // the source servings is missing — so the preview reflects what actually
+  // gets added.
   const factor = useMemo(
-    () => (recipe.servings > 0 ? servings / recipe.servings : 1),
-    [servings, recipe.servings],
+    () => (sourceUnknown ? 1 : servings / recipe.servings),
+    [sourceUnknown, servings, recipe.servings],
   );
 
   const toggle = (id: number) =>
@@ -112,22 +127,32 @@ export function CopyToListModal({ open, recipe, onClose }: Props) {
             <input
               type="number"
               min={1}
-              max={999}
+              max={maxServings}
               value={servings}
-              onChange={(e) => setServings(Math.max(1, Number(e.target.value) || 1))}
+              onChange={(e) =>
+                setServings(
+                  Math.min(maxServings, Math.max(1, Number(e.target.value) || 1)),
+                )
+              }
               className="input w-20 text-center py-1.5"
             />
             <button
               type="button"
-              onClick={() => setServings((s) => Math.min(999, s + 1))}
+              onClick={() => setServings((s) => Math.min(maxServings, s + 1))}
               className="size-8 rounded-lg border border-line hover:bg-page"
             >
               +
             </button>
           </div>
           <span className="text-xs text-muted">
-            Original: {recipe.servings}
-            {factor !== 1 && ` · Faktor ${fmtQty(factor)}×`}
+            {sourceUnknown
+              ? 'Original: unbekannt — Mengen werden 1:1 übernommen'
+              : (
+                <>
+                  Original: {recipe.servings}
+                  {factor !== 1 && ` · Faktor ${fmtQty(factor)}×`}
+                </>
+              )}
           </span>
         </div>
 

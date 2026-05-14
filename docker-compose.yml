@@ -69,6 +69,11 @@ services:
     # adds this automatically.
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    volumes:
+      # User-uploaded files (recipe hero images, …). Bind to a host path
+      # so backups survive container rebuilds. Override via UPLOADS_DIR
+      # in .env — defaults to a sibling `./uploads/` for dev simplicity.
+      - ${UPLOADS_DIR:-./uploads}:/app/uploads
     # No port mapping — the frontend's nginx reaches backend:8000 over the
     # internal Docker network. To debug the API directly from the host, add:
     #   ports: ["127.0.0.1:8000:8000"]

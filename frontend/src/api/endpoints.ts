@@ -325,6 +325,24 @@ export const RecipesApi = {
   duplicate: (id: number, title?: string) =>
     api.post<{ data: Recipe }>(`/recipes/${id}/duplicate`, { title }).then(unwrap),
 
+  uploadImage: (id: number, file: File, onProgress?: (pct: number) => void) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return api
+      .post<{ data: Recipe }>(`/recipes/${id}/image`, fd, {
+        // axios sets the multipart boundary automatically when the body is
+        // a FormData; explicitly setting Content-Type would strip it.
+        onUploadProgress: (e) => {
+          if (onProgress && e.total) {
+            onProgress(Math.round((e.loaded / e.total) * 100));
+          }
+        },
+      })
+      .then(unwrap);
+  },
+  removeImage: (id: number) =>
+    api.delete<{ data: Recipe }>(`/recipes/${id}/image`).then(unwrap),
+
   // ingredients
   addIngredient: (
     recipeId: number,

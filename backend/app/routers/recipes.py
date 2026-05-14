@@ -370,6 +370,111 @@ async def post_import_photo(
     return ok(result.model_dump(mode="json"))
 
 
+# ---------- Recipe image upload (manual, owner-supplied) ----------
+#
+# Distinct from `/import-photo` (which OCRs a recipe from a photo). This
+# endpoint just stores a hero image for the recipe card and detail page.
+# Files land in /app/uploads/recipes/{id}/<uuid>.<ext> and are served
+# back via the StaticFiles mount at /static/.
+
+import pathlib
+import uuid as _uuid
+
+ALLOWED_IMAGE_EXTS = {"image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
+MAX_IMAGE_BYTES = 10 * 1024 * 1024
+UPLOADS_BASE = pathlib.Path("/app/uploads")
+
+
+def _delete_owned_image(image_url: str | None) -> None:
+    """Best-effort delete of a previously-uploaded image. No-ops for external
+    URLs (the URL importer stores remote URLs that we don't manage)."""
+    if not image_url or not image_url.startswith("/static/"):
+        return
+    rel = image_url[len("/static/") :]
+    path = UPLOADS_BASE / rel
+    try:
+        # Resolve and confine to UPLOADS_BASE — guards against any path
+        # tampering that survived a manual DB edit.
+        resolved = path.resolve()
+        if UPLOADS_BASE.resolve() in resolved.parents:
+            resolved.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+@router.post("/{recipe_id}/image", status_code=status.HTTP_200_OK)
+async def post_recipe_image(
+    recipe_id: int,
+    file: UploadFile = File(...),
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    rec = await get_recipe(db, recipe_id, user.id)
+    if not rec:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recipe not found")
+
+    if file.content_type not in ALLOWED_IMAGE_EXTS:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Nur JPG, PNG und WebP werden unterstützt",
+        )
+
+    # Stream-read in 64 KiB chunks so we reject oversized uploads without
+    # buffering the whole payload first.
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(64 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > MAX_IMAGE_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Maximale Bildgröße: 10 MB",
+            )
+        chunks.append(chunk)
+    data = b"".join(chunks)
+    if not data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Leere Datei")
+
+    ext = ALLOWED_IMAGE_EXTS[file.content_type]
+    fname = f"{_uuid.uuid4().hex}{ext}"
+    target_dir = UPLOADS_BASE / "recipes" / str(recipe_id)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_path = target_dir / fname
+    target_path.write_bytes(data)
+
+    # Drop the previous file if we owned it. Done after the new write
+    # succeeds so a failed upload never leaves the recipe with no image.
+    _delete_owned_image(rec.image_url)
+
+    rec.image_url = f"/static/recipes/{recipe_id}/{fname}"
+    await db.commit()
+    await db.refresh(rec)
+    # Ingredients/steps for the full recipe response — matches the patch
+    # endpoint's load pattern.
+    full = await get_recipe(db, recipe_id, user.id)
+    return ok(_full(full))
+
+
+@router.delete("/{recipe_id}/image", status_code=status.HTTP_200_OK)
+async def del_recipe_image(
+    recipe_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    rec = await get_recipe(db, recipe_id, user.id)
+    if not rec:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recipe not found")
+    _delete_owned_image(rec.image_url)
+    rec.image_url = None
+    await db.commit()
+    await db.refresh(rec)
+    full = await get_recipe(db, recipe_id, user.id)
+    return ok(_full(full))
+
+
 # ---------- "Was kann ich kochen?" ----------
 
 @router.post("/suggest")
