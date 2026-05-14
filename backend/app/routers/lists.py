@@ -385,3 +385,85 @@ async def post_ai_generate_list(
                 break
 
     return ok({"title": title, "items": out_items})
+
+
+# ---------- Feature 5: AI-assisted duplicate detection (fallback) ----------
+#
+# Frontend does Levenshtein-based grouping client-side first; this endpoint
+# is the "AI prüfen" escape hatch for the user who wants a deeper semantic
+# pass (e.g. "Tomatenmark" vs "Tomatenpaste"). Returns groups by id so the
+# frontend can map back to the live items.
+
+_AI_DUPLICATES_SYSTEM = (
+    "Du analysierst eine Einkaufsliste auf vermutliche Doppelungen. "
+    "Zwei Einträge sind nur dann eine Doppelung, wenn sie offensichtlich "
+    "dasselbe Produkt meinen — auch in unterschiedlicher Schreibweise, "
+    "Pluralform oder mit/ohne Mengenangabe. Antworte AUSSCHLIESSLICH mit "
+    "einem JSON-Array — kein Markdown, kein Codeblock, kein einleitender "
+    "Text. Schema: [{\"item_ids\": [<id1>, <id2>, ...]}]. Jede Gruppe "
+    "enthält mindestens zwei IDs aus der vorgegebenen Liste. Lass Einträge "
+    "weg, bei denen du dir nicht sicher bist."
+)
+
+
+@router.post("/{list_id}/ai/find-duplicates")
+async def post_ai_find_duplicates(
+    list_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        lst, _is_owner, _perm = await get_list_for_user(db, list_id, user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+    if len(lst.items) < 2:
+        return ok([])
+
+    catalog = "\n".join(
+        f"id={i.id}: {i.text}"
+        + (f" ({i.quantity} {i.unit or ''})".rstrip() if i.quantity is not None else "")
+        for i in lst.items
+    )
+    user_prompt = f"Einträge:\n{catalog}\n\nWelche Einträge sind Doppelungen?"
+    try:
+        raw = await call_text(
+            user_prompt, system=_AI_DUPLICATES_SYSTEM, json_mode=True, temperature=0.2,
+        )
+    except OllamaError as e:
+        raise HTTPException(status_code=e.status, detail=e.message)
+
+    try:
+        parsed = parse_llm_json(raw)
+    except _json.JSONDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="KI-Antwort konnte nicht gelesen werden",
+        )
+    if not isinstance(parsed, list):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="KI-Antwort hat unerwartetes Format",
+        )
+
+    valid_ids = {i.id for i in lst.items}
+    out: list[dict] = []
+    for entry in parsed:
+        if not isinstance(entry, dict):
+            continue
+        ids = entry.get("item_ids", [])
+        if not isinstance(ids, list):
+            continue
+        clean: list[int] = []
+        seen: set[int] = set()
+        for raw_id in ids:
+            try:
+                iid = int(raw_id)
+            except (ValueError, TypeError):
+                continue
+            if iid in valid_ids and iid not in seen:
+                clean.append(iid)
+                seen.add(iid)
+        if len(clean) >= 2:
+            out.append({"item_ids": clean})
+    return ok(out)

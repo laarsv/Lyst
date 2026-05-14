@@ -56,6 +56,21 @@ export function RecipeEditPage() {
   const [saving, setSaving] = useState(false);
   const [aiIngrOpen, setAiIngrOpen] = useState(false);
   const [aiStepsOpen, setAiStepsOpen] = useState(false);
+  const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
+  const [tagsLoading, setTagsLoading] = useState(false);
+
+  const suggestTags = async () => {
+    if (!recipeId) return;
+    setTagsLoading(true);
+    try {
+      const r = await RecipesApi.aiTags(recipeId);
+      setTagSuggestions(r.tags.filter((t) => !tags.includes(t)));
+    } catch (e) {
+      toast.error(getApiError(e));
+    } finally {
+      setTagsLoading(false);
+    }
+  };
 
   const [title, setTitle] = useState(prefill?.title ?? '');
   const [description, setDescription] = useState(prefill?.description ?? '');
@@ -424,7 +439,25 @@ export function RecipeEditPage() {
           </div>
         </div>
         <div>
-          <label className="label">Tags</label>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="label !mb-0">Tags</label>
+            {recipeId && (
+              <button
+                type="button"
+                onClick={suggestTags}
+                disabled={tagsLoading}
+                title="Tags vorschlagen (KI)"
+                aria-label="Tags vorschlagen (KI)"
+                className="size-7 inline-flex items-center justify-center rounded-full text-muted hover:text-brand-700 hover:bg-page transition disabled:opacity-50"
+              >
+                {tagsLoading ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Sparkles size={14} />
+                )}
+              </button>
+            )}
+          </div>
           <div className="flex flex-wrap items-center gap-1 input min-h-[42px] py-2">
             {tags.map((t) => (
               <span key={t} className="inline-flex items-center gap-1 text-xs bg-page px-2 py-1 rounded-full">
@@ -452,6 +485,26 @@ export function RecipeEditPage() {
               onBlur={addTag}
             />
           </div>
+          {tagSuggestions.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1 items-center">
+              <span className="text-[10px] uppercase tracking-wider text-muted">
+                Vorschläge:
+              </span>
+              {tagSuggestions.map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => {
+                    if (!tags.includes(t)) setTags([...tags, t]);
+                    setTagSuggestions((cur) => cur.filter((x) => x !== t));
+                  }}
+                  className="inline-flex items-center gap-1 text-xs bg-brand-50 text-brand-700 hover:bg-brand-100 px-2 py-1 rounded-full transition"
+                >
+                  + #{t}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </section>
 

@@ -14,6 +14,7 @@ import {
   MoreVertical,
   Pin,
   PinOff,
+  Sparkles,
   Trash2,
   type LucideIcon,
 } from 'lucide-react';
@@ -28,6 +29,11 @@ interface Props {
   onToggleArchive: () => void;
   onShowHistory: () => void;
   onDelete: () => void;
+  /** Optional — when provided, the menu shows a "Zusammenfassen (KI)"
+   *  entry that calls this callback. Disabled when the note is empty. */
+  onSummarize?: () => void;
+  /** Disable the summarize entry when there's nothing to summarize. */
+  canSummarize?: boolean;
   buttonClassName?: string;
 }
 
@@ -48,6 +54,8 @@ export function NoteActionsMenu({
   onToggleArchive,
   onShowHistory,
   onDelete,
+  onSummarize,
+  canSummarize = true,
   buttonClassName = '',
 }: Props) {
   const isMobile = useMediaQuery('(max-width: 767.98px)');
@@ -90,6 +98,17 @@ export function NoteActionsMenu({
       onClick: onToggleArchive,
     },
     { key: 'history', label: 'Verlauf', icon: History, onClick: onShowHistory },
+    ...(onSummarize
+      ? [
+          {
+            key: 'summarize',
+            label: 'Zusammenfassen (KI)',
+            icon: Sparkles,
+            onClick: onSummarize,
+            disabled: !canSummarize,
+          },
+        ]
+      : []),
     { key: 'delete', label: 'Löschen', icon: Trash2, onClick: onDelete, danger: true },
   ];
 

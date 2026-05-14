@@ -14,8 +14,11 @@
  *  identical to the desktop split-view. */
 import { useEffect, useRef, useState } from 'react';
 import MDEditor from '@uiw/react-md-editor';
-import { ArrowLeft, Pin, X } from 'lucide-react';
+import { ArrowLeft, Loader2, Pin, Sparkles, X } from 'lucide-react';
 import type { Note, NoteFolder, Tag } from '@/types';
+import { NotesApi } from '@/api/endpoints';
+import { toast } from '@/components/Toast';
+import { getApiError } from '@/api/client';
 import type { NoteEditingState } from '@/hooks/useNoteEditingState';
 import { remarkWikilinks, parseWikilinkUrl } from '@/lib/wikilinks';
 import remarkGfm from 'remark-gfm';
@@ -37,6 +40,8 @@ interface Props {
   onTogglePin: () => void;
   onToggleArchive: () => void;
   onShowHistory: () => void;
+  /** Optional — when provided, the kebab gets a "Zusammenfassen (KI)" entry. */
+  onSummarize?: () => void;
   onBack: () => void;
   onOpenByTitle: (title: string) => void;
   onCreateFolder: () => void;
@@ -53,6 +58,7 @@ export function NoteMobileLayout({
   onTogglePin,
   onToggleArchive,
   onShowHistory,
+  onSummarize,
   onBack,
   onOpenByTitle,
   onCreateFolder,
@@ -60,6 +66,34 @@ export function NoteMobileLayout({
   const [mode, setMode] = useState<'edit' | 'preview'>('preview');
   const [titleEditing, setTitleEditing] = useState(false);
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
+  const [titleSuggesting, setTitleSuggesting] = useState(false);
+  const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
+  const [tagsLoading, setTagsLoading] = useState(false);
+
+  const suggestTitle = async () => {
+    setTitleSuggesting(true);
+    try {
+      const r = await NotesApi.aiTitle(note.id);
+      state.setTitle(r.title);
+      setTitleEditing(true); // surface the input so user can tweak
+    } catch (e) {
+      toast.error(getApiError(e));
+    } finally {
+      setTitleSuggesting(false);
+    }
+  };
+
+  const suggestTags = async () => {
+    setTagsLoading(true);
+    try {
+      const r = await NotesApi.aiTags(note.id);
+      setTagSuggestions(r.tags.filter((t) => !state.tags.includes(t)));
+    } catch (e) {
+      toast.error(getApiError(e));
+    } finally {
+      setTagsLoading(false);
+    }
+  };
   const [pinPulse, setPinPulse] = useState(false);
   const [tagInput, setTagInput] = useState('');
   const titleInputRef = useRef<HTMLInputElement | null>(null);
@@ -100,6 +134,8 @@ export function NoteMobileLayout({
           isArchived={note.is_archived}
           onTogglePin={handlePin}
           onChangeFolder={() => setFolderPickerOpen(true)}
+          onSummarize={onSummarize}
+          canSummarize={!!state.content.trim()}
           onToggleArchive={onToggleArchive}
           onShowHistory={onShowHistory}
           onDelete={onDelete}
@@ -128,6 +164,23 @@ export function NoteMobileLayout({
             className="flex-1 text-left text-xl font-semibold truncate min-h-[2.25rem]"
           >
             {state.title || <span className="text-muted/70">Titel</span>}
+          </button>
+        )}
+        {/* Feature 7: Sparkles only when title is empty + content exists. */}
+        {!state.title.trim() && state.content.trim() && !titleEditing && (
+          <button
+            type="button"
+            onClick={suggestTitle}
+            disabled={titleSuggesting}
+            title="Titel-Vorschlag (KI)"
+            aria-label="Titel-Vorschlag (KI)"
+            className="size-9 inline-flex items-center justify-center rounded-ctl text-muted hover:text-brand-700 hover:bg-page transition disabled:opacity-50"
+          >
+            {titleSuggesting ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <Sparkles size={16} />
+            )}
           </button>
         )}
         {save && <SaveIndicator state={save.state} onRetry={save.retry} />}
@@ -194,6 +247,38 @@ export function NoteMobileLayout({
             <option key={t.id} value={t.name} />
           ))}
         </datalist>
+        {/* Feature 8: AI tag suggestions. */}
+        <button
+          type="button"
+          onClick={suggestTags}
+          disabled={tagsLoading}
+          title="Tags vorschlagen (KI)"
+          aria-label="Tags vorschlagen (KI)"
+          className="size-7 inline-flex items-center justify-center rounded-full text-muted hover:text-brand-700 hover:bg-page transition disabled:opacity-50"
+        >
+          {tagsLoading ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <Sparkles size={14} />
+          )}
+        </button>
+        {tagSuggestions.length > 0 && (
+          <span className="basis-full flex flex-wrap gap-1 mt-1">
+            {tagSuggestions.map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => {
+                  if (!state.tags.includes(t)) state.setTags([...state.tags, t]);
+                  setTagSuggestions((cur) => cur.filter((x) => x !== t));
+                }}
+                className="inline-flex items-center gap-1 text-xs bg-brand-50 text-brand-700 hover:bg-brand-100 px-2 py-1 rounded-full transition"
+              >
+                + #{t}
+              </button>
+            ))}
+          </span>
+        )}
       </div>
 
       {/* Mode toggle */}

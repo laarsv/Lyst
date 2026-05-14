@@ -142,6 +142,10 @@ export const AiListsApi = {
     api
       .post<{ data: AiGeneratedList }>('/lists/ai/generate', { type, goal })
       .then(unwrap),
+  findDuplicates: (listId: number) =>
+    api
+      .post<{ data: { item_ids: number[] }[] }>(`/lists/${listId}/ai/find-duplicates`)
+      .then(unwrap),
 };
 
 export const ItemsApi = {
@@ -244,6 +248,14 @@ export const NotesApi = {
     api
       .post<{ data: Note }>(`/notes/${id}/versions/${versionId}/restore`)
       .then(unwrap),
+
+  // ----- AI assist (Features 6, 7, 8) -----
+  aiSummarize: (id: number) =>
+    api.post<{ data: { summary: string } }>(`/notes/${id}/ai/summarize`).then(unwrap),
+  aiTitle: (id: number) =>
+    api.post<{ data: { title: string } }>(`/notes/${id}/ai/title`).then(unwrap),
+  aiTags: (id: number) =>
+    api.post<{ data: { tags: string[] } }>(`/notes/${id}/ai/tags`).then(unwrap),
 };
 
 export interface NoteTitleResult {
@@ -360,6 +372,8 @@ export const RecipesApi = {
     api
       .post<{ data: ImportedRecipe }>(`/recipes/${id}/ai/variation`, { variation })
       .then(unwrap),
+  aiTags: (id: number) =>
+    api.post<{ data: { tags: string[] } }>(`/recipes/${id}/ai/tags`).then(unwrap),
 
   uploadImage: (id: number, file: File, onProgress?: (pct: number) => void) => {
     const fd = new FormData();

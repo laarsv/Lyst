@@ -45,6 +45,8 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { AiSuggestionModal } from '@/components/AiSuggestionModal';
+import { MergeDuplicatesModal } from '@/components/lists/MergeDuplicatesModal';
+import { Combine } from 'lucide-react';
 
 const CATEGORY_ICON: Record<string, LucideIcon> = {
   'Obst & Gemüse': Apple,
@@ -85,6 +87,7 @@ export function ListDetailPage() {
   const promptDialog = usePrompt();
   const save = useSaveIndicator();
   const [missingOpen, setMissingOpen] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
 
   const canEdit = useMemo(
     () => !!list && (list.is_owner || list.permission === 'EDIT'),
@@ -418,6 +421,13 @@ export function ListDetailPage() {
                 onClick={() => setMissingOpen(true)}
               />
             )}
+            {canEdit && items.length >= 2 && (
+              <IconAction
+                label="Doppelte zusammenfassen"
+                icon={Combine}
+                onClick={() => setMergeOpen(true)}
+              />
+            )}
             {canEdit && (
               <IconAction label="Zurücksetzen" icon={RotateCcw} onClick={reset} />
             )}
@@ -533,6 +543,15 @@ export function ListDetailPage() {
           onCategorizationStarted={onCategorizationStarted}
         />
       )}
+
+      {/* Feature 5: duplicate merge review modal. */}
+      <MergeDuplicatesModal
+        open={mergeOpen}
+        onClose={() => setMergeOpen(false)}
+        listId={listId}
+        items={items}
+        onMerged={refreshItems}
+      />
 
       {/* Feature 2: AI "Fehlt was?" — auto-fetches on open since there's
           no prompt to type, then lets the user pick which suggestions to add. */}

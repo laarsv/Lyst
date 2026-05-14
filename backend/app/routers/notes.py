@@ -283,3 +283,185 @@ async def del_note(
     await db.delete(note)
     await db.commit()
     return ok({"message": "Deleted"})
+
+
+# =============================================================================
+#  AI assist endpoints (Features 6, 7, 8)
+# =============================================================================
+#
+# All AI calls go through the centralised app/services/ollama.py so model,
+# keep_alive, and timeout stay consistent with the rest of the app.
+
+import json as _json
+from pydantic import ValidationError as _ValidationError
+
+from app.services.ai_service import parse_llm_json
+from app.services.ollama import OllamaError, call_text
+
+
+async def _load_owned_note(db: AsyncSession, note_id: int, owner_id: int) -> Note:
+    result = await db.execute(
+        select(Note).where(Note.id == note_id, Note.owner_id == owner_id)
+    )
+    note = result.scalar_one_or_none()
+    if not note:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    return note
+
+
+def _truncate_for_prompt(text: str, max_chars: int = 4000) -> str:
+    """LLM context is finite — long notes get clipped at a sensible boundary
+    (sentence-ish). Truncated marker tells the model not to hallucinate
+    "the rest"."""
+    if len(text) <= max_chars:
+        return text
+    cut = text[:max_chars]
+    last_break = max(cut.rfind(". "), cut.rfind("\n"))
+    if last_break > max_chars - 500:
+        cut = cut[: last_break + 1]
+    return cut + "\n\n[…gekürzt für KI-Kontext…]"
+
+
+# ---------- Feature 6: Summarize ----------
+
+_AI_SUMMARIZE_SYSTEM = (
+    "Du fasst Notizen zusammen. Gib eine knappe Zusammenfassung in 2 bis 4 "
+    "Sätzen auf Deutsch zurück. Keine Aufzählung, kein Markdown, kein "
+    "einleitender Text wie 'Zusammenfassung:'. Nur die Sätze selbst."
+)
+
+
+@router.post("/{note_id}/ai/summarize")
+async def post_ai_summarize(
+    note_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    note = await _load_owned_note(db, note_id, user.id)
+    if not (note.content or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Notiz ist leer — nichts zum Zusammenfassen.",
+        )
+    user_prompt = (
+        f"Titel: {note.title or '(ohne Titel)'}\n\n"
+        f"Inhalt:\n{_truncate_for_prompt(note.content)}"
+    )
+    try:
+        # json_mode=False — we want plain prose, not JSON.
+        raw = await call_text(
+            user_prompt, system=_AI_SUMMARIZE_SYSTEM, temperature=0.3,
+        )
+    except OllamaError as e:
+        raise HTTPException(status_code=e.status, detail=e.message)
+    summary = (raw or "").strip()
+    if not summary:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Leere KI-Antwort",
+        )
+    return ok({"summary": summary})
+
+
+# ---------- Feature 7: Auto-suggest title ----------
+
+_AI_TITLE_SYSTEM = (
+    "Du schlägst einen knappen, aussagekräftigen Titel (max. 60 Zeichen) "
+    "für eine Notiz vor. Antworte AUSSCHLIESSLICH mit dem Titel selbst — "
+    "kein Markdown, keine Anführungszeichen, kein einleitender Text. "
+    "Auf Deutsch."
+)
+
+
+@router.post("/{note_id}/ai/title")
+async def post_ai_title(
+    note_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    note = await _load_owned_note(db, note_id, user.id)
+    if not (note.content or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Notiz ist leer — kein Titel ableitbar.",
+        )
+    user_prompt = f"Notiz-Inhalt:\n{_truncate_for_prompt(note.content, 2000)}"
+    try:
+        raw = await call_text(
+            user_prompt, system=_AI_TITLE_SYSTEM, temperature=0.4, max_tokens=60,
+        )
+    except OllamaError as e:
+        raise HTTPException(status_code=e.status, detail=e.message)
+    # Defensive cleanup — strip surrounding quotes/whitespace, clamp length.
+    title = (raw or "").strip().strip('"\'').splitlines()[0].strip()
+    if not title:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Leere KI-Antwort",
+        )
+    if len(title) > 200:
+        title = title[:200]
+    return ok({"title": title})
+
+
+# ---------- Feature 8: Auto-tag (notes) ----------
+
+_AI_NOTE_TAGS_SYSTEM = (
+    "Du schlägst 2 bis 5 Tags für eine Notiz vor. Antworte AUSSCHLIESSLICH "
+    "mit einem JSON-Array aus kurzen, kleingeschriebenen Wörtern (ohne #), "
+    "auf Deutsch, ohne Markdown. Beispiel: [\"reise\", \"checkliste\", \"sommer\"]."
+)
+
+
+@router.post("/{note_id}/ai/tags")
+async def post_ai_note_tags(
+    note_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    note = await _load_owned_note(db, note_id, user.id)
+    body = (note.content or "").strip()
+    if not (note.title.strip() or body):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Notiz ist leer — keine Tags ableitbar.",
+        )
+    user_prompt = (
+        f"Titel: {note.title or '(ohne)'}\n\n"
+        f"Inhalt:\n{_truncate_for_prompt(body, 2000)}\n\n"
+        f"Aktuelle Tags: {', '.join(note.tags or []) or '(keine)'}"
+    )
+    try:
+        raw = await call_text(
+            user_prompt, system=_AI_NOTE_TAGS_SYSTEM, json_mode=True, temperature=0.3,
+        )
+    except OllamaError as e:
+        raise HTTPException(status_code=e.status, detail=e.message)
+    try:
+        parsed = parse_llm_json(raw)
+    except _json.JSONDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="KI-Antwort konnte nicht gelesen werden",
+        )
+    if not isinstance(parsed, list):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="KI-Antwort hat unerwartetes Format",
+        )
+    existing = {t.lower() for t in (note.tags or [])}
+    out: list[str] = []
+    seen: set[str] = set()
+    for entry in parsed:
+        if not isinstance(entry, str):
+            continue
+        clean = entry.strip().lstrip('#').lower()
+        if not clean or clean in existing or clean in seen:
+            continue
+        if len(clean) > 32:
+            clean = clean[:32]
+        seen.add(clean)
+        out.append(clean)
+        if len(out) >= 5:
+            break
+    return ok({"tags": out})

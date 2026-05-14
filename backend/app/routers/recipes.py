@@ -776,3 +776,66 @@ async def post_ai_variation(
             detail="Variante hat unerwartetes Format",
         )
     return ok(validated.model_dump(mode="json"))
+
+
+# ---------- Feature 8: Auto-tag (recipes) ----------
+
+_AI_RECIPE_TAGS_SYSTEM = (
+    "Du schlägst 2 bis 5 Tags für ein Rezept vor — z.B. Küchenstil, "
+    "Anlass, Diät-Eigenschaft. Antworte AUSSCHLIESSLICH mit einem JSON-"
+    "Array aus kurzen, kleingeschriebenen Wörtern (ohne #), auf Deutsch, "
+    "ohne Markdown. Beispiel: [\"italienisch\", \"vegetarisch\", \"schnell\"]."
+)
+
+
+@router.post("/{recipe_id}/ai/tags")
+async def post_ai_recipe_tags(
+    recipe_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        rec = await get_recipe(db, recipe_id, user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+    user_prompt = (
+        f"Titel: {rec.title}\n"
+        f"Beschreibung: {rec.description or '(keine)'}\n"
+        f"Zutaten:\n{_ingredient_lines(rec)}\n\n"
+        f"Aktuelle Tags: {', '.join(rec.tags or []) or '(keine)'}"
+    )
+    try:
+        raw = await call_text(
+            user_prompt, system=_AI_RECIPE_TAGS_SYSTEM, json_mode=True, temperature=0.3,
+        )
+    except OllamaError as e:
+        raise HTTPException(status_code=e.status, detail=e.message)
+    try:
+        parsed = parse_llm_json(raw)
+    except _json.JSONDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="KI-Antwort konnte nicht gelesen werden",
+        )
+    if not isinstance(parsed, list):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="KI-Antwort hat unerwartetes Format",
+        )
+    existing = {t.lower() for t in (rec.tags or [])}
+    out: list[str] = []
+    seen: set[str] = set()
+    for entry in parsed:
+        if not isinstance(entry, str):
+            continue
+        clean = entry.strip().lstrip('#').lower()
+        if not clean or clean in existing or clean in seen:
+            continue
+        if len(clean) > 32:
+            clean = clean[:32]
+        seen.add(clean)
+        out.append(clean)
+        if len(out) >= 5:
+            break
+    return ok({"tags": out})

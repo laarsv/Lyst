@@ -10,7 +10,9 @@ import { VersionHistoryPanel } from '@/components/notes/VersionHistoryPanel';
 import { NoteToolbar } from '@/components/notes/NoteToolbar';
 import { NoteActionsMenu } from '@/components/notes/NoteActionsMenu';
 import { NoteMobileLayout } from '@/components/notes/NoteMobileLayout';
+import { NoteSummaryModal } from '@/components/notes/NoteSummaryModal';
 import { FolderChip } from '@/components/notes/FolderChip';
+import { Loader2, Sparkles } from 'lucide-react';
 import { NotesFilterButton } from '@/components/notes/NotesFilterButton';
 import { NotesFilterPanel } from '@/components/notes/NotesFilterPanel';
 import { ActiveFilterChips } from '@/components/notes/ActiveFilterChips';
@@ -794,9 +796,38 @@ function NoteEditor({
   });
   const [tagInput, setTagInput] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [titleSuggesting, setTitleSuggesting] = useState(false);
+  const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
+  const [tagsLoading, setTagsLoading] = useState(false);
   // Lifted so both the chip and the kebab "Ordner ändern" entry pop the
   // same FolderPicker (one source of truth for the open state).
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
+
+  const suggestTitle = async () => {
+    setTitleSuggesting(true);
+    try {
+      const r = await NotesApi.aiTitle(note.id);
+      state.setTitle(r.title);
+    } catch (e) {
+      toast.error(getApiError(e));
+    } finally {
+      setTitleSuggesting(false);
+    }
+  };
+
+  const suggestTags = async () => {
+    setTagsLoading(true);
+    try {
+      const r = await NotesApi.aiTags(note.id);
+      // Filter against the live tag state (state.tags is the source of truth).
+      setTagSuggestions(r.tags.filter((t) => !state.tags.includes(t)));
+    } catch (e) {
+      toast.error(getApiError(e));
+    } finally {
+      setTagsLoading(false);
+    }
+  };
 
   return (
     <>
@@ -815,12 +846,32 @@ function NoteEditor({
             return false;
           }}
         />
-        <input
-          className="input flex-1 text-lg font-semibold min-w-[180px]"
-          value={state.title}
-          onChange={(e) => state.setTitle(e.target.value)}
-          placeholder="Titel"
-        />
+        <div className="flex-1 min-w-[180px] relative">
+          <input
+            className="input w-full text-lg font-semibold pr-10"
+            value={state.title}
+            onChange={(e) => state.setTitle(e.target.value)}
+            placeholder="Titel"
+          />
+          {/* Feature 7 — Sparkles only appears when the title is empty
+              and the note has content the AI can read. */}
+          {!state.title.trim() && state.content.trim() && (
+            <button
+              type="button"
+              onClick={suggestTitle}
+              disabled={titleSuggesting}
+              title="Titel-Vorschlag (KI)"
+              aria-label="Titel-Vorschlag (KI)"
+              className="absolute right-2 top-1/2 -translate-y-1/2 size-7 inline-flex items-center justify-center rounded-ctl text-muted hover:text-brand-700 hover:bg-page transition disabled:opacity-50"
+            >
+              {titleSuggesting ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Sparkles size={14} />
+              )}
+            </button>
+          )}
+        </div>
         <SaveIndicator state={save.state} onRetry={save.retry} />
         <button
           type="button"
@@ -842,6 +893,8 @@ function NoteEditor({
           onToggleArchive={onToggleArchive}
           onShowHistory={() => setHistoryOpen(true)}
           onDelete={onDelete}
+          onSummarize={() => setSummaryOpen(true)}
+          canSummarize={!!state.content.trim()}
           buttonClassName="size-9"
         />
       </div>
@@ -889,6 +942,41 @@ function NoteEditor({
             <option key={t.id} value={t.name} />
           ))}
         </datalist>
+        {/* Feature 8 — Sparkles button + AI tag suggestions as tappable chips. */}
+        <button
+          type="button"
+          onClick={suggestTags}
+          disabled={tagsLoading}
+          title="Tags vorschlagen (KI)"
+          aria-label="Tags vorschlagen (KI)"
+          className="size-7 inline-flex items-center justify-center rounded-full text-muted hover:text-brand-700 hover:bg-page transition disabled:opacity-50"
+        >
+          {tagsLoading ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <Sparkles size={14} />
+          )}
+        </button>
+        {tagSuggestions.length > 0 && (
+          <span className="basis-full flex flex-wrap gap-1 mt-1">
+            <span className="text-[10px] uppercase tracking-wider text-muted self-center">
+              Vorschläge:
+            </span>
+            {tagSuggestions.map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => {
+                  if (!state.tags.includes(t)) state.setTags([...state.tags, t]);
+                  setTagSuggestions((cur) => cur.filter((x) => x !== t));
+                }}
+                className="inline-flex items-center gap-1 text-xs bg-brand-50 text-brand-700 hover:bg-brand-100 px-2 py-1 rounded-full transition"
+              >
+                + #{t}
+              </button>
+            ))}
+          </span>
+        )}
       </div>
 
       {/* Compact icon-only toolbar — replaces the lib's built-in toolbar
@@ -1012,6 +1100,21 @@ function NoteEditor({
         onClose={() => setHistoryOpen(false)}
         onRestored={onRestored}
       />
+
+      {/* Feature 6: AI summarize. Triggered from the kebab menu. */}
+      <NoteSummaryModal
+        open={summaryOpen}
+        onClose={() => setSummaryOpen(false)}
+        noteId={note.id}
+        onInsert={(summary) => {
+          // Prepend as the note's intro paragraph; keep existing content
+          // untouched after a blank-line separator. Autosave picks this
+          // up via the existing 600ms debounce in useNoteEditingState.
+          state.setContent(
+            `${summary}\n\n${state.content}`.trimStart(),
+          );
+        }}
+      />
     </>
   );
 }
@@ -1066,6 +1169,7 @@ function MobileNoteShell({
     onSaveError: save.signalError,
   });
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
   return (
     <>
       <NoteMobileLayout
@@ -1078,6 +1182,7 @@ function MobileNoteShell({
         onDelete={onDelete}
         onTogglePin={onTogglePin}
         onToggleArchive={onToggleArchive}
+        onSummarize={() => setSummaryOpen(true)}
         onShowHistory={() => setHistoryOpen(true)}
         onBack={onBack}
         onOpenByTitle={onOpenByTitle}
@@ -1088,6 +1193,14 @@ function MobileNoteShell({
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
         onRestored={onRestored}
+      />
+      <NoteSummaryModal
+        open={summaryOpen}
+        onClose={() => setSummaryOpen(false)}
+        noteId={note.id}
+        onInsert={(summary) => {
+          state.setContent(`${summary}\n\n${state.content}`.trimStart());
+        }}
       />
     </>
   );
