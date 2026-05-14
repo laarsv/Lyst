@@ -21,13 +21,17 @@ import { remarkWikilinks, parseWikilinkUrl } from '@/lib/wikilinks';
 import { FolderChip } from './FolderChip';
 import { NoteActionsMenu } from './NoteActionsMenu';
 import { NoteToolbar } from './NoteToolbar';
+import { SaveIndicator, type SaveIndicatorApi } from '@/components/SaveIndicator';
 
 interface Props {
   note: Note;
   state: NoteEditingState;
+  /** Autosave indicator state. Optional so legacy callers without the
+   *  hook plumbed in still render — they just don't see the chip. */
+  save?: SaveIndicatorApi;
   availableTags: Tag[];
   folders: NoteFolder[];
-  onChange: (patch: Partial<Note>) => void;
+  onChange: (patch: Partial<Note>) => void | Promise<boolean | void>;
   onDelete: () => void;
   onTogglePin: () => void;
   onToggleArchive: () => void;
@@ -40,6 +44,7 @@ interface Props {
 export function NoteMobileLayout({
   note,
   state,
+  save,
   availableTags,
   folders,
   onChange,
@@ -124,6 +129,7 @@ export function NoteMobileLayout({
             {state.title || <span className="text-muted/70">Titel</span>}
           </button>
         )}
+        {save && <SaveIndicator state={save.state} onRetry={save.retry} />}
         <button
           type="button"
           onClick={handlePin}

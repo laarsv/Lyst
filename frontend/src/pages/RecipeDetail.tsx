@@ -8,6 +8,8 @@ import { CATEGORY_COLOR, CATEGORY_LABEL } from '@/components/recipes/RecipeCard'
 import { CopyToListModal } from '@/components/recipes/CopyToListModal';
 import { CookMode } from '@/components/recipes/CookMode';
 import { useConfirm } from '@/components/Dialogs';
+import { BackLink } from '@/components/BackLink';
+import { invalidateFresh } from '@/hooks/useFreshOnMount';
 import { fmtQty } from '@/lib/format';
 
 export function RecipeDetailPage() {
@@ -46,6 +48,9 @@ export function RecipeDetailPage() {
       return;
     try {
       await RecipesApi.remove(recipe.id);
+      // Drop the freshness mark so the recipes overview re-fetches on
+      // mount instead of showing the just-deleted recipe.
+      invalidateFresh('recipes');
       toast.success('Rezept gelöscht');
       nav('/recipes');
     } catch (e) {
@@ -70,6 +75,7 @@ export function RecipeDetailPage() {
 
   return (
     <div className="space-y-6">
+      <BackLink to="/recipes" label="zu Rezepten" />
       <div className="card overflow-hidden">
         {recipe.image_url && (
           <div className="h-48 sm:h-64 bg-cover bg-center" style={{ backgroundImage: `url(${recipe.image_url})` }} />

@@ -48,9 +48,20 @@ export interface NoteEditingState {
   onTextareaKeyDown: (e: KeyboardEvent<HTMLTextAreaElement>) => void;
 }
 
+interface SaveCallbacks {
+  onSaveStart?: () => void;
+  /** Called after onChange resolves successfully (or returned non-Promise). */
+  onSaveSuccess?: () => void;
+  /** Called when onChange returned a Promise that rejected, or returned the
+   *  literal `false` (the convention NotesPage.updateNote uses). The
+   *  optional `retry` re-runs the same patch on user demand. */
+  onSaveError?: (retry: () => void) => void;
+}
+
 export function useNoteEditingState(
   note: Note,
-  onChange: (patch: Partial<Note>) => void,
+  onChange: (patch: Partial<Note>) => void | Promise<boolean | void>,
+  callbacks: SaveCallbacks = {},
 ): NoteEditingState {
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
@@ -83,7 +94,10 @@ export function useNoteEditingState(
 
   // Debounced autosave. Compares against the last-known server values so
   // remote-driven prop changes (e.g. version restore) don't cause a redundant
-  // round-trip.
+  // round-trip. Drives the optional save callbacks: `onSaveStart` fires
+  // when the patch leaves, `onSaveSuccess` / `onSaveError(retry)` fire
+  // based on what `onChange` returns (Promise<boolean> from
+  // NotesPage.updateNote — false = failure).
   useEffect(() => {
     const t = setTimeout(() => {
       if (
@@ -91,7 +105,29 @@ export function useNoteEditingState(
         content !== note.content ||
         tags.join(',') !== note.tags.join(',')
       ) {
-        onChange({ title, content, tags });
+        const patch = { title, content, tags };
+        const runSave = () => {
+          callbacks.onSaveStart?.();
+          let result: void | Promise<boolean | void>;
+          try {
+            result = onChange(patch);
+          } catch {
+            callbacks.onSaveError?.(runSave);
+            return;
+          }
+          if (result instanceof Promise) {
+            result.then(
+              (ok) => {
+                if (ok === false) callbacks.onSaveError?.(runSave);
+                else callbacks.onSaveSuccess?.();
+              },
+              () => callbacks.onSaveError?.(runSave),
+            );
+          } else {
+            callbacks.onSaveSuccess?.();
+          }
+        };
+        runSave();
       }
     }, 600);
     return () => clearTimeout(t);

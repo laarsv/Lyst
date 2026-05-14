@@ -15,8 +15,11 @@ import { NotesFilterButton } from '@/components/notes/NotesFilterButton';
 import { NotesFilterPanel } from '@/components/notes/NotesFilterPanel';
 import { ActiveFilterChips } from '@/components/notes/ActiveFilterChips';
 import { useConfirm } from '@/components/Dialogs';
+import { BackLink } from '@/components/BackLink';
+import { SaveIndicator, useSaveIndicator } from '@/components/SaveIndicator';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useNoteEditingState } from '@/hooks/useNoteEditingState';
+import { invalidateFresh } from '@/hooks/useFreshOnMount';
 import { hasActiveFilters, useNotesFilters } from '@/store/notesFilters';
 import { Plus, Search } from 'lucide-react';
 import MDEditor from '@uiw/react-md-editor';
@@ -172,7 +175,11 @@ export function NotesPage() {
     }
   };
 
-  const updateNote = async (n: Note, patch: Partial<Note>) => {
+  // Returns true on success / false on failure so the editor's autosave
+  // hook can drive the SaveIndicator state. Errors still surface as toasts;
+  // existing call sites (togglePin / toggleArchive / moveNoteToFolder) just
+  // ignore the return value.
+  const updateNote = async (n: Note, patch: Partial<Note>): Promise<boolean> => {
     try {
       const upd = await NotesApi.update(n.id, patch);
       // If the note's archive flag flipped or the folder changed and we're in a
@@ -193,8 +200,10 @@ export function NotesPage() {
         );
       }
       void loadFolders();
+      return true;
     } catch (e) {
       toast.error(getApiError(e));
+      return false;
     }
   };
 
@@ -212,6 +221,10 @@ export function NotesPage() {
       await NotesApi.remove(n.id);
       setNotes((cur) => cur.filter((x) => x.id !== n.id));
       if (activeId === n.id) setActiveId(null);
+      // Drop the cached freshness so any future overview re-fetch reflects
+      // the deletion. (NotesPage updates its own list inline, so this is
+      // mostly forward-compat for any consumer that adds useFreshOnMount.)
+      invalidateFresh('notes');
       void loadFolders();
     } catch (e) {
       toast.error(getApiError(e));
@@ -763,7 +776,7 @@ function NoteEditor({
   note: Note;
   availableTags: Tag[];
   folders: NoteFolder[];
-  onChange: (patch: Partial<Note>) => void;
+  onChange: (patch: Partial<Note>) => void | Promise<boolean | void>;
   onDelete: () => void;
   onTogglePin: () => void;
   onToggleArchive: () => void;
@@ -772,7 +785,12 @@ function NoteEditor({
   onRestored: (n: Note) => void;
   onCreateFolder: () => void;
 }) {
-  const state = useNoteEditingState(note, onChange);
+  const save = useSaveIndicator();
+  const state = useNoteEditingState(note, onChange, {
+    onSaveStart: save.signalSaving,
+    onSaveSuccess: save.signalSaved,
+    onSaveError: save.signalError,
+  });
   const [tagInput, setTagInput] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
   // Lifted so both the chip and the kebab "Ordner ändern" entry pop the
@@ -781,17 +799,28 @@ function NoteEditor({
 
   return (
     <>
-      {/* Slim header: back, title, pin, kebab. Folder lives in the metadata
-          row below — it was crowding the title and the dropdown was getting
-          truncated. */}
+      {/* Slim header: back, title, save indicator, pin, kebab. Folder lives
+          in the metadata row below — it was crowding the title and the
+          dropdown was getting truncated. */}
       <div className="flex items-center gap-2 flex-wrap">
-        <button className="btn-ghost text-sm" onClick={onBack}>← Zurück</button>
+        <BackLink
+          to="/notes"
+          label="zu Notizen"
+          // Notes' overview lives at the same /notes route — toggling activeId
+          // back to null reveals it without an SPA navigation. Cancelling the
+          // route nav avoids a wasted re-mount.
+          onBeforeNavigate={() => {
+            onBack();
+            return false;
+          }}
+        />
         <input
           className="input flex-1 text-lg font-semibold min-w-[180px]"
           value={state.title}
           onChange={(e) => state.setTitle(e.target.value)}
           placeholder="Titel"
         />
+        <SaveIndicator state={save.state} onRetry={save.retry} />
         <button
           type="button"
           aria-label={note.is_pinned ? 'Pin entfernen' : 'Anpinnen'}
@@ -1020,7 +1049,7 @@ function MobileNoteShell({
   note: Note;
   availableTags: Tag[];
   folders: NoteFolder[];
-  onChange: (patch: Partial<Note>) => void;
+  onChange: (patch: Partial<Note>) => void | Promise<boolean | void>;
   onDelete: () => void;
   onTogglePin: () => void;
   onToggleArchive: () => void;
@@ -1029,13 +1058,19 @@ function MobileNoteShell({
   onRestored: (n: Note) => void;
   onCreateFolder: () => void;
 }) {
-  const state = useNoteEditingState(note, onChange);
+  const save = useSaveIndicator();
+  const state = useNoteEditingState(note, onChange, {
+    onSaveStart: save.signalSaving,
+    onSaveSuccess: save.signalSaved,
+    onSaveError: save.signalError,
+  });
   const [historyOpen, setHistoryOpen] = useState(false);
   return (
     <>
       <NoteMobileLayout
         note={note}
         state={state}
+        save={save}
         availableTags={availableTags}
         folders={folders}
         onChange={onChange}
