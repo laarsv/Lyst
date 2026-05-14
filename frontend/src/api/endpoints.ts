@@ -1,6 +1,10 @@
 import { api } from './client';
 import type {
   AdminUser,
+  AiGeneratedList,
+  AiMissingItem,
+  AiSuggestedIngredient,
+  AiSuggestedStep,
   AuthResponse,
   CategorizationMode,
   Collaborator,
@@ -123,6 +127,21 @@ export const ListsApi = {
   duplicate: (id: number, payload: { title?: string; as_template?: boolean; template_name?: string }) =>
     api.post<{ data: ListSummary }>(`/lists/${id}/duplicate`, payload).then(unwrap),
   reset: (id: number) => api.post(`/lists/${id}/reset`),
+};
+
+// AI assist for lists (Features 2, 4) — kept on ListsApi since they belong
+// to the lists resource conceptually.
+declare module './client' {}
+
+export const AiListsApi = {
+  missingItems: (listId: number) =>
+    api
+      .post<{ data: AiMissingItem[] }>(`/lists/${listId}/ai/missing-items`)
+      .then(unwrap),
+  generate: (type: ListType, goal: string) =>
+    api
+      .post<{ data: AiGeneratedList }>('/lists/ai/generate', { type, goal })
+      .then(unwrap),
 };
 
 export const ItemsApi = {
@@ -324,6 +343,23 @@ export const RecipesApi = {
   remove: (id: number) => api.delete(`/recipes/${id}`),
   duplicate: (id: number, title?: string) =>
     api.post<{ data: Recipe }>(`/recipes/${id}/duplicate`, { title }).then(unwrap),
+
+  // ----- AI assist (Features 1, 3) -----
+  aiSuggestIngredients: (id: number, request: string) =>
+    api
+      .post<{ data: AiSuggestedIngredient[] }>(
+        `/recipes/${id}/ai/suggest-ingredients`,
+        { request },
+      )
+      .then(unwrap),
+  aiSuggestSteps: (id: number, request: string) =>
+    api
+      .post<{ data: AiSuggestedStep[] }>(`/recipes/${id}/ai/suggest-steps`, { request })
+      .then(unwrap),
+  aiVariation: (id: number, variation: string) =>
+    api
+      .post<{ data: ImportedRecipe }>(`/recipes/${id}/ai/variation`, { variation })
+      .then(unwrap),
 
   uploadImage: (id: number, file: File, onProgress?: (pct: number) => void) => {
     const fd = new FormData();

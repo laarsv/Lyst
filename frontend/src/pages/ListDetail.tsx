@@ -9,7 +9,7 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core';
 import { SortableContext, arrayMove, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { ItemsApi, ListsApi } from '@/api/endpoints';
+import { AiListsApi, ItemsApi, ListsApi } from '@/api/endpoints';
 import type { ListItem, ListSummary } from '@/types';
 import { SortableItem } from '@/components/lists/SortableItem';
 import { ListSettingsPanel } from '@/components/lists/ListSettingsPanel';
@@ -44,6 +44,7 @@ import {
   Loader2,
   type LucideIcon,
 } from 'lucide-react';
+import { AiSuggestionModal } from '@/components/AiSuggestionModal';
 
 const CATEGORY_ICON: Record<string, LucideIcon> = {
   'Obst & Gemüse': Apple,
@@ -83,6 +84,7 @@ export function ListDetailPage() {
   const confirmDialog = useConfirm();
   const promptDialog = usePrompt();
   const save = useSaveIndicator();
+  const [missingOpen, setMissingOpen] = useState(false);
 
   const canEdit = useMemo(
     () => !!list && (list.is_owner || list.permission === 'EDIT'),
@@ -409,6 +411,13 @@ export function ListDetailPage() {
                 onClick={() => setBulkOpen(true)}
               />
             )}
+            {canEdit && (list.type === 'SHOPPING' || list.type === 'PACKING') && (
+              <IconAction
+                label="Fehlt was? (KI)"
+                icon={Sparkles}
+                onClick={() => setMissingOpen(true)}
+              />
+            )}
             {canEdit && (
               <IconAction label="Zurücksetzen" icon={RotateCcw} onClick={reset} />
             )}
@@ -524,6 +533,33 @@ export function ListDetailPage() {
           onCategorizationStarted={onCategorizationStarted}
         />
       )}
+
+      {/* Feature 2: AI "Fehlt was?" — auto-fetches on open since there's
+          no prompt to type, then lets the user pick which suggestions to add. */}
+      <AiSuggestionModal<{ text: string }>
+        open={missingOpen}
+        onClose={() => setMissingOpen(false)}
+        title="Fehlt was?"
+        description="Die KI schaut sich deine Liste an und schlägt häufig dazu passende Dinge vor."
+        showPromptInput={false}
+        confirmLabel="Hinzufügen"
+        getKey={(it) => it.text}
+        renderItem={(it) => <span>{it.text}</span>}
+        fetchSuggestions={() => AiListsApi.missingItems(listId)}
+        onApply={async (picked) => {
+          try {
+            const created = await ItemsApi.bulkStructured(
+              listId,
+              picked.map((p) => ({ text: p.text })),
+            );
+            setItems((cur) => [...cur, ...created]);
+            setMissingOpen(false);
+            toast.success(`${created.length} Vorschläge hinzugefügt`);
+          } catch (e) {
+            toast.error(getApiError(e));
+          }
+        }}
+      />
 
       <BulkModal
         open={bulkOpen}

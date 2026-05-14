@@ -348,6 +348,39 @@ export interface GenerateListResponse {
   items_added: number;
 }
 
+// ---------- AI assist (Features 1-4) ----------
+
+/** Recipe ingredient suggestion returned by /recipes/{id}/ai/suggest-ingredients. */
+export interface AiSuggestedIngredient {
+  name: string;
+  quantity: number | null;
+  unit: string | null;
+}
+
+/** Recipe step suggestion returned by /recipes/{id}/ai/suggest-steps. */
+export interface AiSuggestedStep {
+  description: string;
+  /** 1-based position in the existing steps list. null = append at end. */
+  suggested_position: number | null;
+}
+
+/** "Fehlt was?" missing-item suggestion for SHOPPING/PACKING lists. */
+export interface AiMissingItem {
+  text: string;
+}
+
+/** Per-list-item "checklist" of items to be added in the AI list generator. */
+export interface AiGeneratedListItem {
+  text: string;
+  /** Only present for CHECKLIST type — see lists.ai_generate. */
+  category?: string | null;
+}
+
+export interface AiGeneratedList {
+  title: string;
+  items: AiGeneratedListItem[];
+}
+
 export interface ImportedRecipe {
   title: string;
   description: string | null;

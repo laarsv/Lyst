@@ -217,3 +217,171 @@ async def post_categorize(
             _categorize_set_in_background, list_id, [it.id for it in targets], force
         )
     return ok({"queued": len(targets), "total": len(all_items)})
+
+
+# =============================================================================
+#  AI assist endpoints (Features 2 & 4)
+# =============================================================================
+
+import json as _json
+from pydantic import BaseModel as _BaseModel, Field as _Field, ValidationError as _ValidationError
+
+from app.models.list import List as ListModel, ListType
+from app.services.ai_service import parse_llm_json
+from app.services.ollama import OllamaError, call_text
+
+
+# ---------- Feature 2: "Fehlt was?" ----------
+
+_AI_MISSING_SYSTEM = (
+    "Du bist Einkaufs- und Pack-Assistent. Auf Basis einer bestehenden Liste "
+    "schlägst du häufig zusammen mit den vorhandenen Einträgen benötigte Dinge "
+    "vor — keine Doppelungen mit bereits vorhandenen Einträgen. Antworte "
+    "AUSSCHLIESSLICH mit einem JSON-Array aus Strings, max. 8 Vorschläge, "
+    "auf Deutsch, ohne Markdown, ohne weiteren Text. "
+    'Beispiel: ["Salz", "Pfeffer", "Olivenöl"].'
+)
+
+
+@router.post("/{list_id}/ai/missing-items")
+async def post_ai_missing_items(
+    list_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        lst, _is_owner, _perm = await get_list_for_user(db, list_id, user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+    items_text = "\n".join(f"- {i.text}" for i in lst.items) or "(leer)"
+    type_label = {
+        ListType.SHOPPING: "Einkaufsliste",
+        ListType.PACKING: "Packliste",
+        ListType.CHECKLIST: "Checkliste",
+        ListType.CUSTOM: "Liste",
+    }.get(lst.type, "Liste")
+
+    user_prompt = (
+        f"Listentyp: {type_label}\n"
+        f"Titel: {lst.title}\n"
+        f"Bisherige Einträge:\n{items_text}\n\n"
+        f"Welche typisch dazugehörigen Dinge fehlen?"
+    )
+    try:
+        raw = await call_text(
+            user_prompt, system=_AI_MISSING_SYSTEM, json_mode=True, temperature=0.3,
+        )
+    except OllamaError as e:
+        raise HTTPException(status_code=e.status, detail=e.message)
+
+    try:
+        parsed = parse_llm_json(raw)
+    except _json.JSONDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="KI-Antwort konnte nicht gelesen werden",
+        )
+    if not isinstance(parsed, list):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="KI-Antwort hat unerwartetes Format",
+        )
+
+    # Filter strings only, drop empties, dedupe vs. existing items.
+    existing_lower = {i.text.strip().lower() for i in lst.items}
+    out: list[dict] = []
+    seen: set[str] = set()
+    for entry in parsed:
+        if not isinstance(entry, str):
+            continue
+        text = entry.strip()
+        if not text or text.lower() in existing_lower or text.lower() in seen:
+            continue
+        seen.add(text.lower())
+        out.append({"text": text})
+        if len(out) >= 8:
+            break
+    return ok(out)
+
+
+# ---------- Feature 4: Generate list from goal ----------
+
+class _AiGenerateListRequest(_BaseModel):
+    type: ListType
+    goal: str = _Field(min_length=1, max_length=500)
+
+
+_AI_GENERATE_LIST_SYSTEM = (
+    "Du bist Listen-Generator. Aufgabe: Gib zu einem Ziel eine sinnvolle, "
+    "kompakte Liste zurück. Antworte AUSSCHLIESSLICH mit einem JSON-Objekt: "
+    '{"title": "kurzer Titel", "items": [{"text": "Eintrag", "category": "string oder null"}]}. '
+    "Auf Deutsch. Kein Markdown, kein Codeblock, kein zusätzlicher Text. "
+    "Maximal 30 Einträge. Bei CHECKLIST-Typ darfst du Einträge thematisch "
+    "in 3-6 Kategorien gruppieren (Feld category); bei anderen Typen lasse "
+    "category auf null."
+)
+
+
+@router.post("/ai/generate")
+async def post_ai_generate_list(
+    payload: _AiGenerateListRequest,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    type_label = {
+        ListType.SHOPPING: "Einkaufsliste",
+        ListType.PACKING: "Packliste",
+        ListType.CHECKLIST: "Checkliste",
+        ListType.CUSTOM: "Liste",
+    }[payload.type]
+
+    user_prompt = (
+        f"Typ: {type_label}\n"
+        f"Ziel: {payload.goal}\n\n"
+        f"Generiere eine passende Liste."
+    )
+    try:
+        raw = await call_text(
+            user_prompt,
+            system=_AI_GENERATE_LIST_SYSTEM,
+            json_mode=True,
+            temperature=0.4,
+        )
+    except OllamaError as e:
+        raise HTTPException(status_code=e.status, detail=e.message)
+
+    try:
+        parsed = parse_llm_json(raw)
+    except _json.JSONDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="KI-Antwort konnte nicht gelesen werden",
+        )
+    if not isinstance(parsed, dict):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="KI-Antwort hat unerwartetes Format",
+        )
+
+    title = str(parsed.get("title") or payload.goal)[:200]
+    raw_items = parsed.get("items", [])
+    out_items: list[dict] = []
+    seen: set[str] = set()
+    if isinstance(raw_items, list):
+        for entry in raw_items:
+            if isinstance(entry, str):
+                entry = {"text": entry, "category": None}
+            if not isinstance(entry, dict):
+                continue
+            text = str(entry.get("text") or "").strip()
+            if not text or text.lower() in seen:
+                continue
+            seen.add(text.lower())
+            cat = entry.get("category")
+            cat = str(cat).strip()[:64] if cat else None
+            out_items.append({"text": text, "category": cat or None})
+            if len(out_items) >= 30:
+                break
+
+    return ok({"title": title, "items": out_items})

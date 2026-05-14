@@ -16,7 +16,8 @@ import { CATEGORY_LABEL } from '@/components/recipes/RecipeCard';
 import { UnitSelect } from '@/components/UnitSelect';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
-import { ImagePlus, Loader2, Trash2, Upload } from 'lucide-react';
+import { ImagePlus, Loader2, Sparkles, Trash2, Upload } from 'lucide-react';
+import { AiSuggestionModal } from '@/components/AiSuggestionModal';
 
 const CATEGORIES: RecipeCategory[] = ['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK', 'DESSERT', 'DRINK', 'OTHER'];
 
@@ -53,6 +54,8 @@ export function RecipeEditPage() {
 
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
+  const [aiIngrOpen, setAiIngrOpen] = useState(false);
+  const [aiStepsOpen, setAiStepsOpen] = useState(false);
 
   const [title, setTitle] = useState(prefill?.title ?? '');
   const [description, setDescription] = useState(prefill?.description ?? '');
@@ -455,9 +458,22 @@ export function RecipeEditPage() {
       <section className="card p-5">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold">Zutaten</h2>
-          <button type="button" className="btn-secondary text-sm" onClick={addIngredient}>
-            + Zutat
-          </button>
+          <div className="flex items-center gap-1">
+            {recipeId && (
+              <button
+                type="button"
+                onClick={() => setAiIngrOpen(true)}
+                title="Zutaten per KI ergänzen"
+                aria-label="Zutaten per KI ergänzen"
+                className="size-9 inline-flex items-center justify-center rounded-ctl text-muted hover:text-brand-700 hover:bg-page transition"
+              >
+                <Sparkles size={16} />
+              </button>
+            )}
+            <button type="button" className="btn-secondary text-sm" onClick={addIngredient}>
+              + Zutat
+            </button>
+          </div>
         </div>
         {ingredients.length === 0 ? (
           <p className="text-sm text-muted/70">Noch keine Zutaten.</p>
@@ -541,9 +557,22 @@ export function RecipeEditPage() {
       <section className="card p-5">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold">Schritte</h2>
-          <button type="button" className="btn-secondary text-sm" onClick={addStep}>
-            + Schritt
-          </button>
+          <div className="flex items-center gap-1">
+            {recipeId && (
+              <button
+                type="button"
+                onClick={() => setAiStepsOpen(true)}
+                title="Schritte per KI ergänzen"
+                aria-label="Schritte per KI ergänzen"
+                className="size-9 inline-flex items-center justify-center rounded-ctl text-muted hover:text-brand-700 hover:bg-page transition"
+              >
+                <Sparkles size={16} />
+              </button>
+            )}
+            <button type="button" className="btn-secondary text-sm" onClick={addStep}>
+              + Schritt
+            </button>
+          </div>
         </div>
         {steps.length === 0 ? (
           <p className="text-sm text-muted/70">Noch keine Schritte.</p>
@@ -584,6 +613,96 @@ export function RecipeEditPage() {
           {saving ? 'Speichern…' : 'Speichern'}
         </button>
       </div>
+
+      {/* AI assist modals — Feature 1. Mounted only for existing recipes
+          (the API needs an id; the section header buttons are also gated). */}
+      {recipeId && (
+        <>
+          <AiSuggestionModal<{ name: string; quantity: number | null; unit: string | null }>
+            open={aiIngrOpen}
+            onClose={() => setAiIngrOpen(false)}
+            title="Zutaten ergänzen"
+            description="Beschreibe, was du ergänzen möchtest. Die KI schlägt passende Zutaten vor — du wählst aus."
+            promptPlaceholder='z. B. "noch Sachen für einen Salat"'
+            getKey={(it, i) => `${it.name}-${i}`}
+            renderItem={(it) => (
+              <span>
+                {it.name}
+                {it.quantity !== null && (
+                  <span className="text-muted">
+                    {' · '}
+                    {it.quantity} {it.unit ?? ''}
+                  </span>
+                )}
+              </span>
+            )}
+            fetchSuggestions={(req) => RecipesApi.aiSuggestIngredients(recipeId, req)}
+            onApply={(picked) => {
+              setIngredients((cur) => [
+                ...cur,
+                ...picked.map((p) => ({
+                  id: tempId(),
+                  persisted: false,
+                  name: p.name,
+                  quantity: p.quantity ?? null,
+                  unit: p.unit ?? null,
+                  calories_per_100g: null,
+                  protein_per_100g: null,
+                  carbs_per_100g: null,
+                  fat_per_100g: null,
+                })),
+              ]);
+              setAiIngrOpen(false);
+              toast.success(`${picked.length} Zutaten ergänzt`);
+            }}
+          />
+          <AiSuggestionModal<{ description: string; suggested_position: number | null }>
+            open={aiStepsOpen}
+            onClose={() => setAiStepsOpen(false)}
+            title="Schritte ergänzen"
+            description="Beschreibe, was an Zubereitungsschritten fehlen könnte."
+            promptPlaceholder='z. B. "noch das Anbraten der Zwiebeln"'
+            getKey={(it, i) => `${it.description.slice(0, 32)}-${i}`}
+            renderItem={(it) => (
+              <span>
+                {it.description}
+                {it.suggested_position !== null && (
+                  <span className="text-muted text-xs">
+                    {' · nach Schritt '}
+                    {Math.max(0, it.suggested_position - 1)}
+                  </span>
+                )}
+              </span>
+            )}
+            fetchSuggestions={(req) => RecipesApi.aiSuggestSteps(recipeId, req)}
+            onApply={(picked) => {
+              // Insert each new step at suggested_position (1-based) into the
+              // current step list. null/out-of-range → append at end.
+              setSteps((cur) => {
+                const next = [...cur];
+                // Sort suggestions by descending position so earlier inserts
+                // don't shift the indices we still need to use.
+                const sorted = [...picked].sort(
+                  (a, b) => (b.suggested_position ?? 9999) - (a.suggested_position ?? 9999),
+                );
+                for (const p of sorted) {
+                  const draft = { id: tempId(), persisted: false, description: p.description };
+                  const pos = p.suggested_position;
+                  if (pos === null || pos > next.length) {
+                    next.push(draft);
+                  } else {
+                    const insertAt = Math.max(0, pos - 1);
+                    next.splice(insertAt, 0, draft);
+                  }
+                }
+                return next;
+              });
+              setAiStepsOpen(false);
+              toast.success(`${picked.length} Schritte ergänzt`);
+            }}
+          />
+        </>
+      )}
     </form>
   );
 }

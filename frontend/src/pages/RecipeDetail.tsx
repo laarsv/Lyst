@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ChefHat, Copy, Pencil, ShoppingCart, Trash2 } from 'lucide-react';
+import { ChefHat, Copy, Loader2, Pencil, ShoppingCart, Sparkles, Trash2 } from 'lucide-react';
+import { Modal } from '@/components/Modal';
 import { RecipesApi } from '@/api/endpoints';
-import type { Recipe } from '@/types';
+import type { ImportedRecipe, Recipe } from '@/types';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
 import { CATEGORY_COLOR, CATEGORY_LABEL } from '@/components/recipes/RecipeCard';
@@ -22,6 +23,7 @@ export function RecipeDetailPage() {
   const [cookOpen, setCookOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [copyOpen, setCopyOpen] = useState(false);
+  const [variationOpen, setVariationOpen] = useState(false);
   const confirmDialog = useConfirm();
 
   useEffect(() => {
@@ -143,12 +145,22 @@ export function RecipeDetailPage() {
                 onClick={duplicate}
               />
               <IconAction
+                label="Variante (KI)"
+                icon={Sparkles}
+                onClick={() => setVariationOpen(true)}
+              />
+              <IconAction
                 label="Löschen"
                 icon={Trash2}
                 onClick={remove}
                 variant="danger"
               />
             </div>
+            <RecipeVariationModal
+              open={variationOpen}
+              onClose={() => setVariationOpen(false)}
+              recipe={recipe}
+            />
           </div>
         </div>
       </div>
@@ -233,3 +245,162 @@ function NutritionCard({ recipe }: { recipe: Recipe }) {
     </section>
   );
 }
+
+/** Feature 3: Recipe variation modal.
+ *
+ *  Two-phase: pick a preset (or type a custom request) → spinner → preview
+ *  with "Als neues Rezept speichern". Saving routes to RecipeEdit's create
+ *  form with the variation pre-filled via location state — same channel the
+ *  URL/photo importer already uses, so the user can tweak before persisting. */
+function RecipeVariationModal({
+  open,
+  onClose,
+  recipe,
+}: {
+  open: boolean;
+  onClose: () => void;
+  recipe: Recipe;
+}) {
+  const [request, setRequest] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [variant, setVariant] = useState<ImportedRecipe | null>(null);
+  const nav = useNavigate();
+
+  useEffect(() => {
+    if (!open) {
+      setRequest('');
+      setVariant(null);
+      setLoading(false);
+    }
+  }, [open]);
+
+  const run = async (text: string) => {
+    setLoading(true);
+    setVariant(null);
+    try {
+      const v = await RecipesApi.aiVariation(recipe.id, text);
+      setVariant(v);
+    } catch (e) {
+      toast.error(getApiError(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const PRESETS = [
+    'Vegetarisch machen',
+    'Für mehr Personen',
+    'Kalorienärmer',
+    'Schneller / einfacher',
+  ];
+
+  const saveAsNew = () => {
+    if (!variant) return;
+    onClose();
+    // RecipeEdit reads `prefill` from location.state — the same channel
+    // ImportRecipeModal uses for URL/photo imports.
+    nav('/recipes/new', { state: { prefill: variant } });
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Variante (KI)" className="max-w-lg">
+      <div className="space-y-3">
+        {!variant && !loading && (
+          <>
+            <p className="text-sm text-muted">
+              Wähle eine Vorlage oder beschreibe deine eigene Variante.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+              {PRESETS.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => run(p)}
+                  className="text-sm text-left px-3 py-2 rounded-ctl border border-line hover:bg-page transition"
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (request.trim()) void run(request.trim());
+              }}
+              className="space-y-2 pt-1"
+            >
+              <textarea
+                className="input min-h-[64px] text-sm"
+                placeholder="Eigene Variante beschreiben…"
+                value={request}
+                onChange={(e) => setRequest(e.target.value)}
+              />
+              <div className="flex justify-end gap-2">
+                <button type="button" className="btn-secondary" onClick={onClose}>
+                  Abbrechen
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary inline-flex items-center gap-2"
+                  disabled={!request.trim()}
+                >
+                  <Sparkles size={14} /> Variante erzeugen
+                </button>
+              </div>
+            </form>
+          </>
+        )}
+
+        {loading && (
+          <div className="flex items-center gap-2 text-sm text-muted py-4">
+            <Loader2 size={16} className="animate-spin" />
+            <span>KI denkt nach…</span>
+          </div>
+        )}
+
+        {variant && (
+          <>
+            <div className="rounded-ctl border border-line p-3 max-h-72 overflow-auto">
+              <div className="font-semibold">{variant.title}</div>
+              {variant.description && (
+                <p className="text-sm text-muted mt-1">{variant.description}</p>
+              )}
+              <div className="text-xs text-muted mt-2">
+                {variant.servings ?? '?'} Portionen · {variant.ingredients.length} Zutaten
+                · {variant.steps.length} Schritte
+              </div>
+              <div className="mt-3">
+                <div className="text-[11px] uppercase tracking-wider text-muted mb-1">Zutaten</div>
+                <ul className="text-sm space-y-0.5">
+                  {variant.ingredients.slice(0, 12).map((i, idx) => (
+                    <li key={idx}>
+                      • {i.name}
+                      {i.quantity !== null && (
+                        <span className="text-muted">
+                          {' · '}
+                          {i.quantity} {i.unit ?? ''}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                  {variant.ingredients.length > 12 && (
+                    <li className="text-muted text-xs">… und {variant.ingredients.length - 12} weitere</li>
+                  )}
+                </ul>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button type="button" className="btn-secondary" onClick={onClose}>
+                Verwerfen
+              </button>
+              <button type="button" className="btn-primary" onClick={saveAsNew}>
+                Als neues Rezept speichern
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+

@@ -409,9 +409,10 @@ async def post_recipe_image(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    rec = await get_recipe(db, recipe_id, user.id)
-    if not rec:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recipe not found")
+    try:
+        rec = await get_recipe(db, recipe_id, user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
     if file.content_type not in ALLOWED_IMAGE_EXTS:
         raise HTTPException(
@@ -464,9 +465,10 @@ async def del_recipe_image(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    rec = await get_recipe(db, recipe_id, user.id)
-    if not rec:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recipe not found")
+    try:
+        rec = await get_recipe(db, recipe_id, user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     _delete_owned_image(rec.image_url)
     rec.image_url = None
     await db.commit()
@@ -543,3 +545,234 @@ async def post_copy_to_list(
             list_id=target.id, list_title=target.title, items_added=added
         ).model_dump()
     )
+
+
+# =============================================================================
+#  AI assist endpoints (Features 1 & 3)
+# =============================================================================
+#  All AI calls go through the centralised app/services/ollama.py so model,
+#  keep_alive, and timeout stay consistent with the rest of the app.
+
+import json as _json
+from pydantic import ValidationError as _ValidationError
+
+from app.schemas.recipe import (
+    AiAssistRequest,
+    AiSuggestedIngredient,
+    AiSuggestedStep,
+    AiVariationRequest,
+)
+from app.services.ai_service import parse_llm_json
+from app.services.ollama import OllamaError, call_text
+
+
+def _ingredient_lines(rec: Recipe) -> str:
+    """Compact one-line-per-ingredient catalog for AI prompts."""
+    parts: list[str] = []
+    for ing in rec.ingredients:
+        qty = ""
+        if ing.quantity is not None:
+            qty = f" ({ing.quantity} {ing.unit or ''})".rstrip()
+        parts.append(f"- {ing.name}{qty}")
+    return "\n".join(parts) if parts else "(noch keine)"
+
+
+def _step_lines(rec: Recipe) -> str:
+    if not rec.steps:
+        return "(noch keine)"
+    return "\n".join(f"{i + 1}. {s.description}" for i, s in enumerate(rec.steps))
+
+
+_AI_INGREDIENTS_SYSTEM = (
+    "Du erweiterst ein vorhandenes Rezept um zusätzliche Zutaten basierend auf "
+    "dem Wunsch der Nutzerin. Antworte AUSSCHLIESSLICH mit einem JSON-Array — "
+    "kein Markdown, kein Codeblock, kein einleitender Text. Schema pro Eintrag: "
+    '{"name": "string (auf Deutsch)", "quantity": Zahl oder null, "unit": "string oder null"}. '
+    "Schlage nur Zutaten vor, die noch nicht in der Liste sind."
+)
+
+_AI_STEPS_SYSTEM = (
+    "Du erweiterst ein vorhandenes Rezept um zusätzliche Zubereitungsschritte. "
+    "Antworte AUSSCHLIESSLICH mit einem JSON-Array — kein Markdown, kein Codeblock, "
+    "kein einleitender Text. Schema pro Eintrag: "
+    '{"description": "string (auf Deutsch)", "suggested_position": Zahl ab 1 (Position innerhalb der bestehenden Schritte) oder null}. '
+    "Wenn ein neuer Schritt nach Schritt 2 stehen soll, dann suggested_position=3. "
+    "Vor allen anderen → 1. Am Ende → null oder höher als Anzahl bestehender Schritte."
+)
+
+
+@router.post("/{recipe_id}/ai/suggest-ingredients")
+async def post_ai_suggest_ingredients(
+    recipe_id: int,
+    payload: AiAssistRequest,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        rec = await get_recipe(db, recipe_id, user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+    user_prompt = (
+        f"Rezept: {rec.title}\n"
+        f"Aktuelle Zutaten:\n{_ingredient_lines(rec)}\n\n"
+        f"Wunsch: {payload.request}\n\n"
+        f"Welche Zutaten würdest du dazu vorschlagen? Maximal 8 Vorschläge."
+    )
+    try:
+        raw = await call_text(
+            user_prompt, system=_AI_INGREDIENTS_SYSTEM, json_mode=True, temperature=0.3,
+        )
+    except OllamaError as e:
+        raise HTTPException(status_code=e.status, detail=e.message)
+
+    try:
+        parsed = parse_llm_json(raw)
+    except _json.JSONDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="KI-Antwort konnte nicht gelesen werden",
+        )
+    if not isinstance(parsed, list):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="KI-Antwort hat unerwartetes Format",
+        )
+
+    out: list[dict] = []
+    for entry in parsed[:8]:
+        try:
+            sug = AiSuggestedIngredient.model_validate(entry)
+        except _ValidationError:
+            continue
+        out.append(sug.model_dump())
+    return ok(out)
+
+
+@router.post("/{recipe_id}/ai/suggest-steps")
+async def post_ai_suggest_steps(
+    recipe_id: int,
+    payload: AiAssistRequest,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        rec = await get_recipe(db, recipe_id, user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+    user_prompt = (
+        f"Rezept: {rec.title}\n"
+        f"Zutaten:\n{_ingredient_lines(rec)}\n\n"
+        f"Aktuelle Schritte:\n{_step_lines(rec)}\n\n"
+        f"Wunsch: {payload.request}\n\n"
+        f"Welche zusätzlichen Schritte würdest du vorschlagen? Maximal 6 Vorschläge."
+    )
+    try:
+        raw = await call_text(
+            user_prompt, system=_AI_STEPS_SYSTEM, json_mode=True, temperature=0.3,
+        )
+    except OllamaError as e:
+        raise HTTPException(status_code=e.status, detail=e.message)
+
+    try:
+        parsed = parse_llm_json(raw)
+    except _json.JSONDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="KI-Antwort konnte nicht gelesen werden",
+        )
+    if not isinstance(parsed, list):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="KI-Antwort hat unerwartetes Format",
+        )
+
+    out: list[dict] = []
+    for entry in parsed[:6]:
+        try:
+            sug = AiSuggestedStep.model_validate(entry)
+        except _ValidationError:
+            continue
+        out.append(sug.model_dump())
+    return ok(out)
+
+
+# ---------- Feature 3: Recipe variations ----------
+
+from app.services.import_service import ImportedRecipe as _ImportedRecipe
+
+_AI_VARIATION_SYSTEM = (
+    "Du erstellst eine Variante eines bestehenden Rezepts gemäß Wunsch der "
+    "Nutzerin. Antworte AUSSCHLIESSLICH mit einem JSON-Objekt im folgenden "
+    "Schema — kein Markdown, kein Codeblock, kein einleitender Text:\n"
+    "{\n"
+    '  "title": "Titel der Variante (auf Deutsch)",\n'
+    '  "description": "kurze Beschreibung oder null",\n'
+    '  "servings": Zahl oder null,\n'
+    '  "prep_time_minutes": Zahl oder null,\n'
+    '  "cook_time_minutes": Zahl oder null,\n'
+    '  "category": eine von BREAKFAST/LUNCH/DINNER/SNACK/DESSERT/DRINK/OTHER,\n'
+    '  "ingredients": [{"name": "...", "quantity": Zahl oder null, "unit": "string oder null"}],\n'
+    '  "steps": [{"description": "...", "position": 1-basierte Zahl}]\n'
+    "}"
+)
+
+
+@router.post("/{recipe_id}/ai/variation")
+async def post_ai_variation(
+    recipe_id: int,
+    payload: AiVariationRequest,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        rec = await get_recipe(db, recipe_id, user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+    user_prompt = (
+        f"Original-Rezept:\n"
+        f"Titel: {rec.title}\n"
+        f"Portionen: {rec.servings}\n"
+        f"Beschreibung: {rec.description or '(keine)'}\n"
+        f"Zutaten:\n{_ingredient_lines(rec)}\n"
+        f"Schritte:\n{_step_lines(rec)}\n\n"
+        f"Wunsch: {payload.variation}\n\n"
+        f"Erstelle ein angepasstes Rezept."
+    )
+    try:
+        raw = await call_text(
+            user_prompt, system=_AI_VARIATION_SYSTEM, json_mode=True, temperature=0.4,
+        )
+    except OllamaError as e:
+        raise HTTPException(status_code=e.status, detail=e.message)
+
+    try:
+        parsed = parse_llm_json(raw)
+    except _json.JSONDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="KI-Antwort konnte nicht gelesen werden",
+        )
+    if not isinstance(parsed, dict):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="KI-Antwort hat unerwartetes Format",
+        )
+
+    # Renumber steps so client doesn't have to.
+    if isinstance(parsed.get("steps"), list):
+        for i, st in enumerate(parsed["steps"], start=1):
+            if isinstance(st, dict):
+                st["position"] = i
+
+    # Reuse the URL-importer's Pydantic validator — same JSON contract.
+    try:
+        validated = _ImportedRecipe.model_validate(parsed)
+    except _ValidationError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Variante hat unerwartetes Format",
+        )
+    return ok(validated.model_dump(mode="json"))

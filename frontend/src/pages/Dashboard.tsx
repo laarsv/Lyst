@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { ListsApi } from '@/api/endpoints';
+import { AiListsApi, ListsApi } from '@/api/endpoints';
 import type { ListSummary, ListType } from '@/types';
 import { Modal } from '@/components/Modal';
 import { ListCard } from '@/components/lists/ListCard';
@@ -9,7 +9,8 @@ import { useNavigate } from 'react-router-dom';
 import { PresetPicker } from '@/components/PresetPicker';
 import { DEFAULT_PRESET_FOR_TYPE } from '@/data/presets';
 import { useConfirm } from '@/components/Dialogs';
-import { Trash2 } from 'lucide-react';
+import { Loader2, Sparkles, Trash2 } from 'lucide-react';
+import type { AiGeneratedList } from '@/types';
 
 // Defaults below mirror DEFAULT_PRESET_FOR_TYPE so the type-card preview
 // matches what the list will look like on creation. Keep them in sync.
@@ -31,6 +32,7 @@ export function DashboardPage() {
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState<ListType | 'ALL'>('ALL');
   const [createOpen, setCreateOpen] = useState(false);
+  const [aiGenOpen, setAiGenOpen] = useState(false);
   const nav = useNavigate();
   const confirmDialog = useConfirm();
 
@@ -112,9 +114,20 @@ export function DashboardPage() {
           {mode === 'lists' ? 'Deine Listen' : 'Deine Vorlagen'}
         </h1>
         {mode === 'lists' && (
-          <button className="btn-primary" onClick={() => setCreateOpen(true)}>
-            + Neue Liste
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setAiGenOpen(true)}
+              title="Liste mit KI generieren"
+              aria-label="Liste mit KI generieren"
+              className="size-10 inline-flex items-center justify-center rounded-ctl border border-line text-muted hover:text-brand-700 hover:bg-page transition"
+            >
+              <Sparkles size={18} />
+            </button>
+            <button className="btn-primary" onClick={() => setCreateOpen(true)}>
+              + Neue Liste
+            </button>
+          </div>
         )}
       </div>
 
@@ -198,6 +211,16 @@ export function DashboardPage() {
         onCreated={(l) => {
           setLists((cur) => [l, ...cur]);
           setCreateOpen(false);
+        }}
+      />
+
+      <AiGenerateListModal
+        open={aiGenOpen}
+        onClose={() => setAiGenOpen(false)}
+        onCreated={(l) => {
+          setLists((cur) => [l, ...cur]);
+          setAiGenOpen(false);
+          nav(`/lists/${l.id}`);
         }}
       />
     </div>
@@ -363,6 +386,198 @@ function CreateListModal({
           </button>
         </div>
       </form>
+    </Modal>
+  );
+}
+
+/** Feature 4: Generate a list from a goal.
+ *
+ *  Picks a list type, takes a free-text goal, asks Ollama for an item set,
+ *  shows the preview, then on confirm: creates the list (with title + the
+ *  default preset for the type) and bulk-inserts the items. For CHECKLIST
+ *  the AI also returns category labels per item; we set those via PATCH on
+ *  each item after creation. */
+function AiGenerateListModal({
+  open,
+  onClose,
+  onCreated,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCreated: (l: ListSummary) => void;
+}) {
+  const [type, setType] = useState<ListType>('PACKING');
+  const [goal, setGoal] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [preview, setPreview] = useState<AiGeneratedList | null>(null);
+  const [confirming, setConfirming] = useState(false);
+
+  useEffect(() => {
+    if (!open) {
+      setGoal('');
+      setPreview(null);
+      setLoading(false);
+      setConfirming(false);
+    }
+  }, [open]);
+
+  const generate = async () => {
+    if (!goal.trim()) return;
+    setLoading(true);
+    setPreview(null);
+    try {
+      const r = await AiListsApi.generate(type, goal.trim());
+      setPreview(r);
+    } catch (e) {
+      toast.error(getApiError(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const confirm = async () => {
+    if (!preview) return;
+    setConfirming(true);
+    try {
+      const def = DEFAULT_PRESET_FOR_TYPE[type] ?? DEFAULT_PRESET_FOR_TYPE.CUSTOM;
+      // Step 1: create the list shell.
+      const list = await ListsApi.create({
+        title: preview.title,
+        type,
+        icon: def.emoji,
+        color: def.color,
+      });
+      // Step 2: bulk-add items. Categories (if any) are PATCHed in step 3.
+      // Lazy import to avoid the top-level import bloat.
+      const { ItemsApi } = await import('@/api/endpoints');
+      const created = await ItemsApi.bulkStructured(
+        list.id,
+        preview.items.map((i) => ({ text: i.text })),
+      );
+      // Step 3: apply categories from the AI for CHECKLIST type. PATCHed in
+      // a Promise.all so this stays under a second even on long lists.
+      if (type === 'CHECKLIST') {
+        await Promise.all(
+          created.map((it, i) => {
+            const cat = preview.items[i]?.category;
+            if (!cat) return Promise.resolve();
+            return ItemsApi.update(list.id, it.id, { category: cat });
+          }),
+        );
+      }
+      toast.success(`Liste „${list.title}" mit ${created.length} Einträgen angelegt`);
+      onCreated(list);
+    } catch (e) {
+      toast.error(getApiError(e));
+    } finally {
+      setConfirming(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Liste mit KI generieren" className="max-w-lg">
+      <div className="space-y-3">
+        {!preview && (
+          <>
+            <div>
+              <label className="label">Typ</label>
+              <div className="grid grid-cols-2 gap-2">
+                {TYPES.map((t) => (
+                  <button
+                    type="button"
+                    key={t.v}
+                    onClick={() => setType(t.v)}
+                    className={`p-2 rounded-xl border text-sm transition flex items-center gap-2 ${
+                      type === t.v ? 'border-brand bg-brand-50' : 'border-line hover:bg-page'
+                    }`}
+                  >
+                    <span className="text-lg">{t.icon}</span>
+                    <span className="font-medium">{t.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="label">Ziel</label>
+              <textarea
+                className="input min-h-[72px] text-sm"
+                placeholder='z. B. "3 Tage Wandern im Herbst" oder "Umzug in neue Wohnung"'
+                value={goal}
+                onChange={(e) => setGoal(e.target.value)}
+                disabled={loading}
+                autoFocus
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <button type="button" className="btn-secondary" onClick={onClose}>
+                Abbrechen
+              </button>
+              <button
+                type="button"
+                className="btn-primary inline-flex items-center gap-2"
+                disabled={!goal.trim() || loading}
+                onClick={generate}
+              >
+                {loading ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" /> Generiere…
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={14} /> Vorschlag erzeugen
+                  </>
+                )}
+              </button>
+            </div>
+          </>
+        )}
+
+        {preview && (
+          <>
+            <div className="rounded-ctl border border-line p-3 max-h-72 overflow-auto">
+              <div className="font-semibold mb-1">{preview.title}</div>
+              <div className="text-xs text-muted mb-2">
+                {preview.items.length} Einträge
+              </div>
+              <ul className="text-sm space-y-0.5">
+                {preview.items.map((it, idx) => (
+                  <li key={idx} className="flex items-baseline gap-2">
+                    <span className="text-muted">•</span>
+                    <span className="flex-1">{it.text}</span>
+                    {it.category && (
+                      <span className="text-[10px] text-muted bg-page px-1.5 py-0.5 rounded-full">
+                        {it.category}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="flex justify-between items-center gap-2">
+              <button
+                type="button"
+                className="text-xs text-muted hover:text-ink"
+                onClick={() => setPreview(null)}
+              >
+                ← Anderes Ziel
+              </button>
+              <div className="flex gap-2">
+                <button type="button" className="btn-secondary" onClick={onClose}>
+                  Verwerfen
+                </button>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={confirming || preview.items.length === 0}
+                  onClick={confirm}
+                >
+                  {confirming ? 'Lege an…' : 'Liste erstellen'}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
     </Modal>
   );
 }

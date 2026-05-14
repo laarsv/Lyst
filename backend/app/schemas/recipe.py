@@ -172,3 +172,28 @@ class SuggestionOut(BaseModel):
 
 class SuggestResponse(BaseModel):
     suggestions: list[SuggestionOut]
+
+
+# ---------- AI assist (Feature 1: ingredient/step suggestions) ----------
+
+class AiAssistRequest(BaseModel):
+    """Free-text request the user types in the AI suggestion modal."""
+    request: str = Field(min_length=1, max_length=500)
+
+
+class AiSuggestedIngredient(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    quantity: float | None = None
+    unit: str | None = Field(default=None, max_length=32)
+
+
+class AiSuggestedStep(BaseModel):
+    description: str = Field(min_length=1)
+    suggested_position: int | None = Field(default=None, ge=1)
+
+
+# ---------- AI variation (Feature 3) ----------
+
+class AiVariationRequest(BaseModel):
+    """The user's desired variation — preset string or free-form."""
+    variation: str = Field(min_length=1, max_length=500)
