@@ -651,6 +651,7 @@ function NoteList({
             <NoteCard
               key={n.id}
               note={n}
+              folder={folders.find((f) => f.id === n.folder_id) ?? null}
               onClick={() => onSelect(n)}
               onTogglePin={() => onTogglePin(n)}
               onToggleArchive={() => onToggleArchive(n)}
