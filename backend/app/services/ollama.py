@@ -18,7 +18,9 @@ before the first user request arrives.
 """
 from __future__ import annotations
 
+import json
 import logging
+import re
 from typing import Any
 
 import httpx
@@ -29,13 +31,54 @@ logger = logging.getLogger(__name__)
 
 
 class OllamaError(Exception):
-    """Wraps every failure mode (network, HTTP 4xx/5xx, model missing, timeout).
-    `status` is a sensible HTTP code callers can re-raise as HTTPException."""
+    """Wraps every failure mode (network, HTTP 4xx/5xx, model missing, timeout,
+    unparseable JSON after retry). `status` is a sensible HTTP code callers
+    can re-raise as HTTPException."""
 
     def __init__(self, status: int, message: str):
         super().__init__(message)
         self.status = status
         self.message = message
+
+
+# Strict appendix the retry pass tacks onto the system prompt when the
+# first response failed to parse. Models occasionally still emit prose
+# despite `format: "json"` — this re-anchors them.
+_RETRY_SYSTEM_SUFFIX = (
+    "\n\nAntworte AUSSCHLIESSLICH mit gültigem JSON. "
+    "Kein Markdown, keine Code-Blöcke, kein erklärender Text."
+)
+
+
+def extract_json(raw: str) -> Any:
+    """Strip ```json fences and surrounding prose, then json.loads.
+
+    Sequence:
+      1. Trim outer whitespace.
+      2. If the body is wrapped in ``` or ```json fences, strip them.
+      3. If it's still wrapped in prose ("Hier ist das JSON: { ... }"),
+         look for the first { or [ and the matching last } or ].
+      4. json.loads the result.
+
+    Raises `json.JSONDecodeError` on failure — the higher-level
+    `call_*_json` wrappers catch it, retry once, and translate the
+    second failure into an `OllamaError`."""
+    if not raw or not raw.strip():
+        raise json.JSONDecodeError("empty response", raw or "", 0)
+    s = raw.strip()
+    # Strip optional ``` / ```json fence wrapper.
+    if s.startswith("```"):
+        s = re.sub(r"^```(?:json|JSON)?\s*", "", s)
+        s = re.sub(r"\s*```\s*$", "", s)
+        s = s.strip()
+    # If the model wrapped the JSON in prose, find the first balanced-
+    # ish JSON-looking block. We don't try to be perfect — json.loads
+    # will reject anything malformed and fall through to the retry.
+    if s and s[0] not in {"{", "["}:
+        m = re.search(r"[\[\{][\s\S]*[\]\}]", s)
+        if m:
+            s = m.group(0)
+    return json.loads(s)
 
 
 def _coerce_keep_alive(raw: str) -> Any:
@@ -159,6 +202,129 @@ async def call_vision(
         images=[image_base64],
         timeout=timeout if timeout is not None else float(settings.OLLAMA_TIMEOUT_SECONDS),
     )
+
+
+# ---------- JSON helpers (with one retry) ----------
+#
+# The two `call_*_json` functions are the canonical way to ask Ollama for
+# structured data:
+#   1. Send the request with `format: "json"` so the model is constrained
+#      at the sampling level (Fix 1).
+#   2. Parse the response through `extract_json`, which strips fences and
+#      prose (Fix 2 — defence against models that ignore #1).
+#   3. On parse failure, retry ONCE with the same prompt plus a strict
+#      "JSON only" suffix on the system message (Fix 3). If THAT also
+#      fails, raise OllamaError(502, …) with a user-friendly message
+#      (Fix 4 — the frontend surfaces this verbatim with a retry button).
+#
+# Callers get the parsed value directly — no manual json.loads anywhere
+# else in the codebase.
+
+
+async def call_text_json(
+    prompt: str,
+    *,
+    system: str | None = None,
+    model: str | None = None,
+    temperature: float = 0.1,
+    max_tokens: int | None = None,
+    timeout: float | None = None,
+) -> Any:
+    """Like `call_text` with json_mode=True, plus extract_json + one retry."""
+    raw = await call_text(
+        prompt,
+        system=system,
+        model=model,
+        json_mode=True,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        timeout=timeout,
+    )
+    try:
+        return extract_json(raw)
+    except json.JSONDecodeError:
+        logger.warning(
+            "Ollama JSON parse failed (model=%s) — retrying with strict suffix. "
+            "First raw response (truncated): %s",
+            model or settings.OLLAMA_TEXT_MODEL,
+            raw[:500],
+        )
+    # Retry: stronger system prompt, same everything else.
+    raw = await call_text(
+        prompt,
+        system=(system or "") + _RETRY_SYSTEM_SUFFIX,
+        model=model,
+        json_mode=True,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        timeout=timeout,
+    )
+    try:
+        return extract_json(raw)
+    except json.JSONDecodeError as e:
+        logger.error(
+            "Ollama JSON parse failed twice (model=%s). Second raw response "
+            "(truncated): %s",
+            model or settings.OLLAMA_TEXT_MODEL,
+            raw[:500],
+        )
+        raise OllamaError(
+            502,
+            "Die KI-Antwort konnte nicht verarbeitet werden. Bitte erneut versuchen.",
+        ) from e
+
+
+async def call_vision_json(
+    prompt: str,
+    image_base64: str,
+    *,
+    system: str | None = None,
+    model: str | None = None,
+    temperature: float = 0.1,
+    max_tokens: int | None = None,
+    timeout: float | None = None,
+) -> Any:
+    """Like `call_vision` with json_mode=True, plus extract_json + one retry."""
+    raw = await call_vision(
+        prompt,
+        image_base64,
+        system=system,
+        model=model,
+        json_mode=True,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        timeout=timeout,
+    )
+    try:
+        return extract_json(raw)
+    except json.JSONDecodeError:
+        logger.warning(
+            "Ollama vision JSON parse failed — retrying with strict suffix. "
+            "First raw response (truncated): %s",
+            raw[:500],
+        )
+    raw = await call_vision(
+        prompt,
+        image_base64,
+        system=(system or "") + _RETRY_SYSTEM_SUFFIX,
+        model=model,
+        json_mode=True,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        timeout=timeout,
+    )
+    try:
+        return extract_json(raw)
+    except json.JSONDecodeError as e:
+        logger.error(
+            "Ollama vision JSON parse failed twice. Second raw response "
+            "(truncated): %s",
+            raw[:500],
+        )
+        raise OllamaError(
+            502,
+            "Die KI-Antwort konnte nicht verarbeitet werden. Bitte erneut versuchen.",
+        ) from e
 
 
 # ---------- Introspection: /api/tags and /api/ps ----------

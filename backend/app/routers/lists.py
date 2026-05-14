@@ -223,12 +223,10 @@ async def post_categorize(
 #  AI assist endpoints (Features 2 & 4)
 # =============================================================================
 
-import json as _json
 from pydantic import BaseModel as _BaseModel, Field as _Field, ValidationError as _ValidationError
 
 from app.models.list import List as ListModel, ListType
-from app.services.ai_service import parse_llm_json
-from app.services.ollama import OllamaError, call_text
+from app.services.ollama import OllamaError, call_text_json
 
 
 # ---------- Feature 2: "Fehlt was?" ----------
@@ -269,19 +267,11 @@ async def post_ai_missing_items(
         f"Welche typisch dazugehörigen Dinge fehlen?"
     )
     try:
-        raw = await call_text(
-            user_prompt, system=_AI_MISSING_SYSTEM, json_mode=True, temperature=0.3,
+        parsed = await call_text_json(
+            user_prompt, system=_AI_MISSING_SYSTEM, temperature=0.3,
         )
     except OllamaError as e:
         raise HTTPException(status_code=e.status, detail=e.message)
-
-    try:
-        parsed = parse_llm_json(raw)
-    except _json.JSONDecodeError:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="KI-Antwort konnte nicht gelesen werden",
-        )
     if not isinstance(parsed, list):
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -342,22 +332,13 @@ async def post_ai_generate_list(
         f"Generiere eine passende Liste."
     )
     try:
-        raw = await call_text(
+        parsed = await call_text_json(
             user_prompt,
             system=_AI_GENERATE_LIST_SYSTEM,
-            json_mode=True,
             temperature=0.4,
         )
     except OllamaError as e:
         raise HTTPException(status_code=e.status, detail=e.message)
-
-    try:
-        parsed = parse_llm_json(raw)
-    except _json.JSONDecodeError:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="KI-Antwort konnte nicht gelesen werden",
-        )
     if not isinstance(parsed, dict):
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -427,19 +408,11 @@ async def post_ai_find_duplicates(
     )
     user_prompt = f"Einträge:\n{catalog}\n\nWelche Einträge sind Doppelungen?"
     try:
-        raw = await call_text(
-            user_prompt, system=_AI_DUPLICATES_SYSTEM, json_mode=True, temperature=0.2,
+        parsed = await call_text_json(
+            user_prompt, system=_AI_DUPLICATES_SYSTEM, temperature=0.2,
         )
     except OllamaError as e:
         raise HTTPException(status_code=e.status, detail=e.message)
-
-    try:
-        parsed = parse_llm_json(raw)
-    except _json.JSONDecodeError:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="KI-Antwort konnte nicht gelesen werden",
-        )
     if not isinstance(parsed, list):
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

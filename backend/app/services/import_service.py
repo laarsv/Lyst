@@ -26,8 +26,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.services.ollama import (
     OllamaError,
-    call_text,
-    call_vision,
+    call_text_json,
+    call_vision_json,
     list_installed_models,
 )
 from app.services.settings_service import (
@@ -159,23 +159,10 @@ def _clean_text(html: str) -> str:
     return text
 
 
-def _extract_json(raw: str) -> dict[str, Any]:
-    """Strip markdown fences / prose around the JSON body, then parse."""
-    s = raw.strip()
-    # Strip ``` or ```json fences if present
-    if s.startswith("```"):
-        s = re.sub(r"^```(?:json)?\s*", "", s)
-        s = re.sub(r"\s*```$", "", s)
-    # If the model wrapped the JSON in prose, try to find the first {...} block
-    if not s.lstrip().startswith("{"):
-        match = re.search(r"\{[\s\S]*\}", s)
-        if match:
-            s = match.group(0)
-    try:
-        return json.loads(s)
-    except json.JSONDecodeError as e:
-        logger.error("LLM returned non-JSON response: %s", raw[:500])
-        raise RecipeImportError(500, "Rezept konnte nicht extrahiert werden") from e
+# `_extract_json` lives in app.services.ollama now (see `extract_json`),
+# along with `call_text_json` / `call_vision_json` that handle the parse +
+# one-shot retry for free. This module just maps OllamaError into the
+# local RecipeImportError shape.
 
 
 async def list_ollama_models() -> list[dict[str, Any]]:
@@ -242,12 +229,17 @@ async def _call_anthropic(text: str, model: str) -> dict[str, Any]:
         logger.error("Anthropic error: %s", e)
         raise RecipeImportError(502, "KI-Anbieter-Fehler") from e
 
-    # Concatenate any text blocks the model returned
+    # Concatenate any text blocks the model returned and parse via the
+    # shared forgiving extractor.
+    from app.services.ollama import extract_json as _extract
     parts: list[str] = []
     for block in response.content:
         if getattr(block, "type", None) == "text":
             parts.append(block.text)
-    return _extract_json("".join(parts))
+    try:
+        return _extract("".join(parts))
+    except json.JSONDecodeError as e:
+        raise RecipeImportError(500, "Rezept konnte nicht extrahiert werden") from e
 
 
 # ---------- Provider dispatch ----------
@@ -265,16 +257,16 @@ async def import_recipe_from_url(url: str, db: AsyncSession) -> ImportedRecipe:
     else:
         model = await get_ollama_model(db)
         try:
-            raw = await call_text(
+            parsed = await call_text_json(
                 text,
                 system=SYSTEM_PROMPT,
                 model=model,
-                json_mode=True,
                 temperature=0.1,
             )
         except OllamaError as e:
             raise _from_ollama_error(e) from e
-        parsed = _extract_json(raw)
+        if not isinstance(parsed, dict):
+            raise RecipeImportError(500, "Rezept konnte nicht extrahiert werden")
     parsed["source_url"] = url
 
     # Renumber step positions deterministically (LLM may skip or repeat)
@@ -300,20 +292,19 @@ async def import_recipe_from_image(image_bytes: bytes) -> ImportedRecipe:
     the same recipe JSON shape as the URL importer."""
     b64 = base64.b64encode(image_bytes).decode("ascii")
     try:
-        raw = await call_vision(
+        parsed = await call_vision_json(
             (
                 "Lies dieses Rezept-Bild und extrahiere es als strukturiertes Rezept. "
                 "Antworte ausschließlich im vorgegebenen JSON-Format."
             ),
             b64,
             system=PHOTO_SYSTEM_PROMPT,
-            json_mode=True,
             temperature=0.1,
         )
     except OllamaError as e:
         raise _from_ollama_error(e) from e
-
-    parsed = _extract_json(raw)
+    if not isinstance(parsed, dict):
+        raise RecipeImportError(500, "Rezept konnte nicht extrahiert werden")
     if isinstance(parsed.get("steps"), list):
         for i, step in enumerate(parsed["steps"], start=1):
             if isinstance(step, dict):
@@ -382,34 +373,26 @@ async def suggest_recipes_from_ingredients(
         except anthropic.APIError as e:
             raise RecipeImportError(502, f"KI-Anbieter-Fehler: {e}") from e
         raw = "".join(b.text for b in response.content if getattr(b, "type", None) == "text")
+        # Anthropic path: parse via the same forgiving extractor we use for
+        # Ollama. No retry available here — Anthropic obeys system prompts
+        # well enough that we don't loop.
+        from app.services.ollama import extract_json as _extract
+        try:
+            parsed = _extract(raw)
+        except json.JSONDecodeError as e:
+            raise RecipeImportError(500, "Vorschläge konnten nicht extrahiert werden") from e
     else:
         ollama_model = await get_ollama_model(db)
         try:
-            raw = await call_text(
+            parsed = await call_text_json(
                 user_text,
                 system=SUGGEST_SYSTEM_PROMPT,
                 model=ollama_model,
-                json_mode=True,
                 temperature=0.2,
             )
         except OllamaError as e:
             raise _from_ollama_error(e) from e
 
-    # The model may return either a JSON array directly or a wrapped object.
-    s = raw.strip()
-    if s.startswith("```"):
-        s = re.sub(r"^```(?:json)?\s*", "", s)
-        s = re.sub(r"\s*```$", "", s)
-    try:
-        parsed = json.loads(s)
-    except json.JSONDecodeError:
-        match = re.search(r"\[[\s\S]*\]", s)
-        if not match:
-            raise RecipeImportError(500, "Vorschläge konnten nicht extrahiert werden")
-        try:
-            parsed = json.loads(match.group(0))
-        except json.JSONDecodeError as e:
-            raise RecipeImportError(500, "Vorschläge konnten nicht extrahiert werden") from e
     if isinstance(parsed, dict):
         # Some models wrap the array in {"suggestions":[...]} despite the prompt
         for v in parsed.values():

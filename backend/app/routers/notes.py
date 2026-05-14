@@ -292,11 +292,9 @@ async def del_note(
 # All AI calls go through the centralised app/services/ollama.py so model,
 # keep_alive, and timeout stay consistent with the rest of the app.
 
-import json as _json
 from pydantic import ValidationError as _ValidationError
 
-from app.services.ai_service import parse_llm_json
-from app.services.ollama import OllamaError, call_text
+from app.services.ollama import OllamaError, call_text, call_text_json
 
 
 async def _load_owned_note(db: AsyncSession, note_id: int, owner_id: int) -> Note:
@@ -432,18 +430,11 @@ async def post_ai_note_tags(
         f"Aktuelle Tags: {', '.join(note.tags or []) or '(keine)'}"
     )
     try:
-        raw = await call_text(
-            user_prompt, system=_AI_NOTE_TAGS_SYSTEM, json_mode=True, temperature=0.3,
+        parsed = await call_text_json(
+            user_prompt, system=_AI_NOTE_TAGS_SYSTEM, temperature=0.3,
         )
     except OllamaError as e:
         raise HTTPException(status_code=e.status, detail=e.message)
-    try:
-        parsed = parse_llm_json(raw)
-    except _json.JSONDecodeError:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="KI-Antwort konnte nicht gelesen werden",
-        )
     if not isinstance(parsed, list):
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

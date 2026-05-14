@@ -592,7 +592,6 @@ async def post_copy_to_list(
 #  All AI calls go through the centralised app/services/ollama.py so model,
 #  keep_alive, and timeout stay consistent with the rest of the app.
 
-import json as _json
 from pydantic import ValidationError as _ValidationError
 
 from app.schemas.recipe import (
@@ -601,8 +600,7 @@ from app.schemas.recipe import (
     AiSuggestedStep,
     AiVariationRequest,
 )
-from app.services.ai_service import parse_llm_json
-from app.services.ollama import OllamaError, call_text
+from app.services.ollama import OllamaError, call_text_json
 
 
 def _ingredient_lines(rec: Recipe) -> str:
@@ -659,19 +657,11 @@ async def post_ai_suggest_ingredients(
         f"Welche Zutaten würdest du dazu vorschlagen? Maximal 8 Vorschläge."
     )
     try:
-        raw = await call_text(
-            user_prompt, system=_AI_INGREDIENTS_SYSTEM, json_mode=True, temperature=0.3,
+        parsed = await call_text_json(
+            user_prompt, system=_AI_INGREDIENTS_SYSTEM, temperature=0.3,
         )
     except OllamaError as e:
         raise HTTPException(status_code=e.status, detail=e.message)
-
-    try:
-        parsed = parse_llm_json(raw)
-    except _json.JSONDecodeError:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="KI-Antwort konnte nicht gelesen werden",
-        )
     if not isinstance(parsed, list):
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -708,19 +698,11 @@ async def post_ai_suggest_steps(
         f"Welche zusätzlichen Schritte würdest du vorschlagen? Maximal 6 Vorschläge."
     )
     try:
-        raw = await call_text(
-            user_prompt, system=_AI_STEPS_SYSTEM, json_mode=True, temperature=0.3,
+        parsed = await call_text_json(
+            user_prompt, system=_AI_STEPS_SYSTEM, temperature=0.3,
         )
     except OllamaError as e:
         raise HTTPException(status_code=e.status, detail=e.message)
-
-    try:
-        parsed = parse_llm_json(raw)
-    except _json.JSONDecodeError:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="KI-Antwort konnte nicht gelesen werden",
-        )
     if not isinstance(parsed, list):
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -781,19 +763,11 @@ async def post_ai_variation(
         f"Erstelle ein angepasstes Rezept."
     )
     try:
-        raw = await call_text(
-            user_prompt, system=_AI_VARIATION_SYSTEM, json_mode=True, temperature=0.4,
+        parsed = await call_text_json(
+            user_prompt, system=_AI_VARIATION_SYSTEM, temperature=0.4,
         )
     except OllamaError as e:
         raise HTTPException(status_code=e.status, detail=e.message)
-
-    try:
-        parsed = parse_llm_json(raw)
-    except _json.JSONDecodeError:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="KI-Antwort konnte nicht gelesen werden",
-        )
     if not isinstance(parsed, dict):
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -845,18 +819,11 @@ async def post_ai_recipe_tags(
         f"Aktuelle Tags: {', '.join(rec.tags or []) or '(keine)'}"
     )
     try:
-        raw = await call_text(
-            user_prompt, system=_AI_RECIPE_TAGS_SYSTEM, json_mode=True, temperature=0.3,
+        parsed = await call_text_json(
+            user_prompt, system=_AI_RECIPE_TAGS_SYSTEM, temperature=0.3,
         )
     except OllamaError as e:
         raise HTTPException(status_code=e.status, detail=e.message)
-    try:
-        parsed = parse_llm_json(raw)
-    except _json.JSONDecodeError:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="KI-Antwort konnte nicht gelesen werden",
-        )
     if not isinstance(parsed, list):
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
