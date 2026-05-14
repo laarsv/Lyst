@@ -6,12 +6,16 @@ import { ListCard } from '@/components/lists/ListCard';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
 import { useNavigate } from 'react-router-dom';
+import { PresetPicker } from '@/components/PresetPicker';
+import { DEFAULT_PRESET_FOR_TYPE } from '@/data/presets';
 
+// Defaults below mirror DEFAULT_PRESET_FOR_TYPE so the type-card preview
+// matches what the list will look like on creation. Keep them in sync.
 const TYPES: { v: ListType; label: string; icon: string; color: string }[] = [
   { v: 'SHOPPING', label: 'Einkauf', icon: '🛒', color: '#00c896' },
-  { v: 'PACKING', label: 'Packliste', icon: '🧳', color: '#f59e0b' },
-  { v: 'CHECKLIST', label: 'Checkliste', icon: '✅', color: '#1a1a1a' },
-  { v: 'CUSTOM', label: 'Eigene', icon: '📋', color: '#888884' },
+  { v: 'PACKING', label: 'Packliste', icon: '🎒', color: '#2e7d6b' },
+  { v: 'CHECKLIST', label: 'Checkliste', icon: '✅', color: '#00c896' },
+  { v: 'CUSTOM', label: 'Eigene', icon: '📋', color: '#5e7a8a' },
 ];
 
 export function DashboardPage() {
@@ -109,8 +113,10 @@ function CreateListModal({
 }) {
   const [title, setTitle] = useState('');
   const [type, setType] = useState<ListType>('SHOPPING');
-  const [icon, setIcon] = useState('🛒');
-  const [color, setColor] = useState('#00c896');
+  // Seed icon/color from the same preset table the picker uses, so the
+  // initial trigger button matches the preview circle inside the picker.
+  const [icon, setIcon] = useState(DEFAULT_PRESET_FOR_TYPE.SHOPPING.emoji);
+  const [color, setColor] = useState(DEFAULT_PRESET_FOR_TYPE.SHOPPING.color);
   const [loading, setLoading] = useState(false);
   const nav = useNavigate();
 
@@ -152,8 +158,14 @@ function CreateListModal({
                 key={t.v}
                 onClick={() => {
                   setType(t.v);
-                  setIcon(t.icon);
-                  setColor(t.color);
+                  // Reseed the preset to the per-type default. Spec calls
+                  // for SHOPPING → 🛒/#00c896, PACKING → 🎒/#2e7d6b,
+                  // CHECKLIST → ✅/#00c896, CUSTOM → 📋/#5e7a8a.
+                  const def = DEFAULT_PRESET_FOR_TYPE[t.v];
+                  if (def) {
+                    setIcon(def.emoji);
+                    setColor(def.color);
+                  }
                 }}
                 className={`p-3 rounded-xl border text-left transition ${
                   type === t.v ? 'border-brand bg-brand-50' : 'border-line hover:bg-page'
@@ -165,19 +177,20 @@ function CreateListModal({
             ))}
           </div>
         </div>
-        <div className="flex gap-2 items-end">
-          <div className="flex-1">
-            <label className="label">Emoji</label>
-            <input className="input" value={icon} onChange={(e) => setIcon(e.target.value)} maxLength={4} />
-          </div>
-          <div>
-            <label className="label">Farbe</label>
-            <input
-              type="color"
-              className="h-[42px] w-16 rounded-xl border border-line cursor-pointer"
-              value={color}
-              onChange={(e) => setColor(e.target.value)}
+        <div>
+          <label className="label">Symbol &amp; Farbe</label>
+          <div className="flex items-center gap-3">
+            <PresetPicker
+              emoji={icon}
+              color={color}
+              onChange={({ emoji, color }) => {
+                setIcon(emoji);
+                setColor(color);
+              }}
             />
+            <span className="text-xs text-muted">
+              Tippen, um aus den Vorlagen zu wählen oder eigenes Emoji / eigene Farbe zu setzen.
+            </span>
           </div>
         </div>
         <div className="flex justify-end gap-2 pt-2">

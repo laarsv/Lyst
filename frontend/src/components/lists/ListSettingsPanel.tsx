@@ -9,6 +9,7 @@ import { HistoryPanel } from '@/components/lists/HistoryPanel';
 import { toast } from '@/components/Toast';
 import { useConfirm } from '@/components/Dialogs';
 import { getApiError } from '@/api/client';
+import { PresetPicker } from '@/components/PresetPicker';
 
 interface Props {
   open: boolean;
@@ -168,6 +169,26 @@ function ListDetailsSection({
     if (title.trim() && title !== list.title) void saveField('title', { title: title.trim() });
   };
 
+  // PresetPicker fires onChange on every preset click and on every keystroke
+  // in the custom-emoji input — debounce the autosave so picking a preset
+  // sends one PATCH (both fields) and typing a custom emoji coalesces into
+  // one PATCH instead of one per keystroke. The props-sync effect above
+  // resets local state when the server confirms, so the diff is always
+  // against the latest known server values.
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      const curIcon = list.icon ?? '';
+      const curColor = list.color ?? '#00c896';
+      const patch: Parameters<typeof ListsApi.update>[1] = {};
+      if (icon !== curIcon) patch.icon = icon;
+      if (color !== curColor) patch.color = color;
+      if (Object.keys(patch).length === 0) return;
+      void saveField('preset', patch);
+    }, 600);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [icon, color]);
+
   return (
     <div className="card p-4 space-y-3">
       <div>
@@ -183,30 +204,20 @@ function ListDetailsSection({
           disabled={savingField === 'title'}
         />
       </div>
-      <div className="flex gap-2 items-end">
-        <div className="flex-1">
-          <label className="label">Emoji</label>
-          <input
-            className="input"
-            value={icon}
-            maxLength={4}
-            onChange={(e) => setIcon(e.target.value)}
-            onBlur={() => {
-              if ((icon || null) !== (list.icon ?? null)) void saveField('icon', { icon });
+      <div>
+        <label className="label">Symbol &amp; Farbe</label>
+        <div className="flex items-center gap-3">
+          <PresetPicker
+            emoji={icon}
+            color={color}
+            onChange={({ emoji, color }) => {
+              setIcon(emoji);
+              setColor(color);
             }}
           />
-        </div>
-        <div>
-          <label className="label">Farbe</label>
-          <input
-            type="color"
-            className="h-[42px] w-16 rounded-xl border border-line cursor-pointer"
-            value={color}
-            onChange={(e) => setColor(e.target.value)}
-            onBlur={() => {
-              if (color !== (list.color ?? '#00c896')) void saveField('color', { color });
-            }}
-          />
+          <span className="text-xs text-muted">
+            {savingField === 'preset' ? 'Speichert…' : 'Tippen, um Symbol oder Farbe zu ändern.'}
+          </span>
         </div>
       </div>
       <div>

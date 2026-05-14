@@ -32,9 +32,10 @@ build/
 *.sqlite3
 
 # --- Self-hosted runtime data (kept outside the repo) ---
+# Anchored at root so source dirs like frontend/src/data/ aren't matched.
 /opt/appdata/
-data/
-backups/
+/data/
+/backups/
 
 # --- OS / editor ---
 .DS_Store
