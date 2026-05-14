@@ -5,7 +5,6 @@ import { ResetPasswordPage } from '@/pages/ResetPassword';
 import { AcceptInvitePage } from '@/pages/AcceptInvite';
 import { DashboardPage } from '@/pages/Dashboard';
 import { ListDetailPage } from '@/pages/ListDetail';
-import { TemplatesPage } from '@/pages/Templates';
 import { NotesPage } from '@/pages/Notes';
 import { RecipesPage } from '@/pages/Recipes';
 import { RecipeDetailPage } from '@/pages/RecipeDetail';
@@ -44,7 +43,6 @@ export default function App() {
         >
           <Route path="/" element={<DashboardPage />} />
           <Route path="/lists/:id" element={<ListDetailPage />} />
-          <Route path="/templates" element={<TemplatesPage />} />
           <Route path="/notes" element={<NotesPage />} />
           <Route path="/recipes" element={<RecipesPage />} />
           <Route path="/recipes/new" element={<RecipeEditPage />} />

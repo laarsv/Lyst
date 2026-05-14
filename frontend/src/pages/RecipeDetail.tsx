@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
+import { ChefHat, Copy, Pencil, ShoppingCart, Trash2 } from 'lucide-react';
 import { RecipesApi } from '@/api/endpoints';
 import type { Recipe } from '@/types';
 import { toast } from '@/components/Toast';
@@ -9,6 +10,7 @@ import { CopyToListModal } from '@/components/recipes/CopyToListModal';
 import { CookMode } from '@/components/recipes/CookMode';
 import { useConfirm } from '@/components/Dialogs';
 import { BackLink } from '@/components/BackLink';
+import { IconAction } from '@/components/IconAction';
 import { invalidateFresh } from '@/hooks/useFreshOnMount';
 import { fmtQty } from '@/lib/format';
 
@@ -114,14 +116,38 @@ export function RecipeDetailPage() {
                 </a>
               )}
             </div>
-            <div className="flex flex-wrap gap-2">
-              <button className="btn-primary" onClick={() => setCookOpen(true)} disabled={recipe.steps.length === 0}>
-                Kochen starten
-              </button>
-              <button className="btn-secondary" onClick={() => setCopyOpen(true)}>Zu Einkaufsliste</button>
-              <Link to={`/recipes/${recipe.id}/edit`} className="btn-secondary">Bearbeiten</Link>
-              <button className="btn-secondary" onClick={duplicate}>Duplizieren</button>
-              <button className="btn-ghost text-danger" onClick={remove}>Löschen</button>
+            {/* Action row — icon-only to match the list-detail page. Kochen
+                starten stays slightly more prominent (filled brand colour)
+                because it's the primary action on this page. */}
+            <div className="flex flex-wrap gap-1.5">
+              <IconAction
+                label="Kochen starten"
+                icon={ChefHat}
+                onClick={() => setCookOpen(true)}
+                variant="primary"
+                disabled={recipe.steps.length === 0}
+              />
+              <IconAction
+                label="Zu Einkaufsliste hinzufügen"
+                icon={ShoppingCart}
+                onClick={() => setCopyOpen(true)}
+              />
+              <IconAction
+                label="Bearbeiten"
+                icon={Pencil}
+                onClick={() => nav(`/recipes/${recipe.id}/edit`)}
+              />
+              <IconAction
+                label="Duplizieren"
+                icon={Copy}
+                onClick={duplicate}
+              />
+              <IconAction
+                label="Löschen"
+                icon={Trash2}
+                onClick={remove}
+                variant="danger"
+              />
             </div>
           </div>
         </div>

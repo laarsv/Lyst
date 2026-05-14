@@ -21,6 +21,7 @@ import { useListWebSocket } from '@/hooks/useListWebSocket';
 import { LiveIndicator } from '@/components/LiveIndicator';
 import { useConfirm, usePrompt } from '@/components/Dialogs';
 import { BackLink } from '@/components/BackLink';
+import { IconAction } from '@/components/IconAction';
 import { SaveIndicator, useSaveIndicator } from '@/components/SaveIndicator';
 import { invalidateFresh } from '@/hooks/useFreshOnMount';
 import { formatPreview, hasParse, parseItem } from '@/utils/parseItemInput';
@@ -569,33 +570,8 @@ function ParsePreview({ raw }: { raw: string }) {
   );
 }
 
-// ---------- Icon-only action button ----------
-
-function IconAction({
-  label,
-  icon: Icon,
-  onClick,
-  variant,
-}: {
-  label: string;
-  icon: LucideIcon;
-  onClick: () => void;
-  variant?: 'danger';
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={label}
-      aria-label={label}
-      className={`size-10 inline-flex items-center justify-center rounded-ctl border border-line bg-transparent transition hover:bg-page ${
-        variant === 'danger' ? 'text-danger hover:text-danger' : 'text-ink'
-      }`}
-    >
-      <Icon size={18} />
-    </button>
-  );
-}
+// IconAction now lives in @/components/IconAction; both ListDetail and
+// RecipeDetail import the same shared component so they don't drift.
 
 // ---------- Category-grouped item list (read-only DnD, sort by category) ----------
 
