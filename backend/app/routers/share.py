@@ -141,3 +141,74 @@ async def del_collaborator(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     return ok({"message": "Removed"})
+
+
+# =============================================================================
+#  Public recipe + recipe-book views (no auth)
+# =============================================================================
+#
+# Mounted on the same `share` router so all public surfaces share a prefix.
+# Read-only — no edit / delete / collab routes here.
+
+from app.schemas.recipe import (
+    IngredientOut as _IngredientOut,
+    PublicRecipe,
+    PublicRecipeBook,
+    PublicRecipeBookEntry,
+    StepOut as _StepOut,
+)
+from app.services.recipe_service import get_public_book, get_public_recipe
+
+
+@router.get("/share/recipe/{token}")
+async def public_recipe(token: str, db: AsyncSession = Depends(get_db)):
+    rec = await get_public_recipe(db, token)
+    if not rec:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    return ok(
+        PublicRecipe(
+            title=rec.title,
+            description=rec.description,
+            servings=rec.servings,
+            prep_time_minutes=rec.prep_time_minutes,
+            cook_time_minutes=rec.cook_time_minutes,
+            image_url=rec.image_url,
+            source_url=rec.source_url,
+            tags=list(rec.tags or []),
+            updated_at=rec.updated_at,
+            ingredients=[
+                _IngredientOut.model_validate(i)
+                for i in sorted(rec.ingredients, key=lambda x: x.position)
+            ],
+            steps=[
+                _StepOut.model_validate(s)
+                for s in sorted(rec.steps, key=lambda x: x.position)
+            ],
+        ).model_dump(mode="json")
+    )
+
+
+@router.get("/share/recipe-book/{token}")
+async def public_recipe_book(token: str, db: AsyncSession = Depends(get_db)):
+    result = await get_public_book(db, token)
+    if not result:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    user, rows = result
+    return ok(
+        PublicRecipeBook(
+            owner_name=user.name,
+            recipes=[
+                PublicRecipeBookEntry.model_validate(r).model_copy(
+                    update={
+                        "ingredient_count": ic,
+                        # Surface per-recipe tokens only when that recipe is
+                        # also share-enabled — otherwise the deep-link 404s
+                        # and the user gets a confusing experience. Card stays
+                        # un-clickable in that case (frontend handles it).
+                        "share_token": r.share_token if r.share_enabled else None,
+                    }
+                )
+                for r, ic in rows
+            ],
+        ).model_dump(mode="json")
+    )

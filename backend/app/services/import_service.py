@@ -24,7 +24,6 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.models.recipe import RecipeCategory
 from app.services.ollama import (
     OllamaError,
     call_text,
@@ -52,7 +51,7 @@ SYSTEM_PROMPT = """You are a recipe extraction assistant. The user will give you
   "servings": integer or null,
   "prep_time_minutes": integer or null,
   "cook_time_minutes": integer or null,
-  "category": one of BREAKFAST/LUNCH/DINNER/SNACK/DESSERT/DRINK/OTHER,
+  "tags": ["short German tag", ...] (e.g. "frühstück", "vegetarisch", "schnell"; empty array if unsure),
   "ingredients": [
     { "name": "string", "quantity": number or null, "unit": "string or null" }
   ],
@@ -60,7 +59,7 @@ SYSTEM_PROMPT = """You are a recipe extraction assistant. The user will give you
     { "description": "string", "position": integer }
   ]
 }
-If a field cannot be determined, use null. Always return raw JSON only."""
+If a field cannot be determined, use null (or [] for tags). Always return raw JSON only."""
 
 
 # ---------- Pydantic response model ----------
@@ -82,24 +81,26 @@ class ImportedRecipe(BaseModel):
     servings: int | None = Field(default=None, ge=1, le=999)
     prep_time_minutes: int | None = Field(default=None, ge=0)
     cook_time_minutes: int | None = Field(default=None, ge=0)
-    category: RecipeCategory = RecipeCategory.OTHER
+    # Categorisation moved from a fixed enum to free-form tags in
+    # alembic 0011 — the URL importer asks the LLM for short German tag
+    # words; the user can edit them before saving.
+    tags: list[str] = Field(default_factory=list)
     source_url: str | None = None
     ingredients: list[ImportedIngredient] = Field(default_factory=list)
     steps: list[ImportedStep] = Field(default_factory=list)
 
-    @field_validator("category", mode="before")
+    @field_validator("tags", mode="before")
     @classmethod
-    def _coerce_category(cls, v: Any) -> Any:
-        """LLMs sometimes return lowercase or unrelated values. Normalize."""
-        if v is None:
-            return RecipeCategory.OTHER
-        if isinstance(v, RecipeCategory):
-            return v
-        upper = str(v).strip().upper()
-        try:
-            return RecipeCategory(upper)
-        except ValueError:
-            return RecipeCategory.OTHER
+    def _coerce_tags(cls, v: Any) -> Any:
+        """LLMs occasionally return a single string, null, or a comma-
+        separated value where we expect a list. Be forgiving."""
+        if v is None or v == "":
+            return []
+        if isinstance(v, str):
+            return [t.strip().lstrip("#") for t in v.split(",") if t.strip()]
+        if isinstance(v, list):
+            return [str(t).strip().lstrip("#") for t in v if str(t).strip()]
+        return []
 
 
 # ---------- Pipeline ----------

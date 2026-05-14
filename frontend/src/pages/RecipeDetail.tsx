@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ChefHat, Copy, Loader2, Pencil, ShoppingCart, Sparkles, Trash2 } from 'lucide-react';
+import { ChefHat, Copy, Loader2, Pencil, Share2, ShoppingCart, Sparkles, Trash2 } from 'lucide-react';
 import { Modal } from '@/components/Modal';
+import { ShareRecipePanel } from '@/components/recipes/ShareRecipePanel';
 import { RecipesApi } from '@/api/endpoints';
 import type { ImportedRecipe, Recipe } from '@/types';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
-import { CATEGORY_COLOR, CATEGORY_LABEL } from '@/components/recipes/RecipeCard';
 import { CopyToListModal } from '@/components/recipes/CopyToListModal';
 import { CookMode } from '@/components/recipes/CookMode';
 import { useConfirm } from '@/components/Dialogs';
@@ -24,6 +24,7 @@ export function RecipeDetailPage() {
   const [loading, setLoading] = useState(true);
   const [copyOpen, setCopyOpen] = useState(false);
   const [variationOpen, setVariationOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const confirmDialog = useConfirm();
 
   useEffect(() => {
@@ -89,9 +90,6 @@ export function RecipeDetailPage() {
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-2xl font-semibold">{recipe.title}</h1>
-                <span className={`text-xs px-2 py-0.5 rounded-full ${CATEGORY_COLOR[recipe.category]}`}>
-                  {CATEGORY_LABEL[recipe.category]}
-                </span>
               </div>
               {recipe.description && <p className="text-muted mt-2">{recipe.description}</p>}
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted mt-3">
@@ -150,12 +148,24 @@ export function RecipeDetailPage() {
                 onClick={() => setVariationOpen(true)}
               />
               <IconAction
+                label={recipe.share_enabled ? 'Teilen (aktiv)' : 'Teilen'}
+                icon={Share2}
+                onClick={() => setShareOpen(true)}
+                variant={recipe.share_enabled ? 'primary' : 'default'}
+              />
+              <IconAction
                 label="Löschen"
                 icon={Trash2}
                 onClick={remove}
                 variant="danger"
               />
             </div>
+            <ShareRecipePanel
+              open={shareOpen}
+              onClose={() => setShareOpen(false)}
+              recipe={recipe}
+              onUpdate={(patch) => setRecipe((cur) => (cur ? { ...cur, ...patch } : cur))}
+            />
             <RecipeVariationModal
               open={variationOpen}
               onClose={() => setVariationOpen(false)}

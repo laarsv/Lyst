@@ -12,6 +12,8 @@ import { RecipeEditPage } from '@/pages/RecipeEdit';
 import { MealPlannerPage } from '@/pages/MealPlanner';
 import { SettingsPage } from '@/pages/Settings';
 import { PublicSharePage } from '@/pages/PublicShare';
+import { PublicRecipePage } from '@/pages/PublicRecipe';
+import { PublicRecipeBookPage } from '@/pages/PublicRecipeBook';
 import { AdminUsersPage } from '@/pages/admin/AdminUsers';
 import { AdminSettingsPage } from '@/pages/admin/AdminSettings';
 import { AppShell } from '@/components/AppShell';
@@ -33,6 +35,8 @@ export default function App() {
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/accept-invite" element={<AcceptInvitePage />} />
         <Route path="/s/:token" element={<PublicSharePage />} />
+        <Route path="/share/recipe/:token" element={<PublicRecipePage />} />
+        <Route path="/share/recipe-book/:token" element={<PublicRecipeBookPage />} />
 
         <Route
           element={

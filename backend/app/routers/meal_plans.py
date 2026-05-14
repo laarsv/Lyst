@@ -37,7 +37,7 @@ def _entry_out(entry) -> dict:
         meal_type=entry.meal_type,
         servings=entry.servings,
         recipe_title=rec.title if rec else "(gelöscht)",
-        recipe_category=(rec.category.value if rec else "OTHER"),
+        recipe_tags=list(rec.tags or []) if rec else [],
         recipe_image_url=rec.image_url if rec else None,
         recipe_servings=rec.servings if rec else 0,
         recipe_prep_time_minutes=rec.prep_time_minutes if rec else None,

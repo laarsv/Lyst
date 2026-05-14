@@ -6,7 +6,7 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.dependencies import require_user
 from app.core.responses import ok
-from app.models.recipe import Recipe, RecipeCategory
+from app.models.recipe import Recipe
 from app.models.user import User
 from app.schemas.recipe import (
     CopyToListRequest,
@@ -107,11 +107,11 @@ def _full(rec) -> dict:
 @router.get("")
 async def get_recipes(
     q: str | None = None,
-    category: RecipeCategory | None = None,
+    tag: str | None = None,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    rows = await list_recipes(db, user.id, q=q, category=category)
+    rows = await list_recipes(db, user.id, q=q, tag=tag)
     return ok([_summary(r, c) for r, c in rows])
 
 
@@ -712,7 +712,7 @@ _AI_VARIATION_SYSTEM = (
     '  "servings": Zahl oder null,\n'
     '  "prep_time_minutes": Zahl oder null,\n'
     '  "cook_time_minutes": Zahl oder null,\n'
-    '  "category": eine von BREAKFAST/LUNCH/DINNER/SNACK/DESSERT/DRINK/OTHER,\n'
+    '  "tags": ["string", ...] (passende deutsche Tags wie "vegetarisch", "schnell", "frühstück", ...),\n'
     '  "ingredients": [{"name": "...", "quantity": Zahl oder null, "unit": "string oder null"}],\n'
     '  "steps": [{"description": "...", "position": 1-basierte Zahl}]\n'
     "}"
@@ -839,3 +839,69 @@ async def post_ai_recipe_tags(
         if len(out) >= 5:
             break
     return ok({"tags": out})
+
+
+# =============================================================================
+#  Sharing — single recipe + recipe-book
+# =============================================================================
+#
+# Same shape as ListsApi share endpoints. Only the owner can flip a recipe's
+# share state; the public GET routes live below `share.py`'s router.
+
+from app.schemas.share import ShareEnableResponse
+from app.services.recipe_service import (
+    disable_book_share as _disable_book_share,
+    disable_recipe_share as _disable_recipe_share,
+    enable_book_share as _enable_book_share,
+    enable_recipe_share as _enable_recipe_share,
+)
+
+
+@router.post("/{recipe_id}/share/enable")
+async def post_recipe_share_enable(
+    recipe_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        rec = await get_recipe(db, recipe_id, user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    token, url, qr = await _enable_recipe_share(db, rec)
+    return ok(
+        ShareEnableResponse(share_token=token, share_url=url, qr_code_png_base64=qr).model_dump()
+    )
+
+
+@router.post("/{recipe_id}/share/disable")
+async def post_recipe_share_disable(
+    recipe_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        rec = await get_recipe(db, recipe_id, user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    await _disable_recipe_share(db, rec)
+    return ok({"message": "Share disabled"})
+
+
+@router.post("/share-book/enable")
+async def post_book_share_enable(
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    token, url, qr = await _enable_book_share(db, user)
+    return ok(
+        ShareEnableResponse(share_token=token, share_url=url, qr_code_png_base64=qr).model_dump()
+    )
+
+
+@router.post("/share-book/disable")
+async def post_book_share_disable(
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await _disable_book_share(db, user)
+    return ok({"message": "Book share disabled"})

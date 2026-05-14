@@ -153,14 +153,10 @@ export interface ApiEnvelope<T> {
   error: string | null;
 }
 
-export type RecipeCategory =
-  | 'BREAKFAST'
-  | 'LUNCH'
-  | 'DINNER'
-  | 'SNACK'
-  | 'DESSERT'
-  | 'DRINK'
-  | 'OTHER';
+// Recipe categorisation switched from a fixed enum to free-form tags in
+// alembic 0011 — the meal-type buckets were migrated into recipes.tags.
+// (RecipeCategory was the old enum type; kept removed here so call sites
+// either use string-based tag filters or break loudly at compile time.)
 
 export interface RecipeIngredient {
   id: number;
@@ -195,7 +191,6 @@ export interface RecipeBase {
   servings: number;
   prep_time_minutes: number | null;
   cook_time_minutes: number | null;
-  category: RecipeCategory;
   image_url: string | null;
   source_url: string | null;
   tags: string[];
@@ -217,6 +212,42 @@ export interface Recipe extends RecipeBase {
   ingredients: RecipeIngredient[];
   steps: RecipeStep[];
   nutrition_per_serving: NutritionTotals;
+  share_enabled: boolean;
+  share_token: string | null;
+}
+
+// ---------- Public share payloads (recipe + recipe-book) ----------
+
+export interface PublicRecipeData {
+  title: string;
+  description: string | null;
+  servings: number;
+  prep_time_minutes: number | null;
+  cook_time_minutes: number | null;
+  image_url: string | null;
+  source_url: string | null;
+  tags: string[];
+  updated_at: string;
+  ingredients: RecipeIngredient[];
+  steps: RecipeStep[];
+}
+
+export interface PublicRecipeBookEntry {
+  id: number;
+  title: string;
+  image_url: string | null;
+  tags: string[];
+  servings: number;
+  prep_time_minutes: number | null;
+  cook_time_minutes: number | null;
+  ingredient_count: number;
+  /** null when the individual recipe is not also share-enabled. */
+  share_token: string | null;
+}
+
+export interface PublicRecipeBookData {
+  owner_name: string;
+  recipes: PublicRecipeBookEntry[];
 }
 
 export interface CopyToListResponse {
@@ -327,7 +358,7 @@ export interface MealPlanEntry {
   meal_type: MealType;
   servings: number;
   recipe_title: string;
-  recipe_category: RecipeCategory;
+  recipe_tags: string[];
   recipe_image_url: string | null;
   recipe_servings: number;
   recipe_prep_time_minutes: number | null;
@@ -387,7 +418,7 @@ export interface ImportedRecipe {
   servings: number | null;
   prep_time_minutes: number | null;
   cook_time_minutes: number | null;
-  category: RecipeCategory;
+  tags: string[];
   source_url: string | null;
   ingredients: ImportedIngredient[];
   steps: ImportedStep[];

@@ -1,23 +1,12 @@
-import enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ARRAY, Enum, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import ARRAY, Boolean, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
 
 if TYPE_CHECKING:
     from app.models.user import User
-
-
-class RecipeCategory(str, enum.Enum):
-    BREAKFAST = "BREAKFAST"
-    LUNCH = "LUNCH"
-    DINNER = "DINNER"
-    SNACK = "SNACK"
-    DESSERT = "DESSERT"
-    DRINK = "DRINK"
-    OTHER = "OTHER"
 
 
 class Recipe(Base, TimestampMixin):
@@ -32,14 +21,16 @@ class Recipe(Base, TimestampMixin):
     servings: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
     prep_time_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     cook_time_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    category: Mapped[RecipeCategory] = mapped_column(
-        Enum(RecipeCategory, name="recipe_category"),
-        nullable=False,
-        default=RecipeCategory.OTHER,
-    )
     image_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     source_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    # Categorisation now lives entirely in `tags` — the old RecipeCategory
+    # enum was migrated into per-recipe tags in alembic revision 0011.
     tags: Mapped[list[str]] = mapped_column(ARRAY(String), default=list, nullable=False)
+    # Single-recipe sharing — same shape as List.share_token.
+    share_token: Mapped[str | None] = mapped_column(
+        String(64), unique=True, nullable=True, index=True
+    )
+    share_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     owner: Mapped["User"] = relationship()
     ingredients: Mapped[list["RecipeIngredient"]] = relationship(

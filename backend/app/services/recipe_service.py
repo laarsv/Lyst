@@ -4,7 +4,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.list import List as ListModel, ListType
 from app.models.list_item import ListItem
-from app.models.recipe import Recipe, RecipeCategory, RecipeIngredient, RecipeStep
+from app.models.recipe import Recipe, RecipeIngredient, RecipeStep
 
 
 # ---------- Recipe CRUD ----------
@@ -14,8 +14,12 @@ async def list_recipes(
     owner_id: int,
     *,
     q: str | None = None,
-    category: RecipeCategory | None = None,
+    tag: str | None = None,
 ) -> list[tuple[Recipe, int]]:
+    """List the user's recipes. `tag` filters to recipes that have the
+    given tag (exact, case-insensitive). The category enum was replaced
+    by tags in alembic 0011 — this helper now treats the meal-type
+    bucketing the same as any other tag."""
     ingredient_count = func.count(RecipeIngredient.id).label("ingredient_count")
     stmt = (
         select(Recipe, ingredient_count)
@@ -29,8 +33,8 @@ async def list_recipes(
         stmt = stmt.where(
             or_(func.lower(Recipe.title).like(like), Recipe.tags.any(q.lower())),
         )
-    if category:
-        stmt = stmt.where(Recipe.category == category)
+    if tag:
+        stmt = stmt.where(Recipe.tags.any(tag))
     result = await db.execute(stmt)
     return [(r, c) for r, c in result.all()]
 
@@ -90,7 +94,6 @@ async def duplicate_recipe(db: AsyncSession, src: Recipe, owner_id: int, title: 
         servings=src.servings,
         prep_time_minutes=src.prep_time_minutes,
         cook_time_minutes=src.cook_time_minutes,
-        category=src.category,
         image_url=src.image_url,
         source_url=src.source_url,
         tags=list(src.tags),
@@ -292,3 +295,93 @@ async def copy_to_list(
     await db.commit()
     await db.refresh(target)
     return target, added
+
+
+# =============================================================================
+#  Sharing — single recipe + whole recipe book
+# =============================================================================
+#
+# Mirrors the list-share pattern: random hex token, public read-only fetch
+# bypasses ownership checks but only returns rows where share_enabled is true.
+
+import base64
+import io
+import uuid
+
+import qrcode
+
+from app.core.config import settings
+from app.models.user import User
+
+
+def _qr_base64(url: str) -> str:
+    img = qrcode.make(url)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+# ---------- Single recipe ----------
+
+async def enable_recipe_share(db: AsyncSession, rec: Recipe) -> tuple[str, str, str]:
+    if not rec.share_token:
+        rec.share_token = uuid.uuid4().hex
+    rec.share_enabled = True
+    await db.commit()
+    await db.refresh(rec)
+    share_url = f"{settings.FRONTEND_URL}/share/recipe/{rec.share_token}"
+    return rec.share_token, share_url, _qr_base64(share_url)
+
+
+async def disable_recipe_share(db: AsyncSession, rec: Recipe) -> None:
+    rec.share_enabled = False
+    rec.share_token = None
+    await db.commit()
+
+
+async def get_public_recipe(db: AsyncSession, token: str) -> Recipe | None:
+    result = await db.execute(
+        select(Recipe)
+        .options(selectinload(Recipe.ingredients), selectinload(Recipe.steps))
+        .where(Recipe.share_token == token, Recipe.share_enabled.is_(True))
+    )
+    return result.scalar_one_or_none()
+
+
+# ---------- Whole recipe book ----------
+
+async def enable_book_share(db: AsyncSession, user: User) -> tuple[str, str, str]:
+    if not user.recipe_book_share_token:
+        user.recipe_book_share_token = uuid.uuid4().hex
+    user.recipe_book_share_enabled = True
+    await db.commit()
+    await db.refresh(user)
+    share_url = f"{settings.FRONTEND_URL}/share/recipe-book/{user.recipe_book_share_token}"
+    return user.recipe_book_share_token, share_url, _qr_base64(share_url)
+
+
+async def disable_book_share(db: AsyncSession, user: User) -> None:
+    user.recipe_book_share_enabled = False
+    user.recipe_book_share_token = None
+    await db.commit()
+
+
+async def get_public_book(db: AsyncSession, token: str) -> tuple[User, list[tuple[Recipe, int]]] | None:
+    user_res = await db.execute(
+        select(User).where(
+            User.recipe_book_share_token == token,
+            User.recipe_book_share_enabled.is_(True),
+        )
+    )
+    user = user_res.scalar_one_or_none()
+    if not user:
+        return None
+    ingredient_count = func.count(RecipeIngredient.id).label("ingredient_count")
+    rec_res = await db.execute(
+        select(Recipe, ingredient_count)
+        .outerjoin(RecipeIngredient, RecipeIngredient.recipe_id == Recipe.id)
+        .where(Recipe.owner_id == user.id)
+        .group_by(Recipe.id)
+        .order_by(Recipe.title)
+    )
+    return user, [(r, c) for r, c in rec_res.all()]

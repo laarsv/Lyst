@@ -28,7 +28,8 @@ import type {
   NoteVersionListItem,
   PublicListData,
   Recipe,
-  RecipeCategory,
+  PublicRecipeBookData,
+  PublicRecipeData,
   RecipeIngredient,
   RecipeStep,
   RecipeSummary,
@@ -283,7 +284,6 @@ export interface SearchResults {
   recipes: Array<{
     id: number;
     title: string;
-    category: string;
     image_url: string | null;
     snippet: string | null;
     matched_ingredient: string | null;
@@ -314,7 +314,7 @@ export const NoteFoldersApi = {
 };
 
 export const RecipesApi = {
-  list: (params?: { q?: string; category?: RecipeCategory }) =>
+  list: (params?: { q?: string; tag?: string }) =>
     api.get<{ data: RecipeSummary[] }>('/recipes', { params }).then(unwrap),
   get: (id: number) => api.get<{ data: Recipe }>(`/recipes/${id}`).then(unwrap),
   create: (payload: {
@@ -323,7 +323,6 @@ export const RecipesApi = {
     servings: number;
     prep_time_minutes?: number | null;
     cook_time_minutes?: number | null;
-    category: RecipeCategory;
     image_url?: string | null;
     source_url?: string | null;
     tags?: string[];
@@ -346,7 +345,6 @@ export const RecipesApi = {
       servings: number;
       prep_time_minutes: number | null;
       cook_time_minutes: number | null;
-      category: RecipeCategory;
       image_url: string | null;
       source_url: string | null;
       tags: string[];
@@ -392,6 +390,21 @@ export const RecipesApi = {
   },
   removeImage: (id: number) =>
     api.delete<{ data: Recipe }>(`/recipes/${id}/image`).then(unwrap),
+
+  // share
+  shareEnable: (id: number) =>
+    api.post<{ data: ShareInfo }>(`/recipes/${id}/share/enable`).then(unwrap),
+  shareDisable: (id: number) =>
+    api.post(`/recipes/${id}/share/disable`),
+  shareBookEnable: () =>
+    api.post<{ data: ShareInfo }>('/recipes/share-book/enable').then(unwrap),
+  shareBookDisable: () =>
+    api.post('/recipes/share-book/disable'),
+  // public reads (no auth)
+  getPublic: (token: string) =>
+    api.get<{ data: PublicRecipeData }>(`/share/recipe/${token}`).then(unwrap),
+  getPublicBook: (token: string) =>
+    api.get<{ data: PublicRecipeBookData }>(`/share/recipe-book/${token}`).then(unwrap),
 
   // ingredients
   addIngredient: (

@@ -41,6 +41,14 @@ class User(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Recipe-book sharing — see alembic 0011. Token gives anyone the URL
+    # public read-only access to the user's whole recipe collection.
+    recipe_book_share_token: Mapped[str | None] = mapped_column(
+        String(64), unique=True, nullable=True, index=True
+    )
+    recipe_book_share_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
 
     lists: Mapped[list["List"]] = relationship(
         back_populates="owner", cascade="all, delete-orphan"

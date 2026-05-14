@@ -2,8 +2,6 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.recipe import RecipeCategory
-
 
 # --- Ingredients ---
 
@@ -88,7 +86,6 @@ class RecipeBase(BaseModel):
     servings: int = Field(default=2, ge=1, le=999)
     prep_time_minutes: int | None = Field(default=None, ge=0)
     cook_time_minutes: int | None = Field(default=None, ge=0)
-    category: RecipeCategory = RecipeCategory.OTHER
     image_url: str | None = Field(default=None, max_length=1024)
     source_url: str | None = Field(default=None, max_length=1024)
     tags: list[str] = Field(default_factory=list)
@@ -105,7 +102,6 @@ class RecipeUpdate(BaseModel):
     servings: int | None = Field(default=None, ge=1, le=999)
     prep_time_minutes: int | None = Field(default=None, ge=0)
     cook_time_minutes: int | None = Field(default=None, ge=0)
-    category: RecipeCategory | None = None
     image_url: str | None = Field(default=None, max_length=1024)
     source_url: str | None = Field(default=None, max_length=1024)
     tags: list[str] | None = None
@@ -131,6 +127,49 @@ class RecipeOut(RecipeBase):
     ingredients: list[IngredientOut] = Field(default_factory=list)
     steps: list[StepOut] = Field(default_factory=list)
     nutrition_per_serving: NutritionTotals = Field(default_factory=NutritionTotals)
+    share_enabled: bool = False
+    share_token: str | None = None
+
+
+# --- Public share views (no auth) ---
+
+class PublicRecipe(BaseModel):
+    """Recipe payload returned by GET /share/recipe/{token}."""
+    title: str
+    description: str | None
+    servings: int
+    prep_time_minutes: int | None
+    cook_time_minutes: int | None
+    image_url: str | None
+    source_url: str | None
+    tags: list[str]
+    updated_at: datetime
+    ingredients: list[IngredientOut]
+    steps: list[StepOut]
+
+
+class PublicRecipeBookEntry(BaseModel):
+    """One row in GET /share/recipe-book/{token}'s recipe grid."""
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    title: str
+    image_url: str | None
+    tags: list[str]
+    servings: int
+    prep_time_minutes: int | None
+    cook_time_minutes: int | None
+    ingredient_count: int = 0
+    # Per-recipe share token so the card can link to the public detail
+    # view. Only filled when the recipe itself is also share-enabled —
+    # otherwise the recipe-book viewer can see the title but not the
+    # detail (matches user expectation that they enable each recipe
+    # individually for public deep-linking).
+    share_token: str | None = None
+
+
+class PublicRecipeBook(BaseModel):
+    owner_name: str
+    recipes: list[PublicRecipeBookEntry]
 
 
 class RecipeDuplicate(BaseModel):

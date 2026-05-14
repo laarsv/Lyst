@@ -28,7 +28,9 @@ class EntryOut(BaseModel):
     servings: int
     # Recipe summary fields embedded for the UI
     recipe_title: str
-    recipe_category: str
+    # Categorisation moved from the dropped `category` enum to tags
+    # in alembic 0011 — meal-plan rows now ship the recipe's tag set.
+    recipe_tags: list[str] = Field(default_factory=list)
     recipe_image_url: str | None
     recipe_servings: int
     recipe_prep_time_minutes: int | None

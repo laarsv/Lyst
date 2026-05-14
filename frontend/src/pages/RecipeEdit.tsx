@@ -10,16 +10,21 @@ import {
 } from '@dnd-kit/core';
 import { SortableContext, arrayMove, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { RecipesApi } from '@/api/endpoints';
-import type { ImportedRecipe, RecipeCategory, RecipeIngredient, RecipeStep } from '@/types';
+import type { ImportedRecipe, RecipeIngredient, RecipeStep } from '@/types';
 import { SortableEditRow } from '@/components/recipes/SortableEditRow';
-import { CATEGORY_LABEL } from '@/components/recipes/RecipeCard';
 import { UnitSelect } from '@/components/UnitSelect';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
 import { ImagePlus, Loader2, Sparkles, Trash2, Upload } from 'lucide-react';
 import { AiSuggestionModal } from '@/components/AiSuggestionModal';
+import {
+  ALL_SUGGESTED_RECIPE_TAGS,
+  SUGGESTED_RECIPE_TAGS,
+} from '@/data/recipeTags';
 
-const CATEGORIES: RecipeCategory[] = ['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK', 'DESSERT', 'DRINK', 'OTHER'];
+// Categories were replaced by tags in alembic 0011 — see SUGGESTED_RECIPE_TAGS
+// from `@/data/recipeTags` for the new dropdown (rendered near the tag input
+// further down).
 
 interface DraftIngredient {
   id: number | string;
@@ -77,10 +82,12 @@ export function RecipeEditPage() {
   const [servings, setServings] = useState(prefill?.servings ?? 2);
   const [prep, setPrep] = useState<number | ''>(prefill?.prep_time_minutes ?? '');
   const [cook, setCook] = useState<number | ''>(prefill?.cook_time_minutes ?? '');
-  const [category, setCategory] = useState<RecipeCategory>(prefill?.category ?? 'OTHER');
+  // category was dropped in alembic 0011 — meal-type bucketing now lives
+  // entirely in `tags`. The URL importer's `prefill.tags` carries any
+  // imported meal-type label so users still see it pre-filled.
   const [imageUrl, setImageUrl] = useState('');
   const [sourceUrl, setSourceUrl] = useState(prefill?.source_url ?? '');
-  const [tags, setTags] = useState<string[]>([]);
+  const [tags, setTags] = useState<string[]>(prefill?.tags ?? []);
   const [tagInput, setTagInput] = useState('');
 
   const [ingredients, setIngredients] = useState<DraftIngredient[]>(
@@ -117,7 +124,6 @@ export function RecipeEditPage() {
         setServings(r.servings);
         setPrep(r.prep_time_minutes ?? '');
         setCook(r.cook_time_minutes ?? '');
-        setCategory(r.category);
         setImageUrl(r.image_url ?? '');
         setSourceUrl(r.source_url ?? '');
         setTags(r.tags);
@@ -218,7 +224,6 @@ export function RecipeEditPage() {
       servings,
       prep_time_minutes: prep === '' ? null : Number(prep),
       cook_time_minutes: cook === '' ? null : Number(cook),
-      category,
       image_url: imageUrl.trim() || null,
       source_url: sourceUrl.trim() || null,
       tags,
@@ -368,7 +373,7 @@ export function RecipeEditPage() {
             onChange={(e) => setDescription(e.target.value)}
           />
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <div>
             <label className="label">Portionen</label>
             <input
@@ -398,18 +403,6 @@ export function RecipeEditPage() {
               value={cook}
               onChange={(e) => setCook(e.target.value === '' ? '' : Number(e.target.value))}
             />
-          </div>
-          <div>
-            <label className="label">Kategorie</label>
-            <select
-              className="input"
-              value={category}
-              onChange={(e) => setCategory(e.target.value as RecipeCategory)}
-            >
-              {CATEGORIES.map((c) => (
-                <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>
-              ))}
-            </select>
           </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -472,6 +465,7 @@ export function RecipeEditPage() {
               </span>
             ))}
             <input
+              list="recipe-tag-suggestions"
               className="flex-1 min-w-[100px] outline-none text-sm"
               placeholder="+ tag"
               value={tagInput}
@@ -484,7 +478,40 @@ export function RecipeEditPage() {
               }}
               onBlur={addTag}
             />
+            <datalist id="recipe-tag-suggestions">
+              {ALL_SUGGESTED_RECIPE_TAGS.filter((t) => !tags.includes(t)).map((t) => (
+                <option key={t} value={t} />
+              ))}
+            </datalist>
           </div>
+          {/* Curated quick-pick chips — replaces the old fixed category
+              dropdown. Hidden when all suggestions are already applied to
+              keep the form quiet for users who pick custom tags only. */}
+          {SUGGESTED_RECIPE_TAGS.some((g) => g.tags.some((t) => !tags.includes(t))) && (
+            <div className="mt-2 space-y-1">
+              {SUGGESTED_RECIPE_TAGS.map((group) => {
+                const remaining = group.tags.filter((t) => !tags.includes(t));
+                if (remaining.length === 0) return null;
+                return (
+                  <div key={group.label} className="flex flex-wrap items-center gap-1">
+                    <span className="text-[10px] uppercase tracking-wider text-muted w-20 shrink-0">
+                      {group.label}
+                    </span>
+                    {remaining.map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setTags([...tags, t])}
+                        className="inline-flex items-center text-xs bg-page hover:bg-brand-50 hover:text-brand-700 px-2 py-1 rounded-full border border-line transition"
+                      >
+                        + {t}
+                      </button>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          )}
           {tagSuggestions.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1 items-center">
               <span className="text-[10px] uppercase tracking-wider text-muted">

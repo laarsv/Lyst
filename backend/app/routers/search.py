@@ -161,10 +161,11 @@ async def global_search(
             {
                 "id": r.id,
                 "title": r.title,
-                "category": r.category.value,
                 "image_url": r.image_url,
                 "snippet": _snippet(r.description or "", needle),
                 "matched_ingredient": ing_match,
+                # Replaces the dropped `category` field — alembic 0011
+                # moved meal-type bucketing into the tag set.
                 "tags": list(r.tags or []),
             }
         )
