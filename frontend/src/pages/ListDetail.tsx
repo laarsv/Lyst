@@ -27,6 +27,7 @@ import { SaveIndicator, useSaveIndicator } from '@/components/SaveIndicator';
 import { invalidateOverview } from '@/hooks/useOverviewQuery';
 import { formatPreview, hasParse, parseItem } from '@/utils/parseItemInput';
 import {
+  ChevronRight,
   ListPlus,
   RotateCcw,
   BookmarkPlus,
@@ -595,6 +596,7 @@ export function ListDetailPage() {
             items={items}
             canEdit={canEdit}
             listType={list.type}
+            listId={list.id}
             onToggle={toggle}
             onUpdate={update}
             onDelete={del}
@@ -725,6 +727,7 @@ function CategoryGroupedList({
   items,
   canEdit,
   listType,
+  listId,
   onToggle,
   onUpdate,
   onDelete,
@@ -734,6 +737,7 @@ function CategoryGroupedList({
   items: ListItem[];
   canEdit: boolean;
   listType: ListType;
+  listId: number;
   onToggle: (i: ListItem) => void;
   onUpdate: (i: ListItem, patch: Partial<ListItem>) => void;
   onDelete: (i: ListItem) => void;
@@ -767,32 +771,80 @@ function CategoryGroupedList({
   }
   if (pending.length) sections.push({ label: PENDING_LABEL, items: pending, pending: true });
 
+  // Per-list "which sections did the user collapse" set, persisted to
+  // localStorage so collapse state survives navigation away + back.
+  // Default = empty set (all expanded), per spec.
+  const storageKey = `lyst:list:${listId}:collapsed-cats`;
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) return new Set();
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? new Set(arr.filter((x) => typeof x === 'string')) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+  const toggleSection = (label: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(Array.from(next)));
+      } catch {
+        // localStorage full / disabled — collapse state is ephemeral
+        // this session, not worth a toast.
+      }
+      return next;
+    });
+  };
+
   return (
     <div className="space-y-3">
       {sections.map((s) => {
         const Icon = s.pending ? Loader2 : iconMap[s.label] ?? MoreHorizontal;
+        const isCollapsed = collapsed.has(s.label);
         return (
           <div key={s.label}>
-            <div className="flex items-center gap-1.5 px-1 mb-1 text-xs text-muted">
+            <button
+              type="button"
+              onClick={() => toggleSection(s.label)}
+              className="w-full flex items-center gap-1.5 px-1 mb-1 text-xs text-muted hover:text-ink transition"
+              aria-expanded={!isCollapsed}
+              aria-controls={`cat-${s.label}`}
+            >
+              {/* Chevron — rotates 90° when expanded. CSS transition
+                  is fine; the user feels the toggle without an extra
+                  animation library. */}
+              <span
+                aria-hidden
+                className="inline-flex items-center justify-center transition-transform duration-150"
+                style={{ transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)' }}
+              >
+                <ChevronRight size={12} />
+              </span>
               <Icon size={14} className={s.pending ? 'animate-spin' : ''} />
               <span>{s.label}</span>
               <span className="text-muted/60 tabular-nums">· {s.items.length}</span>
-            </div>
-            <div className="space-y-1.5">
-              {s.items.map((it) => (
-                <SortableItem
-                  key={it.id}
-                  item={it}
-                  canEdit={canEdit}
-                  listType={listType}
-                  onToggle={onToggle}
-                  onUpdate={onUpdate}
-                  onDelete={onDelete}
-                  onSwipeDelete={onSwipeDelete}
-                  assignableUsers={assignableUsers}
-                />
-              ))}
-            </div>
+            </button>
+            {!isCollapsed && (
+              <div id={`cat-${s.label}`} className="space-y-1.5">
+                {s.items.map((it) => (
+                  <SortableItem
+                    key={it.id}
+                    item={it}
+                    canEdit={canEdit}
+                    listType={listType}
+                    onToggle={onToggle}
+                    onUpdate={onUpdate}
+                    onDelete={onDelete}
+                    onSwipeDelete={onSwipeDelete}
+                    assignableUsers={assignableUsers}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         );
       })}

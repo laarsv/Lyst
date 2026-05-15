@@ -1,0 +1,516 @@
+/** Edit sheet for a single list item.
+ *
+ *  One component, two presentations: a bottom sheet on mobile and an
+ *  anchored popover on desktop. The contents are identical — the
+ *  desktop kebab swaps the chrome around them.
+ *
+ *  Fields fall in two sections:
+ *    "Item"    — name, quantity, unit, category
+ *    "Aufgabe" — assignee, due_at, reminder_at
+ *  The "Aufgabe" header is hidden when the parent list has no
+ *  assignable users (no collaborators) so the section doesn't look
+ *  empty.
+ *
+ *  All edits flow through `onUpdate`. The sheet is dumb — it doesn't
+ *  debounce or batch; the parent owns the PATCH. Simple text edits
+ *  fire onUpdate on blur (so the typing experience stays snappy); the
+ *  dropdowns/datetime pickers fire on change. The Save button is just
+ *  a close button — there's no separate commit step because every
+ *  field already saved on blur/change.
+ *
+ *  The Löschen button surfaces inside the sheet so the user doesn't
+ *  have to close + then find the delete elsewhere. Routes through the
+ *  same softDelete the swipe gesture uses — undo toast included.
+ */
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { X } from 'lucide-react';
+import type { ListItem, ListType } from '@/types';
+import { UnitCombobox } from '@/components/UnitCombobox';
+import { categoriesForType, iconForCategory } from '@/data/listCategories';
+import {
+  fromLocalInput,
+  toLocalInput,
+} from '@/components/tasks/TaskAssignPopover';
+
+interface AssignableUser {
+  id: number;
+  name: string;
+}
+
+interface Props {
+  open: boolean;
+  /** DOM anchor for the desktop popover. Mobile ignores it. */
+  anchor: HTMLElement | null;
+  item: ListItem;
+  listType: ListType;
+  canEdit: boolean;
+  assignableUsers: AssignableUser[];
+  onClose: () => void;
+  onUpdate: (patch: Partial<ListItem>) => void;
+  onDelete: () => void;
+}
+
+const MOBILE_MQ = '(max-width: 767.98px)';
+
+export function ItemSheet({
+  open,
+  anchor,
+  item,
+  listType,
+  canEdit,
+  assignableUsers,
+  onClose,
+  onUpdate,
+  onDelete,
+}: Props) {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window === 'undefined' ? false : window.matchMedia(MOBILE_MQ).matches,
+  );
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  useEffect(() => {
+    const mq = window.matchMedia(MOBILE_MQ);
+    const onChange = () => setIsMobile(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  // Position the popover on desktop. Always opens to the LEFT of the
+  // anchor (kebab is usually on the right edge of the row).
+  useEffect(() => {
+    if (!open || !anchor || isMobile) return;
+    const update = () => {
+      const r = anchor.getBoundingClientRect();
+      setPos({
+        top: r.bottom + window.scrollY + 6,
+        left: Math.max(8, r.right + window.scrollX - 340),
+      });
+    };
+    update();
+    window.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    return () => {
+      window.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+    };
+  }, [open, anchor, isMobile]);
+
+  // Click-outside + Escape.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (
+        popoverRef.current &&
+        !popoverRef.current.contains(e.target as Node) &&
+        !anchor?.contains(e.target as Node)
+      ) {
+        onClose();
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open, onClose, anchor]);
+
+  // Body lock while the mobile sheet is up so the list behind doesn't
+  // scroll under the fingertip.
+  useEffect(() => {
+    if (!open || !isMobile) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [open, isMobile]);
+
+  // Mobile-only: swipe-down on the sheet handle closes it. Cheap
+  // touch-event listener — we only need the y-delta on release.
+  const sheetRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!open || !isMobile || !sheetRef.current) return;
+    const el = sheetRef.current;
+    let startY: number | null = null;
+    let dy = 0;
+    const onStart = (e: TouchEvent) => {
+      // Only react to drags that start on the handle area (top 32px).
+      const t = e.touches[0];
+      const r = el.getBoundingClientRect();
+      if (t.clientY - r.top > 32) return;
+      startY = t.clientY;
+      dy = 0;
+    };
+    const onMove = (e: TouchEvent) => {
+      if (startY === null) return;
+      dy = Math.max(0, e.touches[0].clientY - startY);
+      el.style.transform = `translateY(${dy}px)`;
+    };
+    const onEnd = () => {
+      if (startY === null) return;
+      el.style.transform = '';
+      if (dy > 80) onClose();
+      startY = null;
+      dy = 0;
+    };
+    el.addEventListener('touchstart', onStart, { passive: true });
+    el.addEventListener('touchmove', onMove, { passive: true });
+    el.addEventListener('touchend', onEnd);
+    el.addEventListener('touchcancel', onEnd);
+    return () => {
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+      el.removeEventListener('touchend', onEnd);
+      el.removeEventListener('touchcancel', onEnd);
+    };
+  }, [open, isMobile, onClose]);
+
+  if (!open) return null;
+
+  const categories = categoriesForType(listType);
+  const showAufgabe = canEdit; // due/reminder always allowed even without collaborators
+
+  const body = (
+    <ItemFields
+      item={item}
+      listType={listType}
+      categories={categories}
+      canEdit={canEdit}
+      assignableUsers={assignableUsers}
+      showAufgabe={showAufgabe}
+      onUpdate={onUpdate}
+      onDelete={onDelete}
+      onClose={onClose}
+    />
+  );
+
+  if (isMobile) {
+    return createPortal(
+      <div
+        className="fixed inset-0 z-[70] bg-ink/40 flex items-end"
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget) onClose();
+        }}
+        role="dialog"
+        aria-modal="true"
+      >
+        <div
+          ref={sheetRef}
+          className="w-full bg-surface rounded-t-card border-t border-line shadow-flat max-h-[85vh] overflow-y-auto pb-6 transition-transform duration-200"
+          style={{
+            paddingBottom: 'env(safe-area-inset-bottom, 24px)',
+          }}
+        >
+          {/* Drag handle / pull bar */}
+          <div className="flex justify-center pt-2 pb-3 select-none">
+            <span className="block w-10 h-1 rounded-full bg-line" aria-hidden />
+          </div>
+          {body}
+        </div>
+      </div>,
+      document.body,
+    );
+  }
+
+  // Desktop: popover anchored to the kebab.
+  return createPortal(
+    <div
+      ref={popoverRef}
+      style={{
+        position: 'absolute',
+        top: pos?.top ?? 0,
+        left: pos?.left ?? 0,
+        zIndex: 60,
+        width: 340,
+      }}
+      className="card border border-line bg-surface shadow-flat"
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      {body}
+    </div>,
+    document.body,
+  );
+}
+
+function ItemFields({
+  item,
+  listType,
+  categories,
+  canEdit,
+  assignableUsers,
+  showAufgabe,
+  onUpdate,
+  onDelete,
+  onClose,
+}: {
+  item: ListItem;
+  listType: ListType;
+  categories: string[] | null;
+  canEdit: boolean;
+  assignableUsers: AssignableUser[];
+  showAufgabe: boolean;
+  onUpdate: (patch: Partial<ListItem>) => void;
+  onDelete: () => void;
+  onClose: () => void;
+}) {
+  // Local state for the text input so typing doesn't push a PATCH
+  // per keystroke. Saved on blur, on Enter, and again on close.
+  const [text, setText] = useState(item.text);
+  const [qty, setQty] = useState(item.quantity?.toString() ?? '');
+  const [unit, setUnit] = useState(item.unit ?? '');
+  useEffect(() => {
+    setText(item.text);
+    setQty(item.quantity?.toString() ?? '');
+    setUnit(item.unit ?? '');
+  }, [item.id, item.text, item.quantity, item.unit]);
+
+  const commitText = () => {
+    const trimmed = text.trim();
+    if (trimmed && trimmed !== item.text) onUpdate({ text: trimmed });
+  };
+  const commitQty = () => {
+    const next = qty === '' ? null : Number(qty);
+    if (next !== item.quantity && !(qty !== '' && Number.isNaN(next))) {
+      onUpdate({ quantity: next as number | null });
+    }
+  };
+  const commitUnit = () => {
+    const next = unit.trim() || null;
+    if (next !== item.unit) onUpdate({ unit: next });
+  };
+
+  // Save outstanding text/qty/unit when the sheet closes.
+  useEffect(
+    () => () => {
+      commitText();
+      commitQty();
+      commitUnit();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  return (
+    <div className="px-4 sm:px-5 pb-3 space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-medium uppercase tracking-wide text-muted">Item</div>
+        <button
+          type="button"
+          aria-label="Schließen"
+          onClick={onClose}
+          className="size-7 inline-flex items-center justify-center rounded-ctl text-muted hover:bg-page"
+        >
+          <X size={14} />
+        </button>
+      </div>
+
+      <div className="space-y-3">
+        <Field label="Name">
+          <input
+            className="input"
+            value={text}
+            disabled={!canEdit}
+            onChange={(e) => setText(e.target.value)}
+            onBlur={commitText}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.currentTarget.blur();
+              }
+            }}
+            autoCapitalize="sentences"
+            autoCorrect="on"
+            spellCheck
+          />
+        </Field>
+
+        <div className="flex gap-3">
+          <div className="w-24">
+            <Field label="Menge">
+              <input
+                className="input"
+                value={qty}
+                inputMode="decimal"
+                disabled={!canEdit}
+                onChange={(e) => setQty(e.target.value)}
+                onBlur={commitQty}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') e.currentTarget.blur();
+                }}
+              />
+            </Field>
+          </div>
+          <div className="flex-1 min-w-0">
+            <Field label="Einheit">
+              <UnitCombobox
+                value={unit || null}
+                onChange={(u) => {
+                  const next = u ?? '';
+                  setUnit(next);
+                  // UnitCombobox doesn't fire on blur; commit eagerly.
+                  if ((next || null) !== item.unit) {
+                    onUpdate({ unit: next.trim() || null });
+                  }
+                }}
+              />
+            </Field>
+          </div>
+        </div>
+
+        {categories && (
+          <Field label="Kategorie">
+            <CategoryDropdown
+              value={item.category}
+              categories={categories}
+              listType={listType}
+              disabled={!canEdit}
+              onChange={(cat) => onUpdate({ category: cat })}
+            />
+          </Field>
+        )}
+      </div>
+
+      {showAufgabe && (
+        <>
+          <div className="flex items-center gap-2 pt-1">
+            <span className="h-px flex-1 bg-line" />
+            <span className="text-xs font-medium uppercase tracking-wide text-muted">
+              Aufgabe
+            </span>
+            <span className="h-px flex-1 bg-line" />
+          </div>
+
+          <div className="space-y-3">
+            <Field label="Zuweisen an">
+              <select
+                className="input"
+                value={item.assignee_id ?? ''}
+                disabled={!canEdit}
+                onChange={(e) =>
+                  onUpdate({
+                    assignee_id:
+                      e.target.value === '' ? null : Number(e.target.value),
+                  })
+                }
+              >
+                <option value="">— niemand</option>
+                {assignableUsers.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="Fällig">
+              <input
+                type="datetime-local"
+                className="input"
+                value={toLocalInput(item.due_at)}
+                disabled={!canEdit}
+                onChange={(e) =>
+                  onUpdate({ due_at: fromLocalInput(e.target.value) })
+                }
+              />
+            </Field>
+
+            <Field label="Erinnerung">
+              <input
+                type="datetime-local"
+                className="input"
+                value={toLocalInput(item.reminder_at)}
+                disabled={!canEdit}
+                onChange={(e) =>
+                  onUpdate({ reminder_at: fromLocalInput(e.target.value) })
+                }
+              />
+            </Field>
+          </div>
+        </>
+      )}
+
+      <div className="flex justify-between items-center pt-2 border-t border-line">
+        {canEdit ? (
+          <button
+            type="button"
+            onClick={() => {
+              onDelete();
+              onClose();
+            }}
+            className="text-sm text-danger hover:underline"
+          >
+            Löschen
+          </button>
+        ) : (
+          <span />
+        )}
+        <button
+          type="button"
+          onClick={onClose}
+          className="btn-primary text-sm py-1.5"
+        >
+          Fertig
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <label className="block text-[11px] uppercase tracking-wide text-muted mb-1">
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+function CategoryDropdown({
+  value,
+  categories,
+  listType,
+  disabled,
+  onChange,
+}: {
+  value: string | null;
+  categories: string[];
+  listType: ListType;
+  disabled: boolean;
+  onChange: (cat: string | null) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      {value &&
+        (() => {
+          const Icon = iconForCategory(listType, value);
+          return <Icon size={16} className="text-muted shrink-0" />;
+        })()}
+      <select
+        className="input flex-1"
+        value={value ?? ''}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}
+      >
+        <option value="">— keine</option>
+        {categories.map((c) => (
+          <option key={c} value={c}>
+            {c}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
