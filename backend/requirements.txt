@@ -24,3 +24,6 @@ anthropic==0.40.0
 bleach[css]==6.1.0
 markdown-it-py[linkify]==3.0.0
 mdit-py-plugins==0.4.1
+# Recipe import: PDF text extraction. Pure-Python — same install
+# surface as pypdf2 without the legacy quirks.
+pypdf==4.3.1

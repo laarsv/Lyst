@@ -589,6 +589,23 @@ export const RecipesApi = {
       })
       .then(unwrap);
   },
+  /** Unified import endpoint. Accepts an image / HTML / PDF file or
+   *  a free-text body. The backend dispatches on the Content-Type
+   *  and the file's own type, returning the same ImportedRecipe
+   *  shape as the URL / photo endpoints. */
+  importFromFile: (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return api
+      .post<{ data: ImportedRecipe }>('/recipes/import', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      .then(unwrap);
+  },
+  importFromText: (text: string) =>
+    api
+      .post<{ data: ImportedRecipe }>('/recipes/import', { text })
+      .then(unwrap),
   suggest: (available_ingredients: string[]) =>
     api
       .post<{ data: { suggestions: Array<{ recipe_id: number; title: string; reason: string }> } }>(

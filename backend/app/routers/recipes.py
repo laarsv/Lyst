@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -31,7 +31,10 @@ from app.schemas.recipe import (
 )
 from app.services.import_service import (
     RecipeImportError,
+    import_recipe_from_html_bytes,
     import_recipe_from_image,
+    import_recipe_from_pdf_bytes,
+    import_recipe_from_text,
     import_recipe_from_url,
     suggest_recipes_from_ingredients,
 )
@@ -464,6 +467,128 @@ async def post_import_photo(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Leere Datei")
     try:
         result = await import_recipe_from_image(data)
+    except RecipeImportError as e:
+        raise HTTPException(status_code=e.status, detail=e.message)
+    return ok(result.model_dump(mode="json"))
+
+
+# ---------- Unified import (file OR free text) ----------
+#
+# POST /recipes/import accepts EITHER a multipart upload (image / HTML /
+# PDF) OR a JSON body {"text": "..."}. Detection is by Content-Type:
+# multipart/form-data → file path; application/json → text path. Each
+# input is routed to the matching import_recipe_from_* helper and the
+# result is the same ImportedRecipe shape as the legacy /import-url
+# and /import-photo endpoints — frontend keeps one preview screen for
+# all paths.
+#
+# /import-url and /import-photo stay as-is for backward compat.
+
+_IMPORT_IMAGE_TYPES = ALLOWED_PHOTO_TYPES
+_IMPORT_HTML_TYPES = {"text/html", "application/xhtml+xml"}
+_IMPORT_PDF_TYPES = {"application/pdf"}
+_IMPORT_MAX_BYTES = MAX_PHOTO_BYTES  # same 10 MB ceiling across types
+
+
+@router.post("/import")
+async def post_import(
+    request: Request,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Single endpoint, four flavours. The Content-Type tells us
+    which path to take:
+      - application/json    → {"text": "..."} free-text path
+      - multipart/form-data → file field, dispatched by its own
+                              Content-Type (image / HTML / PDF)
+    """
+    ct = (request.headers.get("content-type") or "").lower()
+
+    # --- JSON: free-text path --------------------------------------------
+    if ct.startswith("application/json"):
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Ungültiger JSON-Body",
+            )
+        text = (body or {}).get("text") if isinstance(body, dict) else None
+        if not isinstance(text, str) or not text.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Kein Text eingegeben",
+            )
+        try:
+            result = await import_recipe_from_text(text, db)
+        except RecipeImportError as e:
+            raise HTTPException(status_code=e.status, detail=e.message)
+        return ok(result.model_dump(mode="json"))
+
+    # --- Multipart: file path --------------------------------------------
+    if not ct.startswith("multipart/form-data"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bitte JSON oder eine Datei senden",
+        )
+    form = await request.form()
+    upload = form.get("file")
+    if not isinstance(upload, UploadFile):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Datei fehlt (Feldname 'file')",
+        )
+
+    # Stream-read so a 50 MB upload doesn't get buffered before we
+    # reject it on size.
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await upload.read(64 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > _IMPORT_MAX_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Maximale Dateigröße: 10 MB",
+            )
+        chunks.append(chunk)
+    data = b"".join(chunks)
+    if not data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Leere Datei",
+        )
+
+    file_ct = (upload.content_type or "").lower()
+    # Fallback: when the client doesn't send a content-type (drag/drop
+    # of a .html file in some browsers), sniff by filename extension.
+    if not file_ct or file_ct == "application/octet-stream":
+        name = (upload.filename or "").lower()
+        if name.endswith(".pdf"):
+            file_ct = "application/pdf"
+        elif name.endswith((".html", ".htm")):
+            file_ct = "text/html"
+        elif name.endswith(".jpg") or name.endswith(".jpeg"):
+            file_ct = "image/jpeg"
+        elif name.endswith(".png"):
+            file_ct = "image/png"
+        elif name.endswith(".webp"):
+            file_ct = "image/webp"
+
+    try:
+        if file_ct in _IMPORT_IMAGE_TYPES:
+            result = await import_recipe_from_image(data)
+        elif file_ct in _IMPORT_HTML_TYPES:
+            result = await import_recipe_from_html_bytes(data, db)
+        elif file_ct in _IMPORT_PDF_TYPES:
+            result = await import_recipe_from_pdf_bytes(data, db)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="Unterstützt: JPG, PNG, WebP, HTML, PDF",
+            )
     except RecipeImportError as e:
         raise HTTPException(status_code=e.status, detail=e.message)
     return ok(result.model_dump(mode="json"))

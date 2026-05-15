@@ -38,7 +38,10 @@ from app.services.settings_service import (
 
 logger = logging.getLogger(__name__)
 
+# Cap for HTML/URL/PDF derived text — the LLM context is the bottleneck.
+# Free-text input gets a higher ceiling (the user already cleaned it).
 MAX_TEXT_CHARS = 4000
+MAX_FREETEXT_CHARS = 10_000
 USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -244,11 +247,16 @@ async def _call_anthropic(text: str, model: str) -> dict[str, Any]:
 
 # ---------- Provider dispatch ----------
 
-async def import_recipe_from_url(url: str, db: AsyncSession) -> ImportedRecipe:
-    html = await _fetch_html(url)
-    text = _clean_text(html)
-    if not text:
-        raise RecipeImportError(400, "Keine lesbaren Inhalte auf der Seite gefunden")
+async def _extract_recipe_from_text(
+    text: str, db: AsyncSession, *, source_url: str | None = None
+) -> ImportedRecipe:
+    """Shared backend for URL/HTML/PDF/free-text imports — the only
+    differences between those paths are how the text gets prepared
+    upstream. Sends the (already-cleaned) text to the configured
+    provider (Ollama or Anthropic), parses JSON, validates against
+    ImportedRecipe."""
+    if not text or not text.strip():
+        raise RecipeImportError(400, "Keine lesbaren Inhalte gefunden")
 
     provider = await get_llm_provider(db)
     if provider == "anthropic":
@@ -267,7 +275,8 @@ async def import_recipe_from_url(url: str, db: AsyncSession) -> ImportedRecipe:
             raise _from_ollama_error(e) from e
         if not isinstance(parsed, dict):
             raise RecipeImportError(500, "Rezept konnte nicht extrahiert werden")
-    parsed["source_url"] = url
+    if source_url is not None:
+        parsed["source_url"] = source_url
 
     # Renumber step positions deterministically (LLM may skip or repeat)
     if isinstance(parsed.get("steps"), list):
@@ -280,6 +289,85 @@ async def import_recipe_from_url(url: str, db: AsyncSession) -> ImportedRecipe:
     except ValidationError as e:
         logger.error("LLM JSON failed validation (provider=%s): %s — payload: %s", provider, e, parsed)
         raise RecipeImportError(500, "Extrahierte Daten haben unerwartetes Format") from e
+
+
+async def import_recipe_from_url(url: str, db: AsyncSession) -> ImportedRecipe:
+    html = await _fetch_html(url)
+    text = _clean_text(html)
+    if not text:
+        raise RecipeImportError(400, "Keine lesbaren Inhalte auf der Seite gefunden")
+    return await _extract_recipe_from_text(text, db, source_url=url)
+
+
+async def import_recipe_from_html_bytes(
+    html_bytes: bytes, db: AsyncSession
+) -> ImportedRecipe:
+    """For uploaded HTML files (e.g. a saved Picnic recipe email).
+    Reuses the same boilerplate-stripper as the URL importer."""
+    try:
+        # Most emails ship as UTF-8 these days; fall back to a tolerant
+        # decode so a stray latin-1 byte doesn't abort the whole import.
+        html = html_bytes.decode("utf-8", errors="replace")
+    except Exception as e:  # pragma: no cover
+        raise RecipeImportError(400, "Datei konnte nicht gelesen werden") from e
+    text = _clean_text(html)
+    if not text:
+        raise RecipeImportError(400, "Datei enthält keinen lesbaren Inhalt")
+    return await _extract_recipe_from_text(text, db, source_url=None)
+
+
+async def import_recipe_from_pdf_bytes(
+    pdf_bytes: bytes, db: AsyncSession
+) -> ImportedRecipe:
+    """Extract every page's text via pypdf, concatenate, send through
+    the same shared LLM path. pypdf is pure-Python and the import is
+    local so a missing native dependency can't break the whole
+    backend container."""
+    try:
+        from pypdf import PdfReader
+    except ImportError as e:  # pragma: no cover
+        raise RecipeImportError(500, "PDF-Unterstützung nicht installiert") from e
+    import io
+
+    try:
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+    except Exception as e:
+        logger.warning("PDF parse failed: %s", e)
+        raise RecipeImportError(400, "PDF konnte nicht gelesen werden") from e
+    pages: list[str] = []
+    for page in reader.pages:
+        try:
+            pages.append(page.extract_text() or "")
+        except Exception as e:  # pragma: no cover — pypdf throws on rare cases
+            logger.debug("PDF page extract failed: %s", e)
+            continue
+    raw = "\n\n".join(pages).strip()
+    # Collapse runs of blank lines; cap at the HTML budget so the
+    # prompt stays compact.
+    raw = re.sub(r"\n{2,}", "\n\n", raw)
+    if len(raw) > MAX_TEXT_CHARS:
+        raw = raw[:MAX_TEXT_CHARS]
+    if not raw:
+        raise RecipeImportError(
+            400,
+            "Aus der PDF konnte kein Text extrahiert werden — vermutlich nur Bilder.",
+        )
+    return await _extract_recipe_from_text(raw, db, source_url=None)
+
+
+async def import_recipe_from_text(
+    text: str, db: AsyncSession
+) -> ImportedRecipe:
+    """User-pasted free-text recipe. We trust the user has already
+    given us something coherent — minimal cleaning, just trim and a
+    higher length cap. The system prompt is the standard one; the
+    LLM does the heavy lifting of structuring messy input."""
+    raw = (text or "").strip()
+    if not raw:
+        raise RecipeImportError(400, "Kein Text eingegeben")
+    if len(raw) > MAX_FREETEXT_CHARS:
+        raw = raw[:MAX_FREETEXT_CHARS]
+    return await _extract_recipe_from_text(raw, db, source_url=None)
 
 
 # ---------- Photo import via Ollama vision model ----------
