@@ -10,6 +10,7 @@ import { toast } from '@/components/Toast';
 import { useConfirm } from '@/components/Dialogs';
 import { getApiError } from '@/api/client';
 import { PresetPicker } from '@/components/PresetPicker';
+import { categoriesForType } from '@/data/listCategories';
 
 interface Props {
   open: boolean;
@@ -88,19 +89,27 @@ export function ListSettingsPanel({
           <Section title="Listendetails">
             <ListDetailsSection list={list} onListUpdate={onListUpdate} />
           </Section>
-          <CategorizationModeSection
-            list={list}
-            onListUpdate={onListUpdate}
-            onCategorizationStarted={onCategorizationStarted}
-            saveField={async (_field, payload) => {
-              try {
-                const updated = await ListsApi.update(list.id, payload);
-                onListUpdate(updated);
-              } catch (e) {
-                toast.error(getApiError(e));
-              }
-            }}
-          />
+          {/* Categorization only makes sense for list types with a fixed
+              taxonomy (SHOPPING, PACKING). CHECKLIST relies on the AI
+              list-generator to seed its dynamic categories at creation
+              time; CUSTOM lists have no categorization at all. Hiding
+              the section here keeps the toggle from being a footgun
+              (enabling AUTO on CHECKLIST/CUSTOM was a no-op anyway). */}
+          {categoriesForType(list.type) && (
+            <CategorizationModeSection
+              list={list}
+              onListUpdate={onListUpdate}
+              onCategorizationStarted={onCategorizationStarted}
+              saveField={async (_field, payload) => {
+                try {
+                  const updated = await ListsApi.update(list.id, payload);
+                  onListUpdate(updated);
+                } catch (e) {
+                  toast.error(getApiError(e));
+                }
+              }}
+            />
+          )}
           <Section title="Öffentlicher Link">
             <SharePanel list={list} onUpdate={onListUpdate} />
           </Section>

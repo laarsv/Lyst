@@ -1,23 +1,11 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import type { ListItem } from '@/types';
+import type { ListItem, ListType } from '@/types';
 import clsx from 'clsx';
 import { Lock, Tag, Trash2 } from 'lucide-react';
 import { UnitCombobox } from '@/components/UnitCombobox';
-
-const CATEGORIES = [
-  'Obst & Gemüse',
-  'Milchprodukte',
-  'Tiefkühl',
-  'Backwaren',
-  'Fleisch & Fisch',
-  'Getränke',
-  'Trockenwaren',
-  'Süßes',
-  'Hygiene',
-  'Sonstiges',
-];
+import { categoriesForType } from '@/data/listCategories';
 
 // Swipe thresholds (px / fraction of row width). Mirrors the spec:
 //   - swipe < REVEAL_PX: snap back to 0 on release
@@ -34,6 +22,10 @@ const DIRECTION_LOCK_PX = 10;
 interface Props {
   item: ListItem;
   canEdit: boolean;
+  /** Drives the category override dropdown — SHOPPING and PACKING each
+   *  show their own fixed set; for CHECKLIST/CUSTOM the chip is hidden
+   *  because there's no fixed taxonomy. Optional for legacy callers. */
+  listType?: ListType;
   onToggle: (item: ListItem) => void;
   onUpdate: (item: ListItem, patch: Partial<ListItem>) => void;
   /** Used by the hover-× button on desktop. Fires the actual deletion
@@ -49,12 +41,14 @@ interface Props {
 export function SortableItem({
   item,
   canEdit,
+  listType,
   onToggle,
   onUpdate,
   onDelete,
   onSwipeDelete,
 }: Props) {
   const swipeCommit = onSwipeDelete ?? onDelete;
+  const typeCategories = categoriesForType(listType ?? null);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: item.id,
     disabled: !canEdit,
@@ -294,9 +288,10 @@ export function SortableItem({
           )}
         </div>
       )}
-      {canEdit && !editing && (
+      {canEdit && !editing && typeCategories && (
         <CategoryChip
           item={item}
+          categories={typeCategories}
           onPick={(category) => onUpdate(item, { category })}
         />
       )}
@@ -363,9 +358,12 @@ export function SortableItem({
 
 function CategoryChip({
   item,
+  categories,
   onPick,
 }: {
   item: ListItem;
+  /** The fixed category set for the parent list's type. */
+  categories: string[];
   onPick: (category: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -422,7 +420,7 @@ function CategoryChip({
       </button>
       {open && (
         <div className="absolute right-0 top-full mt-1 z-20 min-w-[170px] card p-1 shadow-flat border border-line bg-surface">
-          {CATEGORIES.map((c) => (
+          {categories.map((c) => (
             <button
               key={c}
               type="button"

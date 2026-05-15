@@ -54,17 +54,22 @@ async def _list_mode(db: AsyncSession, list_id: int) -> tuple[ListType | None, C
     return row[0], row[1]
 
 
-async def _categorize_in_background(list_id: int, item_id: int) -> None:
+async def _categorize_in_background(
+    list_id: int, item_id: int, list_type: ListType
+) -> None:
     """Runs after the POST response has been sent. Uses its own DB session
     (FastAPI's request-scoped session is gone by the time this fires).
 
     Skips items that already carry a category or are locked by the user.
+    `list_type` is captured at scheduling time and forwarded to the
+    categorizer so SHOPPING/PACKING get their respective prompts; for
+    CHECKLIST/CUSTOM the categorizer returns None and this task no-ops.
     """
     async with AsyncSessionLocal() as db:
         item = (await db.execute(select(ListItem).where(ListItem.id == item_id))).scalar_one_or_none()
         if not item or item.category is not None or item.category_locked:
             return
-        category = await categorize_item(db, item.text)
+        category = await categorize_item(db, item.text, list_type)
         if category is None:
             return
         item.category = category
@@ -76,7 +81,9 @@ async def _categorize_in_background(list_id: int, item_id: int) -> None:
         )
 
 
-async def _categorize_set_in_background(list_id: int, item_ids: list[int], force: bool) -> None:
+async def _categorize_set_in_background(
+    list_id: int, item_ids: list[int], force: bool, list_type: ListType
+) -> None:
     """Categorize a fixed set of items, broadcasting each one as it lands so
     the frontend can update its progress counter live."""
     for iid in item_ids:
@@ -86,7 +93,7 @@ async def _categorize_set_in_background(list_id: int, item_ids: list[int], force
                 continue
             if not force and (item.category is not None or item.category_locked):
                 continue
-            category = await categorize_item(db, item.text)
+            category = await categorize_item(db, item.text, list_type)
             if category is None:
                 continue
             item.category = category
@@ -132,9 +139,9 @@ async def post_item(
     )
     # Fire-and-forget categorization only when the list is in AUTO mode.
     # MANUAL leaves it null until the user hits "Jetzt kategorisieren".
-    _t, mode = await _list_mode(db, list_id)
-    if mode == CategorizationMode.AUTO:
-        background.add_task(_categorize_in_background, list_id, item.id)
+    list_type, mode = await _list_mode(db, list_id)
+    if mode == CategorizationMode.AUTO and list_type is not None:
+        background.add_task(_categorize_in_background, list_id, item.id, list_type)
     return ok(out)
 
 
@@ -159,10 +166,10 @@ async def post_bulk(
         await ws_manager.broadcast(
             list_id, {"type": "item_created", "payload": o}, exclude_client_id=client_id
         )
-    _t, mode = await _list_mode(db, list_id)
-    if mode == CategorizationMode.AUTO:
+    list_type, mode = await _list_mode(db, list_id)
+    if mode == CategorizationMode.AUTO and list_type is not None:
         for it in items:
-            background.add_task(_categorize_in_background, list_id, it.id)
+            background.add_task(_categorize_in_background, list_id, it.id, list_type)
     return ok(out)
 
 

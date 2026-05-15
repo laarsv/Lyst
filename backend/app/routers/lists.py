@@ -184,6 +184,15 @@ async def post_categorize(
     except PermissionError as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
+    # CHECKLIST / CUSTOM lists don't have a fixed category taxonomy — the
+    # categorizer would no-op every item, so short-circuit before even
+    # queueing the background task. The frontend hides the trigger button
+    # on these types too, but this guard makes the API self-consistent if
+    # called directly.
+    from app.services.category_service import categories_for_type
+    if categories_for_type(lst.type) is None:
+        return ok({"queued": 0, "total": 0})
+
     items_q = await db.execute(select(ListItem).where(ListItem.list_id == list_id))
     all_items = list(items_q.scalars().all())
 
@@ -214,7 +223,11 @@ async def post_categorize(
     from app.routers.items import _categorize_set_in_background
     if targets:
         background.add_task(
-            _categorize_set_in_background, list_id, [it.id for it in targets], force
+            _categorize_set_in_background,
+            list_id,
+            [it.id for it in targets],
+            force,
+            lst.type,
         )
     return ok({"queued": len(targets), "total": len(all_items)})
 

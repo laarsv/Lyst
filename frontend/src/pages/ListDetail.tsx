@@ -31,37 +31,15 @@ import {
   BookmarkPlus,
   Trash2,
   Settings,
-  Apple,
-  Milk,
-  Snowflake,
-  Wheat,
-  Beef,
-  Wine,
-  Package,
-  Cookie,
   Sparkles,
   MoreHorizontal,
   Loader2,
-  type LucideIcon,
 } from 'lucide-react';
 import { AiSuggestionModal } from '@/components/AiSuggestionModal';
 import { MergeDuplicatesModal } from '@/components/lists/MergeDuplicatesModal';
 import { Combine } from 'lucide-react';
+import { categoryIconMapForType } from '@/data/listCategories';
 
-const CATEGORY_ICON: Record<string, LucideIcon> = {
-  'Obst & Gemüse': Apple,
-  'Milchprodukte': Milk,
-  'Tiefkühl': Snowflake,
-  'Backwaren': Wheat,
-  'Fleisch & Fisch': Beef,
-  'Getränke': Wine,
-  'Trockenwaren': Package,
-  'Süßes': Cookie,
-  'Hygiene': Sparkles,
-  'Sonstiges': MoreHorizontal,
-};
-// Display order — same as the spec.
-const CATEGORY_ORDER = Object.keys(CATEGORY_ICON);
 const PENDING_LABEL = 'Wird kategorisiert…';
 
 export function ListDetailPage() {
@@ -562,11 +540,16 @@ export function ListDetailPage() {
       <div className="card p-3 sm:p-4">
         {items.length === 0 ? (
           <div className="text-center text-muted/70 py-8">Noch keine Einträge.</div>
-        ) : list.categorization_mode !== 'OFF' ? (
-          // Auto-sorted: group by category, no DnD.
+        ) : list.categorization_mode !== 'OFF' && categoryIconMapForType(list.type) ? (
+          // Auto-sorted: group by category, no DnD. Only shown when the
+          // list type has a fixed taxonomy — CHECKLIST/CUSTOM fall
+          // through to the plain DnD-ordered view even if the mode flag
+          // got flipped (defensive: shouldn't normally happen because
+          // the Settings UI hides the toggle for those types).
           <CategoryGroupedList
             items={items}
             canEdit={canEdit}
+            listType={list.type}
             onToggle={toggle}
             onUpdate={update}
             onDelete={del}
@@ -581,6 +564,7 @@ export function ListDetailPage() {
                     key={it.id}
                     item={it}
                     canEdit={canEdit}
+                    listType={list.type}
                     onToggle={toggle}
                     onUpdate={update}
                     onDelete={del}
@@ -693,6 +677,7 @@ function ParsePreview({ raw }: { raw: string }) {
 function CategoryGroupedList({
   items,
   canEdit,
+  listType,
   onToggle,
   onUpdate,
   onDelete,
@@ -700,16 +685,25 @@ function CategoryGroupedList({
 }: {
   items: ListItem[];
   canEdit: boolean;
+  listType: ListType;
   onToggle: (i: ListItem) => void;
   onUpdate: (i: ListItem, patch: Partial<ListItem>) => void;
   onDelete: (i: ListItem) => void;
   onSwipeDelete: (i: ListItem) => void;
 }) {
-  // Bucket by category, then keep CATEGORY_ORDER and append a "pending" group.
+  // Pick the icon + order set for this list type. The caller already
+  // ensures this is non-null before rendering the grouped view, but the
+  // ?? fallback keeps TS happy and is a safe no-op (returns SHOPPING).
+  const iconMap = categoryIconMapForType(listType) ?? {};
+  const order = Object.keys(iconMap);
+  // Bucket by category. Items whose category isn't in the type's set
+  // (e.g. stale SHOPPING categories on a PACKING list pre-migration)
+  // fall into the "pending" group so the user can re-categorize them
+  // rather than rendering as orphaned headers.
   const buckets = new Map<string, ListItem[]>();
   const pending: ListItem[] = [];
   for (const it of items) {
-    if (!it.category || !CATEGORY_ICON[it.category]) {
+    if (!it.category || !iconMap[it.category]) {
       pending.push(it);
     } else {
       const arr = buckets.get(it.category) ?? [];
@@ -718,7 +712,7 @@ function CategoryGroupedList({
     }
   }
   const sections: { label: string; items: ListItem[]; pending: boolean }[] = [];
-  for (const cat of CATEGORY_ORDER) {
+  for (const cat of order) {
     const arr = buckets.get(cat);
     if (arr && arr.length) sections.push({ label: cat, items: arr, pending: false });
   }
@@ -727,7 +721,7 @@ function CategoryGroupedList({
   return (
     <div className="space-y-3">
       {sections.map((s) => {
-        const Icon = s.pending ? Loader2 : CATEGORY_ICON[s.label] ?? MoreHorizontal;
+        const Icon = s.pending ? Loader2 : iconMap[s.label] ?? MoreHorizontal;
         return (
           <div key={s.label}>
             <div className="flex items-center gap-1.5 px-1 mb-1 text-xs text-muted">
@@ -741,6 +735,7 @@ function CategoryGroupedList({
                   key={it.id}
                   item={it}
                   canEdit={canEdit}
+                  listType={listType}
                   onToggle={onToggle}
                   onUpdate={onUpdate}
                   onDelete={onDelete}
