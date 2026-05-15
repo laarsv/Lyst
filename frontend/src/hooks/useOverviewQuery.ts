@@ -157,6 +157,7 @@ export const OVERVIEW_ROUTES: Array<{ match: (path: string) => boolean; key: str
   { match: (p) => p === '/notes', key: 'notes' },
   { match: (p) => p === '/recipes', key: 'recipes' },
   { match: (p) => p === '/meal-planner', key: 'mealplans' },
+  { match: (p) => p === '/tasks', key: 'tasks' },
 ];
 
 /** Hook variant of the route listener — installs a useEffect on the

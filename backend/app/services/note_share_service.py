@@ -281,6 +281,23 @@ async def list_internal_shares(
     return [(s, u) for s, u in res.all()]
 
 
+async def _clear_user_task_assignments(
+    db: AsyncSession, note_id: int, user_id: int
+) -> None:
+    """Cascade helper: NULL out assignee_id on every TaskItem in this
+    note that's currently assigned to the departing user. Run from
+    both the revoke and the leave-share paths so behaviour matches
+    regardless of who initiated the removal."""
+    from sqlalchemy import update
+    from app.models.task_item import TaskItem
+
+    await db.execute(
+        update(TaskItem)
+        .where(TaskItem.note_id == note_id, TaskItem.assignee_id == user_id)
+        .values(assignee_id=None)
+    )
+
+
 async def revoke_internal_share(
     db: AsyncSession, note_id: int, user_id: int
 ) -> None:
@@ -295,6 +312,7 @@ async def revoke_internal_share(
     row = res.scalar_one_or_none()
     if row:
         await db.delete(row)
+        await _clear_user_task_assignments(db, note_id, user_id)
         await db.commit()
 
 
@@ -316,5 +334,6 @@ async def leave_internal_share(
     if not row:
         return False
     await db.delete(row)
+    await _clear_user_task_assignments(db, note_id, user_id)
     await db.commit()
     return True

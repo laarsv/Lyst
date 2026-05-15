@@ -3,9 +3,14 @@ import { CSS } from '@dnd-kit/utilities';
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import type { ListItem, ListType } from '@/types';
 import clsx from 'clsx';
-import { Lock, Tag, Trash2 } from 'lucide-react';
+import { CalendarClock, CircleUserRound, Lock, Tag, Trash2, UserCircle2 } from 'lucide-react';
 import { UnitCombobox } from '@/components/UnitCombobox';
 import { categoriesForType } from '@/data/listCategories';
+import {
+  TaskAssignPopover,
+  type TaskAssignableUser,
+} from '@/components/tasks/TaskAssignPopover';
+import { formatTaskDue, taskInitials, isOverdue } from '@/components/tasks/taskFormat';
 
 // Swipe thresholds (px / fraction of row width). Mirrors the spec:
 //   - swipe < REVEAL_PX: snap back to 0 on release
@@ -36,6 +41,11 @@ interface Props {
    *  defer the real DELETE accordingly. Defaults to `onDelete` if the
    *  parent hasn't migrated to the new contract yet. */
   onSwipeDelete?: (item: ListItem) => void;
+  /** Users that can be assigned a task on this list. Owner + every
+   *  collaborator (any permission). When undefined or empty the task
+   *  popover hides the assignee dropdown — the user can still set
+   *  due/reminder, just not assign. */
+  assignableUsers?: TaskAssignableUser[];
 }
 
 export function SortableItem({
@@ -46,6 +56,7 @@ export function SortableItem({
   onUpdate,
   onDelete,
   onSwipeDelete,
+  assignableUsers,
 }: Props) {
   const swipeCommit = onSwipeDelete ?? onDelete;
   const typeCategories = categoriesForType(listType ?? null);
@@ -288,6 +299,18 @@ export function SortableItem({
           )}
         </div>
       )}
+      {/* Task affordance — visible chips for active tasks, plus a
+          hover-only icon trigger for the assignment popover. Hidden
+          for empty items (no text yet) per spec, and for read-only
+          views. The trigger sits to the LEFT of category/delete so it
+          stays accessible on narrow rows. */}
+      {canEdit && !editing && item.text.trim() && (
+        <TaskAffordance
+          item={item}
+          assignableUsers={assignableUsers ?? []}
+          onUpdate={onUpdate}
+        />
+      )}
       {canEdit && !editing && typeCategories && (
         <CategoryChip
           item={item}
@@ -353,6 +376,103 @@ export function SortableItem({
         {rowBody}
       </div>
     </div>
+  );
+}
+
+function TaskAffordance({
+  item,
+  assignableUsers,
+  onUpdate,
+}: {
+  item: ListItem;
+  assignableUsers: TaskAssignableUser[];
+  onUpdate: (item: ListItem, patch: Partial<ListItem>) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLButtonElement | null>(null);
+  const hasTaskFields =
+    item.assignee_id !== null ||
+    item.due_at !== null ||
+    item.reminder_at !== null;
+  const overdue = isOverdue(item.due_at, item.is_checked);
+
+  const applyPatch = (patch: Partial<{
+    assignee_id: number | null;
+    due_at: string | null;
+    reminder_at: string | null;
+  }>) => {
+    // Optimistic: the parent's onUpdate also drives the WS broadcast
+    // and reconciles with the server response.
+    onUpdate(item, patch as Partial<ListItem>);
+  };
+
+  return (
+    <>
+      {/* Assignment chips (only when at least one task field is set).
+          Sit between the row body and the action icons so they read
+          left-to-right with the other metadata. */}
+      {hasTaskFields && (
+        <div className="flex items-center gap-1.5 shrink-0">
+          {item.due_at && (
+            <span
+              className={clsx(
+                'inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-chip',
+                overdue
+                  ? 'bg-danger-50 text-danger'
+                  : 'bg-page text-muted',
+              )}
+              title={new Date(item.due_at).toLocaleString('de-DE')}
+            >
+              <CalendarClock size={11} />
+              {formatTaskDue(item.due_at)}
+            </span>
+          )}
+          {item.assignee_id !== null && (
+            <span
+              title={item.assignee_name ?? 'Zugewiesen'}
+              className="inline-flex size-6 items-center justify-center rounded-full bg-brand-50 text-brand-700 text-[10px] font-semibold"
+            >
+              {taskInitials(item.assignee_name)}
+            </span>
+          )}
+        </div>
+      )}
+      <button
+        ref={anchorRef}
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-label="Aufgabe"
+        title="Aufgabe"
+        className={clsx(
+          'transition shrink-0 size-7 inline-flex items-center justify-center rounded-ctl',
+          hasTaskFields
+            ? 'text-brand-700 hover:bg-brand-50'
+            : 'opacity-0 group-hover:opacity-100 text-muted/70 hover:text-ink hover:bg-page',
+        )}
+      >
+        {hasTaskFields ? <CircleUserRound size={15} /> : <UserCircle2 size={15} />}
+      </button>
+      <TaskAssignPopover
+        open={open}
+        anchor={anchorRef.current}
+        users={assignableUsers}
+        value={{
+          assignee_id: item.assignee_id,
+          due_at: item.due_at,
+          reminder_at: item.reminder_at,
+        }}
+        onClose={() => setOpen(false)}
+        onChange={(patch) => applyPatch(patch)}
+        onClear={() => {
+          applyPatch({
+            assignee_id: null,
+            due_at: null,
+            reminder_at: null,
+          });
+          setOpen(false);
+        }}
+      />
+    </>
   );
 }
 

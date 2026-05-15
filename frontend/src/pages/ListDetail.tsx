@@ -9,7 +9,8 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core';
 import { SortableContext, arrayMove, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { AiListsApi, ItemsApi, ListsApi } from '@/api/endpoints';
+import { AiListsApi, ItemsApi, ListsApi, ShareApi } from '@/api/endpoints';
+import { useAuthStore } from '@/store/auth';
 import type { ListItem, ListSummary, ListType } from '@/types';
 import { SortableItem } from '@/components/lists/SortableItem';
 import { ListSettingsPanel } from '@/components/lists/ListSettingsPanel';
@@ -72,11 +73,48 @@ export function ListDetailPage() {
     [list],
   );
 
+  // Users we can assign a task to (owner + collaborators). Loaded
+  // alongside list/items so the per-item task popover doesn't have to
+  // fire its own request when opened.
+  const [assignableUsers, setAssignableUsers] = useState<{ id: number; name: string }[]>([]);
+
   const refresh = useCallback(async () => {
     try {
       const [l, it] = await Promise.all([ListsApi.get(listId), ItemsApi.list(listId)]);
       setList(l);
       setItems(it);
+      // Fetch collaborators lazily — only when the list is owned by
+      // the current user OR they're an EDIT collaborator (only those
+      // see the task UI). Endpoint returns owner + every collaborator.
+      try {
+        const collabs = await ShareApi.collaborators(listId);
+        const me = useAuthStore.getState();
+        // Build the assignable set: owner + every collaborator + self.
+        // We display "Eigentümer" for the parent owner when the
+        // viewer isn't them (the API doesn't ship owner_name on the
+        // list summary — picking up a real name would require an
+        // extra round-trip we don't need today). For the common
+        // owner-viewing-their-own-list case the owner IS in the auth
+        // store, so the label is right.
+        const out: { id: number; name: string }[] = [];
+        if (l.is_owner && me.userId) {
+          out.push({ id: me.userId, name: me.name ?? 'Ich' });
+        } else {
+          out.push({ id: l.owner_id, name: 'Eigentümer' });
+          if (me.userId) {
+            out.push({ id: me.userId, name: me.name ?? 'Ich' });
+          }
+        }
+        for (const c of collabs) {
+          out.push({ id: c.user_id, name: c.name });
+        }
+        const seen = new Set<number>();
+        setAssignableUsers(
+          out.filter((u) => (seen.has(u.id) ? false : (seen.add(u.id), true))),
+        );
+      } catch {
+        setAssignableUsers([]);
+      }
     } catch (e) {
       toast.error(getApiError(e));
       nav('/');
@@ -184,6 +222,13 @@ export function ListDetailPage() {
           category_locked: false,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
+          // Task fields default to null on offline-queued placeholders —
+          // the user can still upgrade to a task once the row syncs.
+          assignee_id: null,
+          assignee_name: null,
+          due_at: null,
+          reminder_at: null,
+          reminder_sent: false,
         };
         setItems((cur) => [...cur, placeholder]);
         setText('');
@@ -554,6 +599,7 @@ export function ListDetailPage() {
             onUpdate={update}
             onDelete={del}
             onSwipeDelete={softDelete}
+            assignableUsers={assignableUsers}
           />
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
@@ -569,6 +615,7 @@ export function ListDetailPage() {
                     onUpdate={update}
                     onDelete={del}
                     onSwipeDelete={softDelete}
+                    assignableUsers={assignableUsers}
                   />
                 ))}
               </div>
@@ -682,6 +729,7 @@ function CategoryGroupedList({
   onUpdate,
   onDelete,
   onSwipeDelete,
+  assignableUsers,
 }: {
   items: ListItem[];
   canEdit: boolean;
@@ -690,6 +738,7 @@ function CategoryGroupedList({
   onUpdate: (i: ListItem, patch: Partial<ListItem>) => void;
   onDelete: (i: ListItem) => void;
   onSwipeDelete: (i: ListItem) => void;
+  assignableUsers: { id: number; name: string }[];
 }) {
   // Pick the icon + order set for this list type. The caller already
   // ensures this is non-null before rendering the grouped view, but the
@@ -740,6 +789,7 @@ function CategoryGroupedList({
                   onUpdate={onUpdate}
                   onDelete={onDelete}
                   onSwipeDelete={onSwipeDelete}
+                  assignableUsers={assignableUsers}
                 />
               ))}
             </div>

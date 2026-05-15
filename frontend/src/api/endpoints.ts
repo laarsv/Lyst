@@ -1,6 +1,7 @@
 import { api } from './client';
 import type {
   AdminUser,
+  AggregatedTask,
   AiGeneratedList,
   AiMissingItem,
   AiSuggestedIngredient,
@@ -24,6 +25,7 @@ import type {
   MealType,
   Note,
   NoteFolder,
+  NoteTask,
   NoteVersionFull,
   NoteVersionListItem,
   PublicListData,
@@ -178,6 +180,9 @@ export const ItemsApi = {
       quantity: number | null;
       unit: string | null;
       category: string | null;
+      assignee_id: number | null;
+      due_at: string | null;
+      reminder_at: string | null;
     }>,
   ) =>
     api.patch<{ data: ListItem }>(`/lists/${listId}/items/${itemId}`, payload).then(unwrap),
@@ -185,6 +190,47 @@ export const ItemsApi = {
     api.delete(`/lists/${listId}/items/${itemId}`),
   reorder: (listId: number, items: { id: number; position: number }[]) =>
     api.patch(`/lists/${listId}/items/reorder`, { items }),
+};
+
+/** CRUD for the task_items table behind every <li data-type="taskItem">
+ *  in a note's TipTap doc. The editor's node-view diffs these against
+ *  the doc on every save (create new, delete missing, patch text). */
+export const NoteTasksApi = {
+  list: (noteId: number) =>
+    api.get<{ data: NoteTask[] }>(`/notes/${noteId}/tasks`).then(unwrap),
+  create: (
+    noteId: number,
+    payload: Partial<{ text: string; is_done: boolean; position: number }>,
+  ) =>
+    api.post<{ data: NoteTask }>(`/notes/${noteId}/tasks`, payload).then(unwrap),
+  update: (
+    noteId: number,
+    taskId: number,
+    payload: Partial<{
+      text: string;
+      is_done: boolean;
+      position: number;
+      assignee_id: number | null;
+      due_at: string | null;
+      reminder_at: string | null;
+    }>,
+  ) =>
+    api
+      .patch<{ data: NoteTask }>(`/notes/${noteId}/tasks/${taskId}`, payload)
+      .then(unwrap),
+  remove: (noteId: number, taskId: number) =>
+    api.delete(`/notes/${noteId}/tasks/${taskId}`),
+};
+
+/** Global aggregator. Drives /tasks page. */
+export const TasksApi = {
+  list: (params?: {
+    scope?: 'mine' | 'assigned_to_me' | 'all';
+    status?: 'open' | 'done' | 'overdue' | 'today' | 'this_week' | 'all';
+  }) =>
+    api
+      .get<{ data: AggregatedTask[] }>('/tasks', { params })
+      .then(unwrap),
 };
 
 export const ShareApi = {

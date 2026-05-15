@@ -60,6 +60,48 @@ export interface ListItem {
   category_locked: boolean;
   created_at: string;
   updated_at: string;
+  // Task layer (alembic 0018). Any of (assignee_id, due_at, reminder_at)
+  // being non-null means the user has upgraded this item to a task —
+  // the per-item popover and the /tasks aggregator key on that.
+  assignee_id: number | null;
+  assignee_name: string | null;
+  due_at: string | null;
+  reminder_at: string | null;
+  reminder_sent: boolean;
+}
+
+/** Backend `task_items` row — one per <li data-type="taskItem"> in a
+ *  note's TipTap doc. Surfaced via /notes/{id}/tasks + the global
+ *  /tasks aggregator. */
+export interface NoteTask {
+  id: number;
+  note_id: number;
+  text: string;
+  is_done: boolean;
+  position: number;
+  assignee_id: number | null;
+  assignee_name: string | null;
+  due_at: string | null;
+  reminder_at: string | null;
+  reminder_sent: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Wire shape of GET /tasks. `source` discriminates whether `id`
+ *  refers to a list_items row or a task_items row. */
+export interface AggregatedTask {
+  id: number;
+  source: 'list' | 'note';
+  source_id: number;
+  source_title: string;
+  owner_id: number;
+  text: string;
+  is_done: boolean;
+  assignee_id: number | null;
+  assignee_name: string | null;
+  due_at: string | null;
+  reminder_at: string | null;
 }
 
 export interface Collaborator {

@@ -34,7 +34,7 @@ import TableRow from '@tiptap/extension-table-row';
 import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
 import TaskList from '@tiptap/extension-task-list';
-import TaskItem from '@tiptap/extension-task-item';
+import { NoteTaskItem } from './NoteTaskItemExtension';
 import Placeholder from '@tiptap/extension-placeholder';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import CharacterCount from '@tiptap/extension-character-count';
@@ -55,6 +55,9 @@ import {
   createSlashRenderer,
   type SlashCommand as SlashCommandItem,
 } from './SlashCommandExtension';
+import { attachNoteTaskSync } from './NoteTaskSync';
+import { NoteTaskFloatingMenu } from './NoteTaskFloatingMenu';
+import type { TaskAssignableUser } from '@/components/tasks/TaskAssignPopover';
 import {
   AlignCenter,
   AlignLeft,
@@ -111,6 +114,10 @@ interface Props {
   /** Bottom padding for the editor container — used by mobile to clear
    *  the floating toolbar / keyboard. */
   contentPaddingBottom?: number;
+  /** Users assignable to note tasks (owner + share recipients). When
+   *  provided + editable, the task floating menu surfaces an assignee
+   *  picker; otherwise the menu offers only due-at / reminder-at. */
+  assignableUsers?: TaskAssignableUser[];
 }
 
 export const NoteEditor = forwardRef<NoteEditorRef, Props>(function NoteEditor(
@@ -124,6 +131,7 @@ export const NoteEditor = forwardRef<NoteEditorRef, Props>(function NoteEditor(
     showToolbar,
     className,
     contentPaddingBottom,
+    assignableUsers,
   },
   ref,
 ) {
@@ -184,7 +192,7 @@ export const NoteEditor = forwardRef<NoteEditorRef, Props>(function NoteEditor(
         TaskList.configure({
           HTMLAttributes: { class: 'note-tasklist' },
         }),
-        TaskItem.configure({
+        NoteTaskItem.configure({
           nested: true,
           HTMLAttributes: { class: 'note-taskitem' },
         }),
@@ -263,6 +271,14 @@ export const NoteEditor = forwardRef<NoteEditorRef, Props>(function NoteEditor(
   // call commands (e.g. focus on mount).
   useImperativeHandle(ref, () => ({ editor: editor ?? null }), [editor]);
 
+  // Backend sync for note task items — debounced diff against the
+  // task_items table. Only active in editable mode so a read-only
+  // viewer doesn't accidentally clobber rows.
+  useEffect(() => {
+    if (!editor || !editable) return;
+    return attachNoteTaskSync(editor, noteId);
+  }, [editor, editable, noteId]);
+
   return (
     <div className={`note-editor-root flex flex-col ${className ?? ''}`}>
       {editable && (showToolbar ?? true) && editor && (
@@ -285,6 +301,16 @@ export const NoteEditor = forwardRef<NoteEditorRef, Props>(function NoteEditor(
           selection is inside a table cell. Read-only editors never see
           this — there's nothing to edit. */}
       {editable && editor && <TableFloatingMenu editor={editor} />}
+      {/* Task assignment popover for task-list items. Shows a small
+          floating "Aufgabe" button next to the active task; clicking
+          opens the same TaskAssignPopover the list items use. */}
+      {editable && editor && (
+        <NoteTaskFloatingMenu
+          editor={editor}
+          noteId={noteId}
+          assignableUsers={assignableUsers ?? []}
+        />
+      )}
     </div>
   );
 });

@@ -119,10 +119,14 @@ def _allow_input_attrs(tag: str, name: str, value: str) -> bool:
 
 def _allow_li_attrs(tag: str, name: str, value: str) -> bool:
     # TipTap task-list items carry `data-type="taskItem"` and
-    # `data-checked="true|false"`. Anything else (e.g. `class="task-list-item"`)
-    # is also handy for CSS, so allow class on `li` specifically.
+    # `data-checked="true|false"`. After the alembic 0018 task layer
+    # they also carry `data-task-id="<digits>"` pointing at a row in
+    # the task_items table — bleach gates the id to integers so a
+    # paste from outside can't forge a fake reference.
     if name in ("data-type", "data-checked"):
         return True
+    if name == "data-task-id":
+        return value.isdigit()
     if name == "class":
         return value in ("task-list-item", "task-list-item checked")
     return False

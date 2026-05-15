@@ -22,6 +22,14 @@ class ListItemUpdate(BaseModel):
     # that as a manual override and flips category_locked to True so future
     # auto-categorization runs leave it alone.
     category: str | None = Field(default=None, max_length=64)
+    # Task fields (alembic 0018). Sending null explicitly clears the
+    # column — the router uses exclude_unset to distinguish "not
+    # provided" from "set to null". assignee_id is validated against
+    # the parent list's owner + collaborator set; non-permitted values
+    # are rejected with a 400.
+    assignee_id: int | None = None
+    due_at: datetime | None = None
+    reminder_at: datetime | None = None
 
 
 class ListItemOut(ListItemBase):
@@ -34,6 +42,14 @@ class ListItemOut(ListItemBase):
     category_locked: bool = False
     created_at: datetime
     updated_at: datetime
+    # Task fields surface on every list item — clients use null vs
+    # non-null on any of (assignee_id, due_at, reminder_at) to decide
+    # whether the item is an "active task" worth rendering chips for.
+    assignee_id: int | None = None
+    assignee_name: str | None = None
+    due_at: datetime | None = None
+    reminder_at: datetime | None = None
+    reminder_sent: bool = False
 
 
 class BulkItemsCreate(BaseModel):

@@ -90,4 +90,16 @@ async def remove_collaborator(db: AsyncSession, list_id: int, user_id: int) -> N
     if not coll:
         raise ValueError("Collaborator not found")
     await db.delete(coll)
+    # Cascade: clear this user's task assignments on this list. A
+    # collaborator who loses access mustn't keep seeing tasks they
+    # can't reach. The FK has ondelete="SET NULL" on the assignee_id
+    # column, but THIS deletion is on the collaborator row — not on
+    # the user — so we have to NULL explicitly.
+    from app.models.list_item import ListItem  # local import — avoid cycles
+    from sqlalchemy import update
+    await db.execute(
+        update(ListItem)
+        .where(ListItem.list_id == list_id, ListItem.assignee_id == user_id)
+        .values(assignee_id=None)
+    )
     await db.commit()

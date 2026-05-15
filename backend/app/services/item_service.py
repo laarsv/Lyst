@@ -1,12 +1,19 @@
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.list_item import ListItem
 
 
 async def list_items(db: AsyncSession, list_id: int) -> list[ListItem]:
+    # selectinload(assignee) so the response payload includes
+    # assignee_name without a per-row lazy-load round-trip. Cheap on
+    # the wire — most list items don't have an assignee at all.
     result = await db.execute(
-        select(ListItem).where(ListItem.list_id == list_id).order_by(ListItem.position)
+        select(ListItem)
+        .where(ListItem.list_id == list_id)
+        .options(selectinload(ListItem.assignee))
+        .order_by(ListItem.position)
     )
     return list(result.scalars().all())
 

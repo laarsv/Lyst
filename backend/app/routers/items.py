@@ -26,13 +26,30 @@ from app.services.item_service import (
     update_item,
 )
 from app.services.list_service import get_list_for_user
+from app.services.task_service import apply_task_fields, list_assignable_user_ids
+from app.services.task_notification_service import notify_task_assigned_list_item
 from app.services.ws_manager import manager as ws_manager
 
 router = APIRouter(prefix="/lists/{list_id}/items", tags=["items"])
 
 
 def _item_out(it) -> dict:
-    return ListItemOut.model_validate(it).model_dump(mode="json")
+    """Serialise a ListItem to the wire format. Surfaces assignee_name
+    when the relationship is loaded — callers that didn't selectinload
+    `assignee` will see `None` regardless of whether the column is set.
+    Detail-page reads always load the relationship; the categorize
+    background task reuses this function but doesn't need the name."""
+    payload = ListItemOut.model_validate(it).model_dump(mode="json")
+    try:
+        # `assignee` is a relationship; touching it lazily would emit
+        # a sync query inside an async context. We probe via __dict__
+        # so unloaded relationships don't trigger a lazy load.
+        loaded = it.__dict__.get("assignee")
+        if loaded is not None and getattr(loaded, "name", None):
+            payload["assignee_name"] = loaded.name
+    except Exception:
+        pass
+    return payload
 
 
 async def _ensure_edit(db: AsyncSession, list_id: int, user_id: int) -> None:
@@ -217,14 +234,38 @@ async def patch_item(
         # update_item() filters out None values for backwards compatibility.
         item.category = patch.pop("category")
         item.category_locked = patch.pop("category_locked")
+    # Task fields (assignee/due/reminder). Validate assignee against
+    # the parent list's access set; reject otherwise so a client can't
+    # quietly assign tasks to users who don't see the list. Cleared
+    # values (explicit null) pass through unchanged because they're
+    # always permitted.
+    if "assignee_id" in patch and patch["assignee_id"] is not None:
+        allowed = await list_assignable_user_ids(db, list_id)
+        if patch["assignee_id"] not in allowed:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Diese Person hat keinen Zugriff auf diese Liste.",
+            )
+    new_assignee = apply_task_fields(item, patch)
     item = await update_item(db, item, **patch) if patch else item
     if not patch:
         await db.commit()
         await db.refresh(item)
+    # Eagerly load the assignee relationship so the response payload
+    # carries assignee_name without a lazy-load round-trip.
+    if item.assignee_id is not None:
+        await db.refresh(item, attribute_names=["assignee"])
     out = _item_out(item)
     await ws_manager.broadcast(
         list_id, {"type": "item_updated", "payload": out}, exclude_client_id=client_id
     )
+    # Best-effort assignment email — fires AFTER the commit so the
+    # recipient clicking the email link sees the new assignment.
+    if new_assignee is not None:
+        try:
+            await notify_task_assigned_list_item(db, item, user, new_assignee)
+        except Exception:  # pragma: no cover
+            pass
     return ok(out)
 
 

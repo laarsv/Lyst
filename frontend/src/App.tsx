@@ -10,6 +10,7 @@ import { RecipesPage } from '@/pages/Recipes';
 import { RecipeDetailPage } from '@/pages/RecipeDetail';
 import { RecipeEditPage } from '@/pages/RecipeEdit';
 import { MealPlannerPage } from '@/pages/MealPlanner';
+import { TasksPage } from '@/pages/Tasks';
 import { SettingsPage } from '@/pages/Settings';
 import { PublicSharePage } from '@/pages/PublicShare';
 import { PublicRecipePage } from '@/pages/PublicRecipe';
@@ -55,6 +56,7 @@ export default function App() {
           <Route path="/recipes/:id" element={<RecipeDetailPage />} />
           <Route path="/recipes/:id/edit" element={<RecipeEditPage />} />
           <Route path="/meal-planner" element={<MealPlannerPage />} />
+          <Route path="/tasks" element={<TasksPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
 

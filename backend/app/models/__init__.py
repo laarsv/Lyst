@@ -10,6 +10,7 @@ from app.models.meal_plan import MealPlan, MealPlanEntry, MealType
 from app.models.note import Note, NoteMention, NoteShare
 from app.models.note_folder import NoteFolder
 from app.models.note_version import NoteVersion
+from app.models.task_item import TaskItem
 from app.models.recipe import (
     Recipe,
     RecipeBookShare,
@@ -45,4 +46,5 @@ __all__ = [
     "MealType",
     "NoteFolder",
     "NoteVersion",
+    "TaskItem",
 ]

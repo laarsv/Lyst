@@ -144,6 +144,58 @@ def recipe_book_share_email(
     )
 
 
+def task_assigned_email(
+    actor_name: str,
+    task_text: str,
+    parent_kind: str,
+    parent_title: str,
+    url: str,
+) -> tuple[str, str]:
+    """Sent when someone gets assigned a task. `parent_kind` is
+    "list" or "note" — we use it to phrase the breadcrumb. URL deep-
+    links to the parent resource with `task=<id>` so a future frontend
+    highlight-pass can scroll-into-view + pulse the row."""
+    safe_text = (task_text or "(ohne Text)").replace("<", "&lt;").replace(">", "&gt;")
+    safe_parent = (parent_title or "").replace("<", "&lt;").replace(">", "&gt;")
+    where = "Liste" if parent_kind == "list" else "Notiz"
+    body = (
+        f"<p><strong>{actor_name}</strong> hat dir eine Aufgabe zugewiesen:</p>"
+        f'<p style="font-size:17px;margin:8px 0 4px 0;">„{safe_text}"</p>'
+        f'<p style="color:{_MUTED};font-size:13px;margin-top:0;">'
+        f"in der {where} <em>„{safe_parent}\"</em></p>"
+        f"{_btn(url, 'Aufgabe öffnen')}"
+        f'<p style="color:{_MUTED};font-size:13px;">'
+        f"Du erhältst diese E-Mail, weil dir jemand in Lyst eine Aufgabe "
+        f"zugewiesen hat.</p>"
+    )
+    return (
+        f"{actor_name} hat dir eine Aufgabe zugewiesen",
+        _BASE.format(title="Aufgabe zugewiesen", body=body),
+    )
+
+
+def task_reminder_email(
+    task_text: str,
+    parent_kind: str,
+    parent_title: str,
+    url: str,
+) -> tuple[str, str]:
+    """Sent by the scheduler when a task's reminder_at falls due."""
+    safe_text = (task_text or "(ohne Text)").replace("<", "&lt;").replace(">", "&gt;")
+    safe_parent = (parent_title or "").replace("<", "&lt;").replace(">", "&gt;")
+    where = "Liste" if parent_kind == "list" else "Notiz"
+    body = (
+        f'<p><strong>Erinnerung:</strong> „{safe_text}"</p>'
+        f'<p style="color:{_MUTED};font-size:13px;margin-top:0;">'
+        f"in der {where} <em>„{safe_parent}\"</em></p>"
+        f"{_btn(url, 'Aufgabe öffnen')}"
+    )
+    return (
+        f"Erinnerung: {task_text}",
+        _BASE.format(title="Aufgabe-Erinnerung", body=body),
+    )
+
+
 def note_mention_email(
     actor_name: str, note_title: str, note_url: str
 ) -> tuple[str, str]:

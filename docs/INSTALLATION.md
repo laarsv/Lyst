@@ -257,6 +257,30 @@ find the freshly-MARKDOWN row, retry, and leave the rest alone. The
 `content_format` column stays for one release before being dropped so
 this rollback window remains open.
 
+### One-off: note tasks → task_items rows (release ≥ 1.6)
+
+The tasks layer (alembic 0018) makes every TipTap task-list checkbox
+inside a note individually addressable. Existing notes have those
+checkboxes in their HTML content but no `data-task-id` attribute and
+no row in the new `task_items` table — so the global Aufgaben view
+and the per-task popover ignore them. A second one-shot script
+backfills them:
+
+```bash
+# Optional: --dry-run --verbose --limit 5 to spot-check first.
+docker compose exec backend python -m scripts.migrate_note_tasks_to_rows
+```
+
+What it does: for every note where `content_format = 'HTML'`, parses
+the saved HTML, inserts a `task_items` row per task-item li that
+doesn't already have a `data-task-id`, and stamps the new id back
+into the HTML. Idempotent — a re-run skips anything already tagged.
+
+You don't need to back up before this one: the script only ADDS
+rows + attribute values, it never destroys existing content. If you
+want to undo a single note's conversion you can just clear the
+`data-task-id` attributes on its `<li>`s and run the script again.
+
 ---
 
 ## Troubleshooting

@@ -1,12 +1,14 @@
+from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Float, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
 
 if TYPE_CHECKING:
     from app.models.list import List
+    from app.models.user import User
 
 
 class ListItem(Base, TimestampMixin):
@@ -30,4 +32,29 @@ class ListItem(Base, TimestampMixin):
         Boolean, default=False, nullable=False
     )
 
+    # ---- Task fields (alembic 0018) -----------------------------------------
+    # Setting any of these "upgrades" the item to a task — the /tasks
+    # aggregator picks it up, the per-item popover surfaces its state,
+    # and the scheduler watches reminder_at. assignee_id MUST be a user
+    # who already has access to the parent list (owner or collaborator);
+    # the cascade in list_share_service NULLs it when access is revoked.
+    assignee_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    due_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    reminder_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    # Flipped to true by the scheduler the first time the reminder
+    # fires, so a single reminder_at value never produces two emails.
+    # Cleared back to false if the user moves reminder_at forward.
+    reminder_sent: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+
     list: Mapped["List"] = relationship(back_populates="items")
+    assignee: Mapped["User | None"] = relationship(foreign_keys=[assignee_id])
