@@ -18,6 +18,7 @@ from app.services.list_service import (
     reset_list,
     update_list,
 )
+from app.services.realtime_events import emit_list_event
 from app.services.share_state_service import list_internal_share_counts
 from app.services.snapshot_service import save_snapshot
 from app.services.ws_manager import manager as ws_manager
@@ -109,8 +110,15 @@ async def post_list(
     payload: ListCreate,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ):
     lst = await create_list(db, user.id, **payload.model_dump())
+    # No collaborators yet, so the audience is just the owner. Still
+    # useful — fan out to their OTHER devices so the lists overview
+    # picks up the new row instantly.
+    await emit_list_event(
+        db, lst.id, "list.created", actor_id=user.id, client_id=client_id
+    )
     # Brand-new list — no collaborators yet, public token off.
     return ok(_list_out(lst, 0, 0, True, None, internal_share_count=0))
 
@@ -145,6 +153,7 @@ async def patch_list(
     payload: ListUpdate,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ):
     try:
         lst, is_owner, perm = await get_list_for_user(db, list_id, user.id, require_edit=True)
@@ -154,6 +163,21 @@ async def patch_list(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     lst = await update_list(db, lst, **payload.model_dump(exclude_unset=True))
     total, checked = await list_stats(db, list_id)
+    # Lightweight payload: just the title + updated_at so the
+    # receiving frontend can patch its list card without a refetch.
+    await emit_list_event(
+        db,
+        list_id,
+        "list.updated",
+        actor_id=user.id,
+        client_id=client_id,
+        payload={
+            "title": lst.title,
+            "updated_at": lst.updated_at.isoformat()
+            if lst.updated_at is not None
+            else None,
+        },
+    )
     return ok(_list_out(lst, total, checked, is_owner, perm))
 
 
@@ -162,6 +186,7 @@ async def del_list(
     list_id: int,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ):
     try:
         lst, is_owner, _ = await get_list_for_user(db, list_id, user.id)
@@ -169,7 +194,27 @@ async def del_list(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     if not is_owner:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only owner can delete")
+    # Snapshot audience BEFORE the delete cascade wipes the
+    # collaborator join table.
+    from app.services.realtime_events import _list_audience  # noqa
+    from app.services.user_ws_manager import user_manager
+    from datetime import datetime, timezone
+
+    audience = await _list_audience(db, list_id)
     await delete_list(db, lst)
+    await user_manager.broadcast_to_users(
+        audience,
+        {
+            "event": "list.deleted",
+            "resource_type": "list",
+            "resource_id": list_id,
+            "parent_id": None,
+            "actor_id": user.id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "payload": None,
+        },
+        exclude_client_id=client_id,
+    )
     return ok({"message": "Deleted"})
 
 

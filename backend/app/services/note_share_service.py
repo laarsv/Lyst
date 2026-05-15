@@ -202,11 +202,16 @@ async def share_note_with_email(
     owner: User,
     email: str,
     permission: CollaboratorPermission = CollaboratorPermission.VIEW,
-) -> tuple[str, str | None]:
-    """Returns (kind, user_name). External case ensures share_token exists
-    so the caller can email the public link. If a share already exists
-    for this (note, user), this call updates the permission rather than
-    erroring — matches the "no-op idempotent" behavior the UI assumes."""
+) -> tuple[str, str | None, int | None]:
+    """Returns (kind, user_name, user_id). user_id is set on the
+    'internal' path so the caller can fan out a share.created event
+    to the new recipient via the user-channel WebSocket; None for
+    the 'external' (email-to-non-Lyst-user) path.
+
+    External case ensures share_token exists so the caller can email
+    the public link. If a share already exists for this (note, user),
+    this call updates the permission rather than erroring — matches
+    the "no-op idempotent" behaviour the UI assumes."""
     target_email = email.strip().lower()
     if target_email == owner.email.lower():
         raise ValueError("self-share")
@@ -215,7 +220,7 @@ async def share_note_with_email(
     if target is None:
         if not note.share_token:
             await enable_share(db, note)
-        return "external", None
+        return "external", None, None
 
     existing = await db.execute(
         select(NoteShare).where(
@@ -243,7 +248,7 @@ async def share_note_with_email(
         except IntegrityError:
             # Race with a concurrent insert — treat as already shared.
             await db.rollback()
-    return "internal", target.name
+    return "internal", target.name, target.id
 
 
 async def update_internal_share_permission(

@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import AsyncSessionLocal
 from app.core.security import decode_token
 from app.services.list_service import get_list_for_user
+from app.services.user_ws_manager import user_manager
 from app.services.ws_manager import manager
 
 router = APIRouter(tags=["ws"])
@@ -65,3 +66,46 @@ async def list_ws(
         pass
     finally:
         manager.disconnect(list_id, websocket)
+
+
+# ---------------------------------------------------------------------------
+# /ws/user — per-user channel for cross-resource real-time sync
+# ---------------------------------------------------------------------------
+#
+# The frontend opens this once per session (in AppShell, post-login).
+# It receives an event for every mutation that touches a resource the
+# user can see — list/note/recipe CRUD, list-item changes, shares,
+# notifications. The browser dispatches to invalidate or patch the
+# matching cache.
+#
+# The per-list /ws/lists/{id} channel still exists; the user channel
+# is a complement, not a replacement (yet). When list-item granular
+# events are reliably delivered via /ws/user, the per-list one can be
+# retired.
+
+@router.websocket("/ws/user")
+async def user_ws(
+    websocket: WebSocket,
+    token: str | None = Query(default=None),
+    client_id: str | None = Query(default=None),
+):
+    if not token:
+        await websocket.close(code=CODE_UNAUTHORIZED)
+        return
+    try:
+        payload = decode_token(token, expected_type="access")
+        user_id = int(payload["sub"])
+    except (ValueError, KeyError, TypeError):
+        await websocket.close(code=CODE_UNAUTHORIZED)
+        return
+
+    await user_manager.connect(user_id, websocket, client_id)
+    try:
+        while True:
+            # The browser doesn't send anything — blocking on
+            # receive_text() lets us detect disconnects cleanly.
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        user_manager.disconnect(user_id, websocket)

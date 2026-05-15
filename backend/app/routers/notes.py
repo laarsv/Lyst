@@ -4,7 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.dependencies import require_user
+from app.core.dependencies import get_client_id, require_user
+from app.services.realtime_events import emit_note_event
 from app.core.responses import ok
 from app.models.collaborator import CollaboratorPermission
 from app.models.note import Note, NoteContentFormat
@@ -151,6 +152,7 @@ async def post_note(
     payload: NoteCreate,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ):
     data = payload.model_dump()
     if data.get("folder_id") is not None:
@@ -168,6 +170,12 @@ async def post_note(
     db.add(note)
     await db.commit()
     await db.refresh(note)
+    # Brand-new note — fan out a note.created so any other device of
+    # the same user (post-share devices, etc.) updates its overview.
+    # Audience is just the owner since shares haven't been added yet.
+    await emit_note_event(
+        db, note.id, "note.created", actor_id=user.id, client_id=client_id
+    )
     # Brand-new note — no shares yet, so the explicit 0 keeps the
     # response shape identical to GET /notes/{id} (frontend can rely
     # on share_state being present on owner-side responses).
@@ -292,6 +300,7 @@ async def patch_note(
     payload: NoteUpdate,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ):
     note, share_source, perm = await _require_note_edit(db, note_id, user.id)
     patch = payload.model_dump(exclude_unset=True)
@@ -356,6 +365,30 @@ async def patch_note(
     if share_source is None:
         counts = await note_internal_share_counts(db, [note.id])
         share_count = counts.get(note.id, 0)
+
+    # Fan out a note.updated event to every device of every user with
+    # access to this note. The payload includes the title + a hint
+    # about what changed so a currently-open editor can decide
+    # whether to soft-merge or show the "Neu laden?" banner; bigger
+    # diffs (full content rewrite) are signalled via
+    # `content_changed=true` without sending the whole body — the
+    # receiving editor refetches if it doesn't have local edits.
+    await emit_note_event(
+        db,
+        note.id,
+        "note.updated",
+        actor_id=user.id,
+        client_id=client_id,
+        payload={
+            "title": note.title,
+            "title_changed": title_changing,
+            "content_changed": content_changing,
+            "updated_at": note.updated_at.isoformat()
+            if note.updated_at is not None
+            else None,
+        },
+    )
+
     return ok(
         _out(
             note,
@@ -473,6 +506,7 @@ async def del_note(
     note_id: int,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ):
     result = await db.execute(
         select(Note).where(Note.id == note_id, Note.owner_id == user.id)
@@ -480,8 +514,20 @@ async def del_note(
     note = result.scalar_one_or_none()
     if not note:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    # Snapshot the audience BEFORE the delete — once the row is gone
+    # the share join table cascade-deletes too, so the audience lookup
+    # would return only the owner.
+    from app.services.realtime_events import emit_note_deleted, note_audience
+
+    audience = await note_audience(db, note.id)
     await db.delete(note)
     await db.commit()
+    # Fan out to the snapshotted audience. The receiving frontend
+    # invalidates the notes overview and, if the user is currently on
+    # this note's detail page, navigates away with a toast.
+    await emit_note_deleted(
+        audience, note_id, actor_id=user.id, client_id=client_id
+    )
     return ok({"message": "Deleted"})
 
 
@@ -799,10 +845,11 @@ async def post_share_by_email(
     payload: NoteShareByEmailRequest,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ):
     note = await _load_owned_note_for_share(db, note_id, user.id)
     try:
-        kind, name = await share_note_with_email(
+        kind, name, recipient_id = await share_note_with_email(
             db, note, user, payload.email, payload.permission
         )
     except ValueError as e:
@@ -818,6 +865,22 @@ async def post_share_by_email(
         url = f"{settings.FRONTEND_URL}/share/note/{note.share_token}"
         subject, html = note_share_email(user.name, note.title, url)
         await send_email(payload.email, subject, html)
+    elif kind == "internal" and recipient_id is not None:
+        # Fan out a share.created to the new recipient's user-channel
+        # so their notes overview gets invalidated and the new note
+        # appears within a tick. The actor (us) is excluded by
+        # exclude_client_id; we wouldn't reach our own channel since
+        # the recipient is a different user anyway.
+        from app.services.realtime_events import emit_share_event
+        await emit_share_event(
+            recipient_id=recipient_id,
+            actor_id=user.id,
+            resource_type="note",
+            resource_id=note.id,
+            event="share.created",
+            client_id=client_id,
+            payload={"actor_name": user.name, "title": note.title},
+        )
 
     return ok(NoteShareByEmailResponse(type=kind, user_name=name).model_dump())
 

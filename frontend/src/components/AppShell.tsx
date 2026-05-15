@@ -5,7 +5,9 @@ import { AuthApi } from '@/api/endpoints';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { SearchModal } from '@/components/SearchModal';
 import { SyncStatusBadge } from '@/components/SyncStatusBadge';
+import { LiveIndicator } from '@/components/LiveIndicator';
 import { useOverviewRouteRefresh } from '@/hooks/useOverviewQuery';
+import { useUserWebSocket } from '@/hooks/useUserWebSocket';
 import clsx from 'clsx';
 
 const USER_LINKS: [string, string][] = [
@@ -40,6 +42,12 @@ export function AppShell() {
   // fetch covers the common case; this guards future refactors that
   // might keep an overview mounted across route changes.
   useOverviewRouteRefresh(loc.pathname);
+
+  // One WebSocket per session — receives every mutation that touches
+  // a resource this user can see and invalidates the matching
+  // overview cache. Drives the green "Live" dot in the header.
+  // Disconnects automatically when AppShell unmounts (logout).
+  const liveConnected = useUserWebSocket();
 
   // Cmd/Ctrl+K → open global search; Esc handled inside the modal.
   useEffect(() => {
@@ -116,6 +124,11 @@ export function AppShell() {
           </nav>
 
           <div className="flex items-center gap-2 ml-auto">
+            {/* Live dot — reflects the per-user WebSocket. Replaces
+                the per-list LiveIndicator's UI role here; that one
+                still mounts inside ListDetail for the per-list
+                channel (kept as parallel sync for now). */}
+            <LiveIndicator connected={liveConnected} />
             <SyncStatusBadge />
             <button
               type="button"

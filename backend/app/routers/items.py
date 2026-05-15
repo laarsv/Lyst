@@ -26,6 +26,7 @@ from app.services.item_service import (
     update_item,
 )
 from app.services.list_service import get_list_for_user
+from app.services.realtime_events import emit_list_item_event
 from app.services.task_service import apply_task_fields, list_assignable_user_ids
 from app.services.task_notification_service import notify_task_assigned_list_item
 from app.services.ws_manager import manager as ws_manager
@@ -154,6 +155,19 @@ async def post_item(
     await ws_manager.broadcast(
         list_id, {"type": "item_created", "payload": out}, exclude_client_id=client_id
     )
+    # Parallel user-channel event for cross-device cache invalidation
+    # when the list isn't the user's currently-active page. The per-
+    # list broadcast above stays for now — same iteration, same data,
+    # different transport.
+    await emit_list_item_event(
+        db,
+        list_id,
+        item.id,
+        "list.item.created",
+        actor_id=user.id,
+        client_id=client_id,
+        payload=out,
+    )
     # Fire-and-forget categorization only when the list is in AUTO mode.
     # MANUAL leaves it null until the user hits "Jetzt kategorisieren".
     list_type, mode = await _list_mode(db, list_id)
@@ -209,6 +223,20 @@ async def patch_reorder(
         },
         exclude_client_id=client_id,
     )
+    # User-channel fan-out — reorder is per-list, so the overview
+    # doesn't care; only currently-mounted detail pages of users with
+    # access do. Send one event for the whole batch with the
+    # positions payload; resource_id is the FIRST item id just to
+    # have a value (the receiving frontend keys on parent_id).
+    await emit_list_item_event(
+        db,
+        list_id,
+        positions[0][0] if positions else 0,
+        "list.item.reordered",
+        actor_id=user.id,
+        client_id=client_id,
+        payload={"positions": [{"id": i, "position": p} for i, p in positions]},
+    )
     return ok({"message": "Reordered"})
 
 
@@ -259,6 +287,15 @@ async def patch_item(
     await ws_manager.broadcast(
         list_id, {"type": "item_updated", "payload": out}, exclude_client_id=client_id
     )
+    await emit_list_item_event(
+        db,
+        list_id,
+        item.id,
+        "list.item.updated",
+        actor_id=user.id,
+        client_id=client_id,
+        payload=out,
+    )
     # Best-effort assignment email — fires AFTER the commit so the
     # recipient clicking the email link sees the new assignment.
     if new_assignee is not None:
@@ -286,5 +323,13 @@ async def del_item(
         list_id,
         {"type": "item_deleted", "payload": {"id": item_id}},
         exclude_client_id=client_id,
+    )
+    await emit_list_item_event(
+        db,
+        list_id,
+        item_id,
+        "list.item.deleted",
+        actor_id=user.id,
+        client_id=client_id,
     )
     return ok({"message": "Deleted"})
