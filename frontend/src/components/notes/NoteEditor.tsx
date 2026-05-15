@@ -36,8 +36,11 @@ import TableHeader from '@tiptap/extension-table-header';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import Placeholder from '@tiptap/extension-placeholder';
+import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import { ReactRenderer } from '@tiptap/react';
 import { computePosition, flip, offset, shift } from '@floating-ui/dom';
+import { lowlight } from '@/lib/lowlight';
+import { TableFloatingMenu } from './TableFloatingMenu';
 import {
   Bold,
   Code,
@@ -111,9 +114,14 @@ export const NoteEditor = forwardRef<NoteEditorRef, Props>(function NoteEditor(
     {
       extensions: [
         StarterKit.configure({
-          // Link is added separately so we can configure openOnClick.
-          // CodeBlock from starter kit is fine; no language picker needed
-          // at the StarterKit level — we add a small one in the toolbar.
+          // Disable the plain code-block — we swap in the lowlight variant
+          // below so triple-backtick fences pick up syntax highlighting.
+          codeBlock: false,
+        }),
+        CodeBlockLowlight.configure({
+          lowlight,
+          defaultLanguage: null,
+          HTMLAttributes: { class: 'note-codeblock' },
         }),
         Link.configure({
           openOnClick: false, // we handle clicks ourselves below
@@ -214,6 +222,10 @@ export const NoteEditor = forwardRef<NoteEditorRef, Props>(function NoteEditor(
       >
         <EditorContent editor={editor} />
       </div>
+      {/* Table row/column commands. Only renders when the editor's
+          selection is inside a table cell. Read-only editors never see
+          this — there's nothing to edit. */}
+      {editable && editor && <TableFloatingMenu editor={editor} />}
     </div>
   );
 });
