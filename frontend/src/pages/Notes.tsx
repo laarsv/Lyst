@@ -1059,13 +1059,31 @@ function NoteEditorPane({
               className="px-2 py-1 text-xs border border-line rounded-full bg-surface outline-none focus:border-brand"
               placeholder="+ tag"
               value={tagInput}
+              // inputMode=text + enterKeyHint=done switches the mobile
+              // keyboard's return key label to "Fertig"/"Done" so the
+              // user expects a commit, not a "go to next field" jump.
+              inputMode="text"
+              enterKeyHint="done"
               onChange={(e) => setTagInput(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ',') {
+                  // stopPropagation alongside preventDefault — the
+                  // TipTap editor below installs document-level
+                  // keymaps and was claiming the Enter, which moved
+                  // focus to the contenteditable. Both calls are
+                  // needed: preventDefault stops the browser's
+                  // default form-submit-ish behavior, stopPropagation
+                  // stops React's bubble to any ancestor handler.
                   e.preventDefault();
+                  e.stopPropagation();
                   const v = tagInput.trim().replace(/^#/, '');
                   if (v && !state.tags.includes(v)) state.setTags([...state.tags, v]);
                   setTagInput('');
+                  // Keep the caret in the input so the user can fire
+                  // multiple tags in a row without re-tapping the
+                  // field. No-op on the desktop browsers where the
+                  // input stays focused naturally.
+                  e.currentTarget.focus();
                 }
               }}
             />

@@ -286,13 +286,21 @@ export function NoteMobileLayout({
               className="px-2 py-1 text-xs border border-line rounded-full bg-surface outline-none focus:border-brand min-w-[80px]"
               placeholder="+ tag"
               value={tagInput}
+              inputMode="text"
+              enterKeyHint="done"
               onChange={(e) => setTagInput(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ',') {
+                  // stopPropagation + preventDefault both required —
+                  // without stopPropagation the TipTap editor below
+                  // captured the Enter via its document-level keymap
+                  // and stole focus into the contenteditable.
                   e.preventDefault();
+                  e.stopPropagation();
                   const v = tagInput.trim().replace(/^#/, '');
                   if (v && !state.tags.includes(v)) state.setTags([...state.tags, v]);
                   setTagInput('');
+                  e.currentTarget.focus();
                 }
               }}
             />

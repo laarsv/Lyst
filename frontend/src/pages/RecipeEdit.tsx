@@ -477,11 +477,18 @@ export function RecipeEditPage() {
               className="flex-1 min-w-[100px] outline-none text-sm"
               placeholder="+ tag"
               value={tagInput}
+              inputMode="text"
+              enterKeyHint="done"
               onChange={(e) => setTagInput(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ',') {
+                  // Same fix as the note tag inputs: stopPropagation
+                  // so an ancestor form/handler doesn't claim the
+                  // Enter and shift focus to the next field.
                   e.preventDefault();
+                  e.stopPropagation();
                   addTag();
+                  e.currentTarget.focus();
                 }
               }}
               onBlur={addTag}

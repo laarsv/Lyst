@@ -554,6 +554,12 @@ export function ListDetailPage() {
               autoCapitalize="sentences"
               autoCorrect="on"
               spellCheck
+              // enterKeyHint=done labels the mobile return key as
+              // "Fertig" — matches the form-submit-on-Enter pattern
+              // here (the form's onSubmit fires the add path and
+              // clears the input; the user types the next item).
+              inputMode="text"
+              enterKeyHint="done"
             />
             <button className="btn-primary" type="submit" disabled={!text.trim()}>
               Hinzufügen
