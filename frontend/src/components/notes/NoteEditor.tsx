@@ -77,6 +77,7 @@ import {
   Minus as HorizontalRuleIcon,
   PanelTopOpen,
   Palette,
+  Plus,
   Quote,
   Redo2,
   Strikethrough,
@@ -200,7 +201,17 @@ export const NoteEditor = forwardRef<NoteEditorRef, Props>(function NoteEditor(
           placeholder,
           showOnlyWhenEditable: true,
         }),
-        Wikilink,
+        Wikilink.configure({
+          // Wire the NodeView to navigate via the parent's onNavigate
+          // callback (resolved at render time via onNavigateRef so
+          // the callback identity doesn't trigger an editor rebuild).
+          wikilink: {
+            onNavigate: (title: string) => {
+              onNavigateRef.current?.(title);
+            },
+            editable,
+          },
+        }),
         Mention,
         AtSuggestion.configure({
           noteId,
@@ -232,15 +243,84 @@ export const NoteEditor = forwardRef<NoteEditorRef, Props>(function NoteEditor(
           autocapitalize: 'sentences',
           autocorrect: 'on',
         },
-        // Click handler: in read-only mode, jump to the wikilink target.
-        handleClickOn: (_view, _pos, node, _parent, event) => {
-          if (node.type.name !== 'wikilink') return false;
-          if (editable) return false; // editing — let the cursor land in the span
-          const title = node.attrs.title as string;
-          if (title && onNavigateRef.current) {
-            event.preventDefault();
-            onNavigateRef.current(title);
-            return true;
+        // Click handler. Two concerns:
+        //   1. <summary> inside a details block: ProseMirror would
+        //      otherwise swallow the click in edit mode and the
+        //      native `<details>` toggle never fires. We flip the
+        //      parent details node's `open` attribute via a
+        //      transaction so the toggle works in both modes.
+        //   2. Wikilink chips are now ALWAYS navigable (used to be
+        //      read-only-mode-only). The NodeView owns the click
+        //      visually; this branch is the belt for cases where the
+        //      click bubbles up to the editor view (e.g. clicks on
+        //      the empty space inside the chip).
+        handleClickOn: (view, _pos, node, _parent, event) => {
+          const targetEl = event.target as HTMLElement | null;
+          // The wikilink NodeView's own click handler stops
+          // propagation, so reaching this branch means the click was
+          // on the wikilink text itself but somehow not consumed
+          // upstream (or we're rendering via the legacy renderHTML).
+          if (node.type.name === 'wikilink') {
+            const title = node.attrs.title as string;
+            if (title && onNavigateRef.current) {
+              event.preventDefault();
+              onNavigateRef.current(title);
+              return true;
+            }
+            return false;
+          }
+          // Summary click → toggle parent details `open` attr.
+          const summary = targetEl?.closest?.('summary');
+          if (summary) {
+            // Climb the ProseMirror tree to find the enclosing details.
+            const pmPos = view.posAtDOM(summary, 0);
+            if (pmPos < 0) return false;
+            const $pos = view.state.doc.resolve(pmPos);
+            for (let depth = $pos.depth; depth >= 0; depth--) {
+              const ancestor = $pos.node(depth);
+              if (ancestor.type.name === 'details') {
+                const detailsPos = $pos.before(depth);
+                const tr = view.state.tr.setNodeMarkup(detailsPos, undefined, {
+                  ...ancestor.attrs,
+                  open: !ancestor.attrs.open,
+                });
+                tr.setMeta('addToHistory', false);
+                view.dispatch(tr);
+                event.preventDefault();
+                return true;
+              }
+            }
+          }
+          return false;
+        },
+        // Keyboard equivalent for the summary toggle: Enter while the
+        // caret is inside a detailsSummary opens/closes the parent
+        // details. Space is intentionally excluded — typing spaces in
+        // the summary text is a normal editing action. Enter on a
+        // single-line `inline*` schema would otherwise be a no-op or
+        // an awkward hard-break, so reclaiming it for the toggle is
+        // the right tradeoff.
+        handleKeyDown: (view, event) => {
+          if (event.key !== 'Enter') return false;
+          const $from = view.state.selection.$from;
+          for (let depth = $from.depth; depth >= 0; depth--) {
+            const ancestor = $from.node(depth);
+            if (ancestor.type.name === 'detailsSummary') {
+              // Find the parent details — one depth higher.
+              const detailsDepth = depth - 1;
+              if (detailsDepth < 0) return false;
+              const details = $from.node(detailsDepth);
+              if (details.type.name !== 'details') return false;
+              const detailsPos = $from.before(detailsDepth);
+              const tr = view.state.tr.setNodeMarkup(detailsPos, undefined, {
+                ...details.attrs,
+                open: !details.attrs.open,
+              });
+              tr.setMeta('addToHistory', false);
+              view.dispatch(tr);
+              event.preventDefault();
+              return true;
+            }
           }
           return false;
         },
@@ -282,7 +362,7 @@ export const NoteEditor = forwardRef<NoteEditorRef, Props>(function NoteEditor(
   return (
     <div className={`note-editor-root flex flex-col ${className ?? ''}`}>
       {editable && (showToolbar ?? true) && editor && (
-        <NoteEditorToolbar editor={editor} noteId={noteId} />
+        <NoteEditorToolbar editor={editor} />
       )}
       <div
         className="note-editor-content flex-1 overflow-y-auto"
@@ -392,15 +472,18 @@ const HIGHLIGHT_COLORS: { label: string; value: string | null }[] = [
   { label: 'Orange', value: 'rgb(253 186 116 / 0.6)' },
 ];
 
-function NoteEditorToolbar({ editor, noteId }: { editor: Editor; noteId: number }) {
+function NoteEditorToolbar({ editor }: { editor: Editor }) {
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [colorOpen, setColorOpen] = useState(false);
   const [highlightOpen, setHighlightOpen] = useState(false);
-  const [uploadingImage, setUploadingImage] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Subscribe to editor state so isActive() / can() re-evaluate on every
-  // selection change without re-rendering the parent.
+  // selection change without re-rendering the parent. The selector
+  // only watches flags actually consumed by the slim toolbar (bold,
+  // italic, underline, strike, link, code, alignment, color/highlight,
+  // can-undo/redo). Block flags (heading/lists/quote/codeBlock) lived
+  // here before the slash-only migration; they're not read anywhere
+  // now so they don't need re-evaluation either.
   const flags = useEditorState({
     editor,
     selector: ({ editor: ed }) => ({
@@ -408,14 +491,8 @@ function NoteEditorToolbar({ editor, noteId }: { editor: Editor; noteId: number 
       italic: ed.isActive('italic'),
       underline: ed.isActive('underline'),
       strike: ed.isActive('strike'),
-      heading: ed.isActive('heading', { level: 2 }),
-      blockquote: ed.isActive('blockquote'),
       link: ed.isActive('link'),
       code: ed.isActive('code'),
-      codeBlock: ed.isActive('codeBlock'),
-      ul: ed.isActive('bulletList'),
-      ol: ed.isActive('orderedList'),
-      task: ed.isActive('taskList'),
       alignLeft: ed.isActive({ textAlign: 'left' }) || (!ed.isActive({ textAlign: 'center' }) && !ed.isActive({ textAlign: 'right' })),
       alignCenter: ed.isActive({ textAlign: 'center' }),
       alignRight: ed.isActive({ textAlign: 'right' }),
@@ -425,26 +502,6 @@ function NoteEditorToolbar({ editor, noteId }: { editor: Editor; noteId: number 
       canRedo: ed.can().chain().focus().redo().run(),
     }),
   });
-
-  const onPickImage = async (file: File) => {
-    setUploadingImage(true);
-    try {
-      const form = new FormData();
-      form.append('file', file);
-      const r = await api.post<{ data: { url: string } }>(
-        `/notes/${noteId}/images`,
-        form,
-        { headers: { 'Content-Type': 'multipart/form-data' } },
-      );
-      const url = r.data.data.url;
-      editor.chain().focus().setImage({ src: url, alt: file.name }).run();
-    } catch (e) {
-      toast.error(getApiError(e));
-    } finally {
-      setUploadingImage(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
 
   // Convenience helpers — each group is rendered inline below to keep
   // the structure visible at a glance.
@@ -547,66 +604,11 @@ function NoteEditorToolbar({ editor, noteId }: { editor: Editor; noteId: number 
 
       <ToolbarDivider />
 
-      {/* Group 3: Structure */}
-      <ToolbarGroup>
-        {btn({
-          key: 'h2',
-          label: 'Überschrift',
-          icon: Heading2,
-          active: flags.heading,
-          onClick: () => editor.chain().focus().toggleHeading({ level: 2 }).run(),
-        })}
-        {btn({
-          key: 'quote',
-          label: 'Zitat',
-          icon: Quote,
-          active: flags.blockquote,
-          onClick: () => editor.chain().focus().toggleBlockquote().run(),
-        })}
-        {btn({
-          key: 'hr',
-          label: 'Trennlinie',
-          icon: HorizontalRuleIcon,
-          onClick: () => editor.chain().focus().setHorizontalRule().run(),
-        })}
-        {btn({
-          key: 'details',
-          label: 'Aufklappbarer Bereich',
-          icon: PanelTopOpen,
-          onClick: () => editor.chain().focus().insertDetails().run(),
-        })}
-      </ToolbarGroup>
-
-      <ToolbarDivider />
-
-      {/* Group 4: Lists */}
-      <ToolbarGroup>
-        {btn({
-          key: 'ul',
-          label: 'Liste',
-          icon: List,
-          active: flags.ul,
-          onClick: () => editor.chain().focus().toggleBulletList().run(),
-        })}
-        {btn({
-          key: 'ol',
-          label: 'Nummerierte Liste',
-          icon: ListOrdered,
-          active: flags.ol,
-          onClick: () => editor.chain().focus().toggleOrderedList().run(),
-        })}
-        {btn({
-          key: 'task',
-          label: 'Aufgabenliste',
-          icon: ListChecks,
-          active: flags.task,
-          onClick: () => editor.chain().focus().toggleTaskList().run(),
-        })}
-      </ToolbarGroup>
-
-      <ToolbarDivider />
-
-      {/* Group 5: Insert */}
+      {/* Group 3: Link + inline code — everything else "insert"-shaped
+          (headings, lists, code block, image, table, HR, details)
+          lives in the slash menu now to keep the toolbar single-row
+          on mobile. The "+" button on the right end opens the same
+          menu for users who haven't discovered the `/` trigger. */}
       <ToolbarGroup>
         {btn({
           key: 'link',
@@ -622,36 +624,11 @@ function NoteEditorToolbar({ editor, noteId }: { editor: Editor; noteId: number 
           active: flags.code,
           onClick: () => editor.chain().focus().toggleCode().run(),
         })}
-        {btn({
-          key: 'codeblock',
-          label: 'Code-Block',
-          icon: FileCode,
-          active: flags.codeBlock,
-          onClick: () => editor.chain().focus().toggleCodeBlock().run(),
-        })}
-        {btn({
-          key: 'image',
-          label: 'Bild',
-          icon: uploadingImage ? Loader2 : ImageIcon,
-          spinning: uploadingImage,
-          onClick: () => fileInputRef.current?.click(),
-        })}
-        {btn({
-          key: 'table',
-          label: 'Tabelle',
-          icon: TableIcon,
-          onClick: () =>
-            editor
-              .chain()
-              .focus()
-              .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
-              .run(),
-        })}
       </ToolbarGroup>
 
       <ToolbarDivider />
 
-      {/* Group 6: Alignment */}
+      {/* Group 4: Alignment */}
       <ToolbarGroup>
         {btn({
           key: 'align-left',
@@ -678,7 +655,7 @@ function NoteEditorToolbar({ editor, noteId }: { editor: Editor; noteId: number 
 
       <ToolbarDivider />
 
-      {/* Group 7: History */}
+      {/* Group 5: History */}
       <ToolbarGroup>
         {btn({
           key: 'undo',
@@ -696,16 +673,37 @@ function NoteEditorToolbar({ editor, noteId }: { editor: Editor; noteId: number 
         })}
       </ToolbarGroup>
 
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/png,image/jpeg,image/webp,image/gif"
-        className="hidden"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) void onPickImage(f);
-        }}
-      />
+      <ToolbarDivider />
+
+      {/* "+" — discovery hint for the slash command palette. Inserts a
+          `/` at the current cursor (prepended with a space if the
+          char before isn't whitespace) so the Suggestion plugin's
+          `allow` predicate kicks in and the menu opens immediately.
+          The selected command's `run` deletes the trigger range, so
+          a confirmed insert is clean; a dismiss leaves the lone `/`
+          in the doc (rare, and the user can backspace it). */}
+      <ToolbarGroup>
+        {btn({
+          key: 'slash',
+          label: 'Block einfügen',
+          icon: Plus,
+          onClick: () => {
+            const { state } = editor;
+            const { $from } = state.selection;
+            const atStart = $from.parentOffset === 0;
+            const before = atStart
+              ? ''
+              : state.doc.textBetween($from.pos - 1, $from.pos);
+            const needsSpace = !atStart && before !== '' && !/\s/.test(before);
+            editor
+              .chain()
+              .focus()
+              .insertContent(needsSpace ? ' /' : '/')
+              .run();
+          },
+        })}
+      </ToolbarGroup>
+
       {linkDialogOpen && (
         <LinkDialog
           initialUrl={(editor.getAttributes('link').href as string) || ''}

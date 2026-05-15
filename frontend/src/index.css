@@ -233,21 +233,73 @@ html[data-theme="dark"] { color-scheme: dark; }
 
 /* Wikilink chip — emitted by the WikilinkExtension as
    `<span data-wikilink="Title" class="wikilink-chip">Title</span>`.
-   Same visual as the old markdown-era anchor so users don't see a
-   step-change on migration. */
+   In the editor it renders via a React NodeView with a button text
+   span + a remove (×) button; in the saved HTML (public share /
+   version history) it's a plain span. Both render paths land on
+   `.wikilink-chip` so the look is consistent. */
 .wikilink-chip {
-  display: inline;
+  display: inline-flex;
+  align-items: baseline;
   color: rgb(var(--color-brand-700));
   background: rgb(var(--color-brand-50));
   padding: 0.05em 0.4em;
   border-radius: 6px;
   text-decoration: none;
   cursor: pointer;
+  gap: 0.1em;
+  transition: background-color 100ms;
 }
-.note-editor-surface .wikilink-chip {
-  /* Inside the editor the chip is non-clickable (caret lands inside
-     when arrowed) — drop the pointer to communicate that. */
-  cursor: text;
+.wikilink-chip:hover {
+  background: rgb(var(--color-brand-100));
+}
+
+/* NodeView interior — the visible title sits inside a button so the
+   click handler can take precedence over ProseMirror's caret-move.
+   `inherit` keeps the button typography in line with the chip. */
+.wikilink-chip-text {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.wikilink-chip-text:focus-visible {
+  outline: 2px solid rgb(var(--color-brand));
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+
+/* Remove (×) button. Hover-visible on desktop, always visible on
+   touch — the NodeView toggles the .is-touch / .is-hover class
+   based on (hover: none) media. */
+.wikilink-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  margin-left: 0.15em;
+  padding: 0;
+  background: transparent;
+  color: rgb(var(--color-brand-700));
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background-color 120ms, opacity 120ms;
+}
+.wikilink-chip-remove:hover {
+  background: rgb(var(--color-brand) / 0.2);
+}
+.wikilink-chip-remove.is-hover {
+  opacity: 0;
+}
+.wikilink-chip:hover .wikilink-chip-remove.is-hover,
+.wikilink-chip-remove:focus-visible {
+  opacity: 1;
+}
+.wikilink-chip-remove.is-touch {
+  opacity: 0.7;
 }
 
 /* User mention chip — same anatomy as wikilink, different palette so
