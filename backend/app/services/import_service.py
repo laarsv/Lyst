@@ -78,6 +78,18 @@ class ImportedStep(BaseModel):
     position: int | None = None
 
 
+class ExtractedImage(BaseModel):
+    """Recipe hero image pulled out of the source (og:image, JSON-LD,
+    a largest-on-page heuristic for HTML/URL, or pypdf's embedded
+    image list for PDF). Carried as base64 in the preview response so
+    the frontend can render + offer it for save without a separate
+    round-trip. Persisted to disk via the existing recipe-image
+    endpoint AFTER the user confirms the import."""
+
+    data_base64: str
+    mime_type: str = Field(pattern=r"^image/(jpeg|png|webp|gif)$")
+
+
 class ImportedRecipe(BaseModel):
     title: str = Field(min_length=1, max_length=255)
     description: str | None = None
@@ -91,6 +103,11 @@ class ImportedRecipe(BaseModel):
     source_url: str | None = None
     ingredients: list[ImportedIngredient] = Field(default_factory=list)
     steps: list[ImportedStep] = Field(default_factory=list)
+    # Hero image discovered in the source (URL / HTML / PDF / photo).
+    # Always None for free-text imports. Always None when extraction
+    # failed — the import itself doesn't fail when the image step
+    # does; the recipe is still useful without it.
+    extracted_image: ExtractedImage | None = None
 
     @field_validator("tags", mode="before")
     @classmethod
@@ -245,6 +262,29 @@ async def _call_anthropic(text: str, model: str) -> dict[str, Any]:
         raise RecipeImportError(500, "Rezept konnte nicht extrahiert werden") from e
 
 
+# ---------- Image attachment helpers ----------
+
+async def _attach_image_from_html(
+    recipe: ImportedRecipe, html: str, *, base_url: str | None
+) -> ImportedRecipe:
+    """Run the og:image / JSON-LD / largest-<img> pipeline against the
+    given HTML, base64-encode the result and stick it on the recipe.
+    Image-extraction failures are swallowed — the recipe stays
+    unchanged. Best-effort by design."""
+    try:
+        from app.services.recipe_image_extractor import extract_image_from_html
+        img = await extract_image_from_html(html, base_url=base_url)
+        if img is not None:
+            data, mime = img
+            recipe.extracted_image = ExtractedImage(
+                data_base64=base64.b64encode(data).decode("ascii"),
+                mime_type=mime,
+            )
+    except Exception as e:  # pragma: no cover
+        logger.debug("Image extraction from HTML failed: %s", e)
+    return recipe
+
+
 # ---------- Provider dispatch ----------
 
 async def _extract_recipe_from_text(
@@ -296,7 +336,10 @@ async def import_recipe_from_url(url: str, db: AsyncSession) -> ImportedRecipe:
     text = _clean_text(html)
     if not text:
         raise RecipeImportError(400, "Keine lesbaren Inhalte auf der Seite gefunden")
-    return await _extract_recipe_from_text(text, db, source_url=url)
+    recipe = await _extract_recipe_from_text(text, db, source_url=url)
+    # Image extraction is best-effort — recipes without one still
+    # land in the editor with a normal upload dropzone.
+    return await _attach_image_from_html(recipe, html, base_url=url)
 
 
 async def import_recipe_from_html_bytes(
@@ -313,7 +356,11 @@ async def import_recipe_from_html_bytes(
     text = _clean_text(html)
     if not text:
         raise RecipeImportError(400, "Datei enthält keinen lesbaren Inhalt")
-    return await _extract_recipe_from_text(text, db, source_url=None)
+    recipe = await _extract_recipe_from_text(text, db, source_url=None)
+    # No base_url for file uploads — relative <img> refs in a saved
+    # email can't be resolved without the sidecar `_files` folder
+    # the user didn't upload. data: URIs + absolute URLs still work.
+    return await _attach_image_from_html(recipe, html, base_url=None)
 
 
 async def import_recipe_from_pdf_bytes(
@@ -352,7 +399,22 @@ async def import_recipe_from_pdf_bytes(
             400,
             "Aus der PDF konnte kein Text extrahiert werden — vermutlich nur Bilder.",
         )
-    return await _extract_recipe_from_text(raw, db, source_url=None)
+    recipe = await _extract_recipe_from_text(raw, db, source_url=None)
+    # Image extraction is a separate pypdf.page.images walk — fully
+    # independent of text extraction, returns None silently when no
+    # embedded image is large enough to be a hero candidate.
+    try:
+        from app.services.recipe_image_extractor import extract_image_from_pdf
+        img = extract_image_from_pdf(pdf_bytes)
+        if img is not None:
+            data, mime = img
+            recipe.extracted_image = ExtractedImage(
+                data_base64=base64.b64encode(data).decode("ascii"),
+                mime_type=mime,
+            )
+    except Exception as e:  # pragma: no cover
+        logger.debug("PDF image extraction failed: %s", e)
+    return recipe
 
 
 async def import_recipe_from_text(
@@ -377,7 +439,10 @@ PHOTO_SYSTEM_PROMPT = SYSTEM_PROMPT  # same JSON contract
 
 async def import_recipe_from_image(image_bytes: bytes) -> ImportedRecipe:
     """Send the uploaded image to a vision-capable Ollama model and parse
-    the same recipe JSON shape as the URL importer."""
+    the same recipe JSON shape as the URL importer. The uploaded image
+    ALSO becomes the recipe's hero image — same one the user saw when
+    they decided to import this — so the frontend's "Bild aus Quelle
+    übernommen" treatment is uniform across all import paths."""
     b64 = base64.b64encode(image_bytes).decode("ascii")
     try:
         parsed = await call_vision_json(
@@ -398,10 +463,25 @@ async def import_recipe_from_image(image_bytes: bytes) -> ImportedRecipe:
             if isinstance(step, dict):
                 step["position"] = i
     try:
-        return ImportedRecipe.model_validate(parsed)
+        recipe = ImportedRecipe.model_validate(parsed)
     except ValidationError as e:
         logger.error("Vision JSON failed validation: %s — payload: %s", e, parsed)
         raise RecipeImportError(500, "Extrahierte Daten haben unerwartetes Format") from e
+    # Attach the uploaded photo itself. Sniff the mime via Pillow so a
+    # client that sent `image/jpg` (which the schema rejects) still
+    # gets a valid `image/jpeg`. SVG / unsupported formats land as
+    # None — the frontend then shows the normal upload dropzone.
+    try:
+        from app.services.recipe_image_extractor import _looks_like_image
+        mime = _looks_like_image(image_bytes)
+        if mime:
+            recipe.extracted_image = ExtractedImage(
+                data_base64=b64,
+                mime_type=mime,
+            )
+    except Exception as e:  # pragma: no cover
+        logger.debug("Photo image attach failed: %s", e)
+    return recipe
 
 
 # ---------- "Was kann ich kochen?" suggestions ----------

@@ -58,6 +58,15 @@ export function RecipeEditPage() {
   const loc = useLocation() as { state?: { prefill?: ImportedRecipe } };
   const prefill = isNew ? loc.state?.prefill ?? null : null;
 
+  // Cached preview data-URI for the extracted image. Computed once
+  // from prefill so the `<img src>` doesn't blow up the re-render
+  // cost of every keystroke in the form.
+  const extractedImageDataUri = useMemo(() => {
+    if (!prefill?.extracted_image) return null;
+    const { data_base64, mime_type } = prefill.extracted_image;
+    return `data:${mime_type};base64,${data_base64}`;
+  }, [prefill]);
+
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [aiIngrOpen, setAiIngrOpen] = useState(false);
@@ -90,6 +99,17 @@ export function RecipeEditPage() {
   const [sourceUrl, setSourceUrl] = useState(prefill?.source_url ?? '');
   const [tags, setTags] = useState<string[]>(prefill?.tags ?? []);
   const [tagInput, setTagInput] = useState('');
+  // Image extracted from the import source (URL og:image, JSON-LD,
+  // PDF embedded image, or the uploaded photo itself). Held in state
+  // until the recipe is created — then POSTed via the existing
+  // /recipes/{id}/image endpoint. The user can drop it before save
+  // by clicking "Bild entfernen" on the preview, which flips
+  // `extractedImageKept` to false; subsequent save skips the upload.
+  const extractedImageData = prefill?.extracted_image?.data_base64 ?? null;
+  const extractedImageMime = prefill?.extracted_image?.mime_type ?? null;
+  const [extractedImageKept, setExtractedImageKept] = useState(
+    extractedImageData !== null,
+  );
 
   const [ingredients, setIngredients] = useState<DraftIngredient[]>(
     prefill
@@ -245,6 +265,29 @@ export function RecipeEditPage() {
           })),
           steps: steps.map((s) => ({ description: s.description.trim() })),
         });
+        // Persist the extracted hero image, if the user kept it. The
+        // recipe POST already returned the row — we just attach the
+        // image as a second step using the existing upload endpoint.
+        // Best-effort: a failure here doesn't undo the save; the user
+        // can still upload manually on the detail page.
+        if (extractedImageKept && extractedImageData && extractedImageMime) {
+          try {
+            const blob = base64ToBlob(extractedImageData, extractedImageMime);
+            const file = new File(
+              [blob],
+              `import.${mimeToExt(extractedImageMime)}`,
+              { type: extractedImageMime },
+            );
+            await RecipesApi.uploadImage(created.id, file);
+          } catch (e) {
+            // Non-fatal — the recipe exists with text content, just
+            // no image. Surface a quiet toast so the user knows why
+            // the preview thumbnail didn't survive the save.
+            toast.info('Importiertes Bild konnte nicht gespeichert werden.');
+            // eslint-disable-next-line no-console
+            console.warn('Extracted-image upload failed', e);
+          }
+        }
         // Recipes overview & meal planner sidebar both subscribe to the
         // `recipes` key — invalidate so the new/edited recipe is visible
         // when the user navigates back. (Mount-fetch on /recipes already
@@ -422,6 +465,31 @@ export function RecipeEditPage() {
                 currentUrl={imageUrl}
                 onChanged={(url) => setImageUrl(url ?? '')}
               />
+            ) : extractedImageKept && extractedImageDataUri ? (
+              // Extracted-from-source preview. The image isn't on
+              // disk yet — we POST it to /recipes/{id}/image right
+              // after the recipe-create succeeds inside save().
+              <div className="space-y-2">
+                <div className="relative rounded-ctl border border-line overflow-hidden">
+                  <img
+                    src={extractedImageDataUri}
+                    alt="Aus Quelle importiertes Bild"
+                    className="block w-full h-40 object-cover"
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-chip bg-brand-50 text-brand-700">
+                    Bild aus Quelle übernommen
+                  </span>
+                  <button
+                    type="button"
+                    className="text-muted hover:text-danger hover:underline"
+                    onClick={() => setExtractedImageKept(false)}
+                  >
+                    Bild entfernen
+                  </button>
+                </div>
+              </div>
             ) : (
               <div className="text-xs text-muted bg-page border border-line rounded-ctl px-3 py-2">
                 Bild hochladen ist verfügbar, sobald das Rezept gespeichert ist.
@@ -953,3 +1021,24 @@ function RecipeImageUploader({
 }
 
 const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+
+/** Decode a base64 string into a Blob. Used by the save flow when an
+ *  imported recipe carried an extracted hero image: we keep it as
+ *  base64 in state until the recipe row exists, then convert and
+ *  POST to /recipes/{id}/image. atob is sync + cheap for ≤10 MB. */
+function base64ToBlob(b64: string, mime: string): Blob {
+  const bin = atob(b64);
+  const len = bin.length;
+  const buf = new Uint8Array(len);
+  for (let i = 0; i < len; i++) buf[i] = bin.charCodeAt(i);
+  return new Blob([buf], { type: mime });
+}
+
+function mimeToExt(mime: string): string {
+  switch (mime) {
+    case 'image/png': return 'png';
+    case 'image/webp': return 'webp';
+    case 'image/gif': return 'gif';
+    default: return 'jpg';
+  }
+}

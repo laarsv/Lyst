@@ -537,6 +537,11 @@ export interface AiGeneratedList {
   items: AiGeneratedListItem[];
 }
 
+export interface ExtractedImage {
+  data_base64: string;
+  mime_type: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
+}
+
 export interface ImportedRecipe {
   title: string;
   description: string | null;
@@ -547,4 +552,9 @@ export interface ImportedRecipe {
   source_url: string | null;
   ingredients: ImportedIngredient[];
   steps: ImportedStep[];
+  /** Recipe hero image extracted from the source (URL og:image,
+   *  JSON-LD, largest <img>, PDF embedded image, or the photo
+   *  itself for photo imports). Null when extraction failed or the
+   *  source had no usable image (typical free-text path). */
+  extracted_image: ExtractedImage | null;
 }
