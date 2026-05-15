@@ -5,6 +5,7 @@ import { AuthApi } from '@/api/endpoints';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { SearchModal } from '@/components/SearchModal';
 import { SyncStatusBadge } from '@/components/SyncStatusBadge';
+import { useOverviewRouteRefresh } from '@/hooks/useOverviewQuery';
 import clsx from 'clsx';
 
 const USER_LINKS: [string, string][] = [
@@ -31,6 +32,13 @@ export function AppShell() {
   useEffect(() => {
     setMenuOpen(false);
   }, [loc.pathname]);
+
+  // Belt-and-suspenders for cache invalidation: when the user navigates
+  // onto an overview route (/, /notes, /recipes, /meal-planner) we ping
+  // every subscriber under the matching key. The overview's own mount-
+  // fetch covers the common case; this guards future refactors that
+  // might keep an overview mounted across route changes.
+  useOverviewRouteRefresh(loc.pathname);
 
   // Cmd/Ctrl+K → open global search; Esc handled inside the modal.
   useEffect(() => {

@@ -13,7 +13,7 @@ import { MealPlansApi, RecipesApi } from '@/api/endpoints';
 import type { MealPlan, MealPlanEntry, MealType, RecipeSummary } from '@/types';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
-import { useOverviewQuery } from '@/hooks/useOverviewQuery';
+import { invalidateOverview, useOverviewQuery } from '@/hooks/useOverviewQuery';
 import {
   WEEKDAY_LABELS_DE,
   WEEKDAY_LABELS_DE_LONG,
@@ -157,6 +157,11 @@ export function MealPlannerPage() {
     setGenerating(true);
     try {
       const r = await MealPlansApi.generateList(plan.id);
+      // The generator creates a new shopping list — invalidate the
+      // dashboard's lists subscriber so when the user backs out of the
+      // new /lists/:id detail page, the overview shows it without a
+      // manual reload.
+      invalidateOverview('lists');
       toast.success(`${r.items_added} Zutaten in „${r.list_title}"`);
       nav(`/lists/${r.list_id}`);
     } catch (err) {

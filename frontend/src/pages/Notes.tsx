@@ -22,7 +22,6 @@ import { BackLink } from '@/components/BackLink';
 import { SaveIndicator, useSaveIndicator } from '@/components/SaveIndicator';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useNoteEditingState } from '@/hooks/useNoteEditingState';
-import { invalidateFresh } from '@/hooks/useFreshOnMount';
 import { hasActiveFilters, useNotesFilters } from '@/store/notesFilters';
 import { invalidateOverview, useOverviewQuery } from '@/hooks/useOverviewQuery';
 import { Plus, Search } from 'lucide-react';
@@ -212,6 +211,12 @@ export function NotesPage() {
           [...cur.map((x) => (x.id === upd.id ? upd : x))].sort(sortNotes),
         );
       }
+      // The Note row in the overview embeds `content`, `title`, `tags`,
+      // `folder_id`, etc. — every update can change a sibling subscription
+      // (e.g. user is in scope=all, edits the title, then navigates to
+      // scope=folder which has its own cached state). Ping every notes:*
+      // subscriber so its next render reflects the change.
+      invalidateOverview('notes');
       void loadFolders();
       return true;
     } catch (e) {
@@ -234,10 +239,10 @@ export function NotesPage() {
       await NotesApi.remove(n.id);
       setNotes((cur) => cur.filter((x) => x.id !== n.id));
       if (activeId === n.id) setActiveId(null);
-      // Drop the cached freshness so any future overview re-fetch reflects
-      // the deletion. (NotesPage updates its own list inline, so this is
-      // mostly forward-compat for any consumer that adds useFreshOnMount.)
-      invalidateFresh('notes');
+      // Prefix-match every notes subscriber (e.g. `notes:all::`,
+      // `notes:folder:5:`) — without this the parameterized key never
+      // matches the bare 'notes' name and the sibling list stays stale.
+      invalidateOverview('notes');
       void loadFolders();
     } catch (e) {
       toast.error(getApiError(e));
@@ -270,7 +275,7 @@ export function NotesPage() {
       await NotesApi.leaveShare(n.id);
       setNotes((cur) => cur.filter((x) => x.id !== n.id));
       if (activeId === n.id) setActiveId(null);
-      invalidateFresh('notes');
+      invalidateOverview('notes');
       toast.success('Freigabe verlassen');
     } catch (e) {
       toast.error(getApiError(e));

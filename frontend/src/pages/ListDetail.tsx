@@ -23,7 +23,7 @@ import { useConfirm, usePrompt } from '@/components/Dialogs';
 import { BackLink } from '@/components/BackLink';
 import { IconAction } from '@/components/IconAction';
 import { SaveIndicator, useSaveIndicator } from '@/components/SaveIndicator';
-import { invalidateFresh } from '@/hooks/useFreshOnMount';
+import { invalidateOverview } from '@/hooks/useOverviewQuery';
 import { formatPreview, hasParse, parseItem } from '@/utils/parseItemInput';
 import {
   ListPlus,
@@ -297,6 +297,52 @@ export function ListDetailPage() {
     }
   };
 
+  // Swipe-driven delete: optimistic-hide + 5s "Rückgängig" undo window.
+  // Triggered by SortableItem when the touch swipe commits. If the user
+  // taps undo, we restore the item at its original index and skip the
+  // API call entirely; otherwise after 5s the regular `del` flow runs
+  // (which is what handles the offline-queue branch). Each pending
+  // delete keeps its own timer so multiple swipes can stack independently.
+  const pendingUndo = useRef(new Map<number, { timer: number; original: ListItem }>());
+  const softDelete = (item: ListItem) => {
+    const original = items.find((i) => i.id === item.id);
+    if (!original) return;
+    const originalIndex = items.findIndex((i) => i.id === item.id);
+    setItems((cur) => cur.filter((i) => i.id !== item.id));
+    let undone = false;
+    const timer = window.setTimeout(() => {
+      pendingUndo.current.delete(item.id);
+      if (undone) return;
+      void del(original);
+    }, 5000);
+    pendingUndo.current.set(item.id, { timer, original });
+    toast.action('Eintrag gelöscht', 'Rückgängig', () => {
+      undone = true;
+      window.clearTimeout(timer);
+      pendingUndo.current.delete(item.id);
+      setItems((cur) => {
+        if (cur.some((i) => i.id === original.id)) return cur;
+        const idx = Math.min(originalIndex, cur.length);
+        return [...cur.slice(0, idx), original, ...cur.slice(idx)];
+      });
+    });
+  };
+
+  // On unmount, flush any still-pending deletes — otherwise a "swipe
+  // then navigate away" in < 5s would lose the API call. Fire each
+  // pending delete immediately and clear its timer.
+  useEffect(
+    () => () => {
+      for (const [, { timer, original }] of pendingUndo.current) {
+        window.clearTimeout(timer);
+        void del(original);
+      }
+      pendingUndo.current.clear();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const onDragEnd = async (e: DragEndEvent) => {
@@ -346,6 +392,10 @@ export function ListDetailPage() {
     if (!name) return;
     try {
       await ListsApi.duplicate(listId, { as_template: true, template_name: name, title: list?.title });
+      // Dashboard's templates segment subscribes under 'templates:on' /
+      // 'templates:off' — the prefix-match in invalidateOverview catches
+      // both, so opening the segment shows the new template immediately.
+      invalidateOverview('templates');
       toast.success('Als Vorlage gespeichert');
     } catch (e) {
       toast.error(getApiError(e));
@@ -364,9 +414,10 @@ export function ListDetailPage() {
       return;
     try {
       await ListsApi.remove(listId);
-      // Drop the cached freshness for the dashboard so its useEffect
-      // refetches on mount instead of reusing the now-stale list set.
-      invalidateFresh('lists');
+      // Ping the dashboard's lists subscriber so when its mount fetch runs
+      // on the next render of /, the deleted list is already gone (even
+      // if Dashboard somehow stays mounted across the route change).
+      invalidateOverview('lists');
       nav('/');
     } catch (e) {
       toast.error(getApiError(e));
@@ -519,6 +570,7 @@ export function ListDetailPage() {
             onToggle={toggle}
             onUpdate={update}
             onDelete={del}
+            onSwipeDelete={softDelete}
           />
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
@@ -532,6 +584,7 @@ export function ListDetailPage() {
                     onToggle={toggle}
                     onUpdate={update}
                     onDelete={del}
+                    onSwipeDelete={softDelete}
                   />
                 ))}
               </div>
@@ -643,12 +696,14 @@ function CategoryGroupedList({
   onToggle,
   onUpdate,
   onDelete,
+  onSwipeDelete,
 }: {
   items: ListItem[];
   canEdit: boolean;
   onToggle: (i: ListItem) => void;
   onUpdate: (i: ListItem, patch: Partial<ListItem>) => void;
   onDelete: (i: ListItem) => void;
+  onSwipeDelete: (i: ListItem) => void;
 }) {
   // Bucket by category, then keep CATEGORY_ORDER and append a "pending" group.
   const buckets = new Map<string, ListItem[]>();
@@ -689,6 +744,7 @@ function CategoryGroupedList({
                   onToggle={onToggle}
                   onUpdate={onUpdate}
                   onDelete={onDelete}
+                  onSwipeDelete={onSwipeDelete}
                 />
               ))}
             </div>

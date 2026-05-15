@@ -1,9 +1,9 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import type { ListItem } from '@/types';
 import clsx from 'clsx';
-import { Lock, Tag } from 'lucide-react';
+import { Lock, Tag, Trash2 } from 'lucide-react';
 import { UnitCombobox } from '@/components/UnitCombobox';
 
 const CATEGORIES = [
@@ -19,15 +19,42 @@ const CATEGORIES = [
   'Sonstiges',
 ];
 
+// Swipe thresholds (px / fraction of row width). Mirrors the spec:
+//   - swipe < REVEAL_PX: snap back to 0 on release
+//   - REVEAL_PX <= swipe < AUTO_COMMIT_FRAC * width: snap to revealed
+//     state (button visible & tappable)
+//   - swipe >= AUTO_COMMIT_FRAC * width: auto-commit (delete + undo)
+const REVEAL_PX = 80;
+const AUTO_COMMIT_FRAC = 0.6;
+// Threshold past which we lock into a horizontal swipe gesture and start
+// translating the row. Below this we leave the event alone so vertical
+// scrolling and dnd-kit's drag activation can still fire.
+const DIRECTION_LOCK_PX = 10;
+
 interface Props {
   item: ListItem;
   canEdit: boolean;
   onToggle: (item: ListItem) => void;
   onUpdate: (item: ListItem, patch: Partial<ListItem>) => void;
+  /** Used by the hover-× button on desktop. Fires the actual deletion
+   *  synchronously (no undo window). */
   onDelete: (item: ListItem) => void;
+  /** Used by the mobile swipe gesture and the swipe-revealed delete
+   *  button. The parent is expected to show the "Rückgängig" toast and
+   *  defer the real DELETE accordingly. Defaults to `onDelete` if the
+   *  parent hasn't migrated to the new contract yet. */
+  onSwipeDelete?: (item: ListItem) => void;
 }
 
-export function SortableItem({ item, canEdit, onToggle, onUpdate, onDelete }: Props) {
+export function SortableItem({
+  item,
+  canEdit,
+  onToggle,
+  onUpdate,
+  onDelete,
+  onSwipeDelete,
+}: Props) {
+  const swipeCommit = onSwipeDelete ?? onDelete;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: item.id,
     disabled: !canEdit,
@@ -42,6 +69,142 @@ export function SortableItem({ item, canEdit, onToggle, onUpdate, onDelete }: Pr
     setQty(item.quantity?.toString() ?? '');
     setUnit(item.unit ?? '');
   }, [item.id, item.text, item.quantity, item.unit]);
+
+  // ---- Swipe-to-delete state (touch only) -------------------------------
+  // `swipeX` drives the translateX of the foreground row. `swipeLocked`
+  // is true once the swipe is "revealed" — release between REVEAL_PX and
+  // AUTO_COMMIT_FRAC * width keeps the row open so the user can tap the
+  // exposed delete button. `committed` plays the slide-off animation
+  // before the row is removed from the DOM by the parent's setItems.
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [swipeX, setSwipeX] = useState(0);
+  const [swiping, setSwiping] = useState(false);
+  const [swipeLocked, setSwipeLocked] = useState(false);
+  const [committed, setCommitted] = useState(false);
+  const dragState = useRef<{
+    startX: number;
+    startY: number;
+    locked: 'horizontal' | 'vertical' | null;
+    width: number;
+    pointerId: number;
+    pointerType: string;
+  } | null>(null);
+
+  // Reset the swipe state if the item identity changes (e.g. WS pushed an
+  // update for the same id). Avoids stale translateX on a fresh row.
+  useEffect(() => {
+    setSwipeX(0);
+    setSwiping(false);
+    setSwipeLocked(false);
+    setCommitted(false);
+  }, [item.id]);
+
+  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    // Swipe is mobile/touch-only by spec. Pen counts as touch on iPad.
+    if (e.pointerType !== 'touch') return;
+    if (!canEdit || editing || committed) return;
+    // Ignore taps that originate on interactive children (drag handle,
+    // checkbox, edit button, etc.) — the user is interacting with that
+    // control, not the row.
+    if ((e.target as HTMLElement).closest('button,input,a,select,textarea')) return;
+    dragState.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      locked: null,
+      width: rowRef.current?.getBoundingClientRect().width ?? 320,
+      pointerId: e.pointerId,
+      pointerType: e.pointerType,
+    };
+  };
+
+  const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const st = dragState.current;
+    if (!st || e.pointerId !== st.pointerId) return;
+    const dx = e.clientX - st.startX;
+    const dy = e.clientY - st.startY;
+    if (st.locked === null) {
+      // Direction-lock: classify only after we've moved past the deadzone.
+      // Horizontal swipes engage; vertical drags hand off to dnd-kit /
+      // the browser scroller.
+      if (Math.abs(dx) < DIRECTION_LOCK_PX && Math.abs(dy) < DIRECTION_LOCK_PX) return;
+      if (Math.abs(dx) > Math.abs(dy) && dx < 0) {
+        st.locked = 'horizontal';
+        setSwiping(true);
+      } else {
+        st.locked = 'vertical';
+        dragState.current = null; // hand off
+        return;
+      }
+    }
+    if (st.locked === 'horizontal') {
+      // Clamp: don't let the user pull right past the start position.
+      // Slight elastic resistance past the row width gives the gesture
+      // a natural feel without complicating the snap math.
+      const clamped = Math.max(-st.width, Math.min(0, dx));
+      setSwipeX(clamped);
+      // Prevent vertical scroll once we're locked horizontal.
+      e.preventDefault();
+    }
+  };
+
+  const releaseSwipe = (snapTo: number, lockOpen: boolean) => {
+    setSwipeX(snapTo);
+    setSwipeLocked(lockOpen);
+    setSwiping(false);
+  };
+
+  const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const st = dragState.current;
+    if (!st || e.pointerId !== st.pointerId) {
+      dragState.current = null;
+      return;
+    }
+    const locked = st.locked;
+    const width = st.width;
+    dragState.current = null;
+    if (locked !== 'horizontal') return;
+
+    const distance = Math.abs(swipeX);
+    if (distance >= width * AUTO_COMMIT_FRAC) {
+      // Full commit: animate fully off-screen, then ask the parent to
+      // delete the item (which routes through the 5s undo toast).
+      setCommitted(true);
+      setSwipeX(-width);
+      setSwiping(false);
+      // Defer the actual delete until after the slide-out anim plays so
+      // the user sees the row leave; the parent's optimistic remove plus
+      // the toast handle the rest.
+      window.setTimeout(() => swipeCommit(item), 180);
+    } else if (distance >= REVEAL_PX) {
+      // Partial reveal: lock the row open at ~REVEAL_PX so the user can
+      // tap the now-visible delete button. A tap outside snaps it back.
+      releaseSwipe(-REVEAL_PX - 24, true);
+    } else {
+      releaseSwipe(0, false);
+    }
+  };
+
+  const onPointerCancel = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!dragState.current || e.pointerId !== dragState.current.pointerId) return;
+    dragState.current = null;
+    releaseSwipe(0, false);
+  };
+
+  // Tap anywhere on the row body while the row is locked-open should
+  // snap it shut — except taps on the delete button itself, which run
+  // onDelete and then the slide-off transition. Use capture phase so
+  // we beat the child onClick handlers (text → setEditing, checkbox,
+  // etc.) before they fire. Without this the user would tap to dismiss
+  // and accidentally enter edit mode.
+  const onRowClickCaptureWhileOpen = (e: React.MouseEvent) => {
+    if (!swipeLocked) return;
+    if ((e.target as HTMLElement).closest('[data-swipe-delete]')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    releaseSwipe(0, false);
+  };
+
+  // ----------------------------------------------------------------------
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -58,20 +221,22 @@ export function SortableItem({ item, canEdit, onToggle, onUpdate, onDelete }: Pr
     setEditing(false);
   };
 
-  return (
+  // The row body — extracted so we can wrap it in a swipe container that
+  // sits over the (red) delete-action backdrop. The original visual is
+  // unchanged; only the wrapper layout is new.
+  const rowBody = (
     <div
-      ref={setNodeRef}
-      style={style}
       className={clsx(
         'group flex items-center gap-2 px-3 py-2.5 rounded-xl border transition',
         item.is_checked ? 'bg-page border-line' : 'bg-surface border-line',
       )}
+      onClickCapture={onRowClickCaptureWhileOpen}
     >
       {canEdit && (
         <button
           {...attributes}
           {...listeners}
-          className="cursor-grab text-muted/60 hover:text-muted px-1 select-none"
+          className="cursor-grab text-muted/60 hover:text-muted px-1 select-none touch-none"
           aria-label="Verschieben"
         >
           ⋮⋮
@@ -144,6 +309,54 @@ export function SortableItem({ item, canEdit, onToggle, onUpdate, onDelete }: Pr
           ×
         </button>
       )}
+    </div>
+  );
+
+  // Outer ref is what dnd-kit listens to; inner ref captures the row
+  // width and is the element we translate during the swipe gesture.
+  return (
+    <div ref={setNodeRef} style={style} className="relative">
+      {/* Red action backdrop. Visible only while swiping/locked so it
+          doesn't add a flicker for non-touch users. Sized to fill the
+          rounded card. */}
+      {canEdit && (swiping || swipeLocked || committed) && (
+        <div className="absolute inset-0 rounded-xl bg-danger flex items-center justify-end pr-4 select-none">
+          <button
+            type="button"
+            data-swipe-delete
+            onClick={() => {
+              const w = rowRef.current?.getBoundingClientRect().width ?? 320;
+              setCommitted(true);
+              setSwipeX(-w);
+              setSwiping(false);
+              window.setTimeout(() => swipeCommit(item), 180);
+            }}
+            className="text-white text-sm font-medium inline-flex items-center gap-1.5"
+            aria-label="Eintrag löschen"
+          >
+            <Trash2 size={16} />
+            Löschen
+          </button>
+        </div>
+      )}
+      <div
+        ref={rowRef}
+        // touch-action: pan-y → browser handles vertical scrolling, we
+        // own horizontal pans. This keeps the page scrollable while
+        // letting our handler claim the horizontal axis.
+        style={{
+          touchAction: 'pan-y',
+          transform: `translate3d(${swipeX}px, 0, 0)`,
+          transition: swiping ? 'none' : 'transform 180ms ease-out',
+          opacity: committed ? 0 : 1,
+        }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
+      >
+        {rowBody}
+      </div>
     </div>
   );
 }

@@ -15,6 +15,7 @@ import { SortableEditRow } from '@/components/recipes/SortableEditRow';
 import { UnitSelect } from '@/components/UnitSelect';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
+import { invalidateOverview } from '@/hooks/useOverviewQuery';
 import { ImagePlus, Loader2, Sparkles, Trash2, Upload } from 'lucide-react';
 import { AiSuggestionModal } from '@/components/AiSuggestionModal';
 import {
@@ -244,11 +245,18 @@ export function RecipeEditPage() {
           })),
           steps: steps.map((s) => ({ description: s.description.trim() })),
         });
+        // Recipes overview & meal planner sidebar both subscribe to the
+        // `recipes` key — invalidate so the new/edited recipe is visible
+        // when the user navigates back. (Mount-fetch on /recipes already
+        // re-fetches, but the invalidation makes the contract explicit
+        // and covers mounted-parallel layouts like the meal planner.)
+        invalidateOverview('recipes');
         toast.success('Rezept gespeichert');
         nav(`/recipes/${created.id}`);
       } else {
         await RecipesApi.update(recipeId!, baseFields);
         await syncChildren(recipeId!);
+        invalidateOverview('recipes');
         toast.success('Gespeichert');
         nav(`/recipes/${recipeId}`);
       }

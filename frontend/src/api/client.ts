@@ -76,10 +76,17 @@ async function invalidateSwCacheFor(url: string): Promise<void> {
 }
 
 api.interceptors.response.use(
-  (r) => {
+  async (r) => {
+    // Await SW-cache invalidation BEFORE resolving the response. Fire-and-
+    // forget (void) lost a race against StaleWhileRevalidate: the calling
+    // mutation handler proceeded to navigate/invalidate-overview while
+    // /api/lists or /api/notes was still cached. The next GET then hit the
+    // stale SW response and the UI showed pre-mutation data. Awaiting
+    // here closes that window — by the time `await ListsApi.remove(...)`
+    // resolves, the SW cache is guaranteed purged for that collection.
     const method = r.config.method?.toUpperCase();
     if (method && method !== 'GET' && r.config.url) {
-      void invalidateSwCacheFor(r.config.url);
+      await invalidateSwCacheFor(r.config.url);
     }
     return r;
   },

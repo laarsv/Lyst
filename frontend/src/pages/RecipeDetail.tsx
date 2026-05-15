@@ -12,7 +12,7 @@ import { CookMode } from '@/components/recipes/CookMode';
 import { useConfirm } from '@/components/Dialogs';
 import { BackLink } from '@/components/BackLink';
 import { IconAction } from '@/components/IconAction';
-import { invalidateFresh } from '@/hooks/useFreshOnMount';
+import { invalidateOverview } from '@/hooks/useOverviewQuery';
 import { fmtQty } from '@/lib/format';
 
 export function RecipeDetailPage() {
@@ -55,7 +55,7 @@ export function RecipeDetailPage() {
       await RecipesApi.remove(recipe.id);
       // Drop the freshness mark so the recipes overview re-fetches on
       // mount instead of showing the just-deleted recipe.
-      invalidateFresh('recipes');
+      invalidateOverview('recipes');
       toast.success('Rezept gelöscht');
       nav('/recipes');
     } catch (e) {
@@ -90,7 +90,7 @@ export function RecipeDetailPage() {
       } else {
         await RecipesApi.leaveShare(recipe.id);
       }
-      invalidateFresh('recipes');
+      invalidateOverview('recipes');
       toast.success('Freigabe verlassen');
       nav('/recipes');
     } catch (e) {
