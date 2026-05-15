@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.share import ShareState
+
 
 # --- Ingredients ---
 
@@ -119,6 +121,8 @@ class RecipeSummary(RecipeBase):
     # current user owns the row.
     owner_name: str | None = None
     share_source: str | None = None  # "individual" | "book" | None
+    # Owner-side share summary. None on shared-with-me rows.
+    share_state: ShareState | None = None
 
 
 class RecipeOut(RecipeBase):

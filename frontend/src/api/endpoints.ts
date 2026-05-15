@@ -41,6 +41,7 @@ import type {
   RestoreSnapshotResponse,
   ShareByEmailResponse,
   ShareInfo,
+  ShareSuggestion,
   Tag,
   User,
 } from '@/types';
@@ -69,6 +70,11 @@ export const MeApi = {
     current_password?: string;
     new_password?: string;
   }) => api.patch<{ data: User }>('/me', payload).then(unwrap),
+  /** People the current user has shared anything with before, deduped
+   *  and ordered by recency. Powers the "Zuletzt geteilt mit" chips
+   *  in the share panels. */
+  shareSuggestions: () =>
+    api.get<{ data: ShareSuggestion[] }>('/me/share-suggestions').then(unwrap),
 };
 
 export const AdminApi = {

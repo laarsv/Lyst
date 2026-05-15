@@ -12,7 +12,8 @@ import { NoteActionsMenu } from '@/components/notes/NoteActionsMenu';
 import { NoteMobileLayout } from '@/components/notes/NoteMobileLayout';
 import { NoteSummaryModal } from '@/components/notes/NoteSummaryModal';
 import { FolderChip } from '@/components/notes/FolderChip';
-import { Loader2, Share2, Sparkles, Users } from 'lucide-react';
+import { Loader2, Sparkles, Users } from 'lucide-react';
+import { SharedChip } from '@/components/SharedChip';
 import { ShareNotePanel } from '@/components/notes/ShareNotePanel';
 import { NotesFilterButton } from '@/components/notes/NotesFilterButton';
 import { NotesFilterPanel } from '@/components/notes/NotesFilterPanel';
@@ -702,13 +703,12 @@ function NoteCard({
             </span>
           )}
           <span className="truncate">{note.title || '(ohne Titel)'}</span>
-          {note.share_enabled && !note.share_source && (
-            <span
-              title="Öffentlich freigegeben"
-              className="shrink-0 text-brand-700/70"
-            >
-              <Share2 size={12} />
-            </span>
+          {/* Unified share indicator — covers internal shares
+              AND the public token, with a tooltip that names both.
+              Recipient-side notes (share_source set) hide this; the
+              "geteilt von …" banner above carries that signal. */}
+          {!note.share_source && (
+            <SharedChip state={note.share_state} className="shrink-0" />
           )}
         </div>
         <button

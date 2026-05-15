@@ -27,6 +27,24 @@ export interface AuthResponse {
   email: string;
 }
 
+/** Owner-side share summary for the small share icon on overview
+ *  cards. `null` on rows the viewer doesn't own (shared-with-me) so
+ *  the frontend can distinguish "not loaded" from "owner-side count
+ *  = 0". `internal_count` is collaborators/recipients; `public` is
+ *  the anyone-with-URL token. */
+export interface ShareState {
+  internal_count: number;
+  public: boolean;
+}
+
+/** Row of GET /me/share-suggestions — people the current user has
+ *  shared anything with before, deduped + ordered by recency. */
+export interface ShareSuggestion {
+  id: number;
+  name: string;
+  email: string;
+}
+
 export interface ListSummary {
   id: number;
   title: string;
@@ -46,6 +64,7 @@ export interface ListSummary {
   checked_count: number;
   is_owner: boolean;
   permission: CollaboratorPermission | null;
+  share_state: ShareState | null;
 }
 
 export interface ListItem {
@@ -154,6 +173,8 @@ export interface Note {
   /** Effective permission for the current viewer. Owner -> 'EDIT'; for
    *  recipients it's whatever the share row carries (alembic 0014). */
   share_permission: CollaboratorPermission | null;
+  /** Owner-side share summary. Null on shared-with-me rows. */
+  share_state: ShareState | null;
 }
 
 export interface PublicNoteData {
@@ -279,6 +300,8 @@ export interface RecipeSummary extends RecipeBase {
   share_source: 'individual' | 'book' | null;
   /** Display name of the owner — only set when share_source is non-null. */
   owner_name: string | null;
+  /** Owner-side share summary. Null on shared-with-me rows. */
+  share_state: ShareState | null;
 }
 
 export interface Recipe extends RecipeBase {

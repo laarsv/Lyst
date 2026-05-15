@@ -18,21 +18,46 @@ from app.services.list_service import (
     reset_list,
     update_list,
 )
+from app.services.share_state_service import list_internal_share_counts
 from app.services.snapshot_service import save_snapshot
 from app.services.ws_manager import manager as ws_manager
 
 router = APIRouter(prefix="/lists", tags=["lists"])
 
 
-def _list_out(lst, item_count: int, checked_count: int, is_owner: bool, permission: str | None) -> dict:
+def _list_out(
+    lst,
+    item_count: int,
+    checked_count: int,
+    is_owner: bool,
+    permission: str | None,
+    internal_share_count: int | None = None,
+) -> dict:
+    from app.schemas.share import ShareState
+    share_state = None
+    if internal_share_count is not None:
+        share_state = ShareState(
+            internal_count=internal_share_count,
+            public=bool(lst.share_enabled),
+        )
     return ListOut.model_validate(lst).model_copy(
         update={
             "item_count": item_count,
             "checked_count": checked_count,
             "is_owner": is_owner,
             "permission": permission,
+            "share_state": share_state,
         },
     ).model_dump(mode="json")
+
+
+async def _share_state_map_for_lists(
+    db: AsyncSession, rows: list
+) -> dict[int, int]:
+    """Wrap list_internal_share_counts for the (l, ic, cc, owner, perm)
+    tuple shape the lists router uses everywhere."""
+    owned_ids = [l.id for l, _ic, _cc, owner, _perm in rows if owner]
+    return await list_internal_share_counts(db, owned_ids)
 
 
 @router.get("")
@@ -41,7 +66,20 @@ async def get_lists(
     db: AsyncSession = Depends(get_db),
 ):
     rows = await list_for_user(db, user.id, include_templates=False)
-    return ok([_list_out(l, ic, cc, owner, perm) for l, ic, cc, owner, perm in rows])
+    share_counts = await _share_state_map_for_lists(db, rows)
+    return ok(
+        [
+            _list_out(
+                l,
+                ic,
+                cc,
+                owner,
+                perm,
+                internal_share_count=share_counts.get(l.id, 0) if owner else None,
+            )
+            for l, ic, cc, owner, perm in rows
+        ]
+    )
 
 
 @router.get("/templates")
@@ -50,7 +88,20 @@ async def get_templates(
     db: AsyncSession = Depends(get_db),
 ):
     rows = await list_for_user(db, user.id, include_templates=True)
-    return ok([_list_out(l, ic, cc, owner, perm) for l, ic, cc, owner, perm in rows])
+    share_counts = await _share_state_map_for_lists(db, rows)
+    return ok(
+        [
+            _list_out(
+                l,
+                ic,
+                cc,
+                owner,
+                perm,
+                internal_share_count=share_counts.get(l.id, 0) if owner else None,
+            )
+            for l, ic, cc, owner, perm in rows
+        ]
+    )
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -60,7 +111,8 @@ async def post_list(
     db: AsyncSession = Depends(get_db),
 ):
     lst = await create_list(db, user.id, **payload.model_dump())
-    return ok(_list_out(lst, 0, 0, True, None))
+    # Brand-new list — no collaborators yet, public token off.
+    return ok(_list_out(lst, 0, 0, True, None, internal_share_count=0))
 
 
 @router.get("/{list_id}")
@@ -74,7 +126,17 @@ async def get_list(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     total, checked = await list_stats(db, list_id)
-    return ok(_list_out(lst, total, checked, is_owner, perm))
+    counts = await list_internal_share_counts(db, [lst.id]) if is_owner else {}
+    return ok(
+        _list_out(
+            lst,
+            total,
+            checked,
+            is_owner,
+            perm,
+            internal_share_count=counts.get(lst.id, 0) if is_owner else None,
+        )
+    )
 
 
 @router.patch("/{list_id}")

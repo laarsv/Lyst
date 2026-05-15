@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.models.collaborator import CollaboratorPermission
 from app.models.note import NoteContentFormat
+from app.schemas.share import ShareState
 
 
 class NoteBase(BaseModel):
@@ -55,6 +56,12 @@ class NoteOut(NoteBase):
     # recipient -> whatever the share row carries. None == no relationship,
     # which only happens before share_source/owner_name fields are set.
     share_permission: CollaboratorPermission | None = None
+    # Owner-side share summary — drives the small "Geteilt mit N
+    # Personen" chip on the overview card. None on rows the viewer
+    # doesn't own (we don't expose share recipients of someone else's
+    # note); the field is optional rather than always-zero so the
+    # frontend can distinguish "not loaded" from "owner-side count = 0".
+    share_state: "ShareState | None" = None
 
 
 # --- Public + internal sharing ---

@@ -10,6 +10,7 @@ import { Modal } from '@/components/Modal';
 import { NotesApi } from '@/api/endpoints';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
+import { ShareSuggestionsRow } from '@/components/ShareSuggestionsRow';
 import type { CollaboratorPermission, InternalShare, Note, ShareInfo } from '@/types';
 
 interface Props {
@@ -166,6 +167,13 @@ export function ShareNotePanel({ open, onClose, note, onUpdate }: Props) {
               {emailSubmitting ? 'Sende…' : 'Teilen'}
             </button>
           </form>
+          {/* People the user has shared anything with before, click to
+              fill the email input. Filtered to hide users this note
+              is already shared with. */}
+          <ShareSuggestionsRow
+            excludeEmails={shares.map((s) => s.email)}
+            onPick={(email) => setEmailValue(email)}
+          />
           {shares.length > 0 && (
             <div className="mt-3">
               <div className="text-[10px] uppercase tracking-wider text-muted mb-1">

@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.list import CategorizationMode, ListType
+from app.schemas.share import ShareState
 
 
 class ListBase(BaseModel):
@@ -49,3 +50,6 @@ class ListOut(ListBase):
     checked_count: int = 0
     is_owner: bool = True
     permission: str | None = None
+    # Owner-side share summary. None on shared-with-me rows (we don't
+    # expose collaborators of someone else's list).
+    share_state: ShareState | None = None

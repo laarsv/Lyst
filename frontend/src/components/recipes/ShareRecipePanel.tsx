@@ -11,6 +11,7 @@ import { Modal } from '@/components/Modal';
 import { RecipesApi } from '@/api/endpoints';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
+import { ShareSuggestionsRow } from '@/components/ShareSuggestionsRow';
 import type { CollaboratorPermission, InternalShare, Recipe, ShareInfo } from '@/types';
 
 interface Props {
@@ -167,6 +168,10 @@ export function ShareRecipePanel({ open, onClose, recipe, onUpdate }: Props) {
               {emailSubmitting ? 'Sende…' : 'Teilen'}
             </button>
           </form>
+          <ShareSuggestionsRow
+            excludeEmails={shares.map((s) => s.email)}
+            onPick={(email) => setEmailValue(email)}
+          />
           {shares.length > 0 && (
             <div className="mt-3">
               <div className="text-[10px] uppercase tracking-wider text-muted mb-1">

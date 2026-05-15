@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import type { ListSummary } from '@/types';
+import { SharedChip } from '@/components/SharedChip';
 
 const TYPE_LABEL: Record<ListSummary['type'], string> = {
   SHOPPING: 'Einkauf',
@@ -28,6 +29,10 @@ export function ListCard({ list }: { list: ListSummary }) {
         {!list.is_owner && (
           <span className="text-xs px-2 py-0.5 rounded-chip bg-line text-muted">geteilt</span>
         )}
+        {/* Owner-side: small chip showing this list is shared. Reads
+            from share_state; SharedChip renders nothing when no
+            shares are active. */}
+        {list.is_owner && <SharedChip state={list.share_state} />}
       </div>
       <div className="text-sm text-muted">
         {list.checked_count} / {list.item_count} erledigt

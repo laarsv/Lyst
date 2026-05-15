@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Users } from 'lucide-react';
 import type { RecipeSummary } from '@/types';
+import { SharedChip } from '@/components/SharedChip';
 
 /** Recipe summary card. The old fixed `category` enum was migrated into
  *  `tags` in alembic 0011 — the meal-type bucket now renders as the first
@@ -24,7 +25,15 @@ export function RecipeCard({ recipe }: { recipe: RecipeSummary }) {
         </div>
       )}
       <div className="min-w-0">
-        <div className="font-semibold text-ink truncate mb-1">{recipe.title}</div>
+        <div className="flex items-center gap-1.5 mb-1">
+          <span className="font-semibold text-ink truncate flex-1">{recipe.title}</span>
+          {/* Owner-side share chip — internal share recipients + the
+              public token rendered as one icon with a combined
+              tooltip. Recipient cards (share_source set) hide it. */}
+          {!recipe.share_source && (
+            <SharedChip state={recipe.share_state} className="shrink-0" />
+          )}
+        </div>
         {recipe.share_source && recipe.owner_name && (
           <div className="text-[11px] text-brand-700 inline-flex items-center gap-1 mb-1">
             <Users size={11} />

@@ -109,13 +109,22 @@ def _summary(
     *,
     share_source: str | None = None,
     owner_name: str | None = None,
+    internal_share_count: int | None = None,
 ) -> dict:
     # share_permission lives on RecipeOut only — RecipeSummary stays compact.
+    from app.schemas.share import ShareState
+    share_state = None
+    if internal_share_count is not None:
+        share_state = ShareState(
+            internal_count=internal_share_count,
+            public=bool(rec.share_enabled),
+        )
     return RecipeSummary.model_validate(rec).model_copy(
         update={
             "ingredient_count": ingredient_count,
             "share_source": share_source,
             "owner_name": owner_name,
+            "share_state": share_state,
         }
     ).model_dump(mode="json")
 
@@ -183,10 +192,21 @@ async def get_recipes(
     (per-recipe internal share or via a whole-book share). De-duped —
     a recipe shared both ways is returned once with share_source="individual"."""
     rows = await list_accessible_recipes(db, user.id, q=q, tag=tag)
+    # share_state populated for owned rows only — single GROUP BY
+    # against recipe_shares keeps this O(1) per request.
+    from app.services.share_state_service import recipe_internal_share_counts
+    owned_ids = [r.id for r, _c, src, _name, _perm in rows if src is None]
+    counts = await recipe_internal_share_counts(db, owned_ids)
     # Permission isn't surfaced on the summary — the detail endpoint adds it
     # when the user opens a specific recipe.
     return ok([
-        _summary(r, c, share_source=src, owner_name=name)
+        _summary(
+            r,
+            c,
+            share_source=src,
+            owner_name=name,
+            internal_share_count=counts.get(r.id, 0) if src is None else None,
+        )
         for r, c, src, name, _perm in rows
     ])
 

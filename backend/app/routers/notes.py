@@ -10,6 +10,7 @@ from app.models.collaborator import CollaboratorPermission
 from app.models.note import Note, NoteContentFormat
 from app.models.user import User
 from app.services.note_html import html_to_snippet, sanitize_note_html
+from app.services.share_state_service import note_internal_share_counts
 from app.services.note_mention_service import (
     dispatch_new_mentions,
     list_mentionable_users,
@@ -45,18 +46,31 @@ def _out(
     share_source: str | None = None,
     owner_name: str | None = None,
     share_permission: "CollaboratorPermission | None" = None,
+    internal_share_count: int | None = None,
 ) -> dict:
     # Snippet is computed at serialise time rather than stored — the
     # cost (one bs4 parse per note in the response) is negligible
     # versus the migration risk of caching a stale snippet in the
     # row. For the notes overview that's typically <50 notes per
     # response; for the detail-page payload that's one note. Fine.
+    #
+    # share_state is owner-side only (None when the viewer is a
+    # recipient — they shouldn't see how many other people the note
+    # is shared with).
+    from app.schemas.share import ShareState
+    share_state = None
+    if internal_share_count is not None:
+        share_state = ShareState(
+            internal_count=internal_share_count,
+            public=bool(n.share_enabled),
+        )
     return NoteOut.model_validate(n).model_copy(
         update={
             "share_source": share_source,
             "owner_name": owner_name,
             "share_permission": share_permission,
             "snippet": html_to_snippet(n.content or ""),
+            "share_state": share_state,
         }
     ).model_dump(mode="json")
 
@@ -111,9 +125,22 @@ async def get_notes(
         uncategorized=uncategorized,
         archived=archived,
     )
+    # share_state populated only for OWNED rows (the user can already
+    # see who's a collaborator on someone else's note via the shared-
+    # with banner). Single GROUP BY query keeps this O(1) per request.
+    owned_ids = [n.id for n, src, _name, _perm in rows if src is None]
+    share_counts = await note_internal_share_counts(db, owned_ids)
     return ok(
         [
-            _out(n, share_source=src, owner_name=name, share_permission=perm)
+            _out(
+                n,
+                share_source=src,
+                owner_name=name,
+                share_permission=perm,
+                internal_share_count=(
+                    share_counts.get(n.id, 0) if src is None else None
+                ),
+            )
             for n, src, name, perm in rows
         ]
     )
@@ -141,7 +168,10 @@ async def post_note(
     db.add(note)
     await db.commit()
     await db.refresh(note)
-    return ok(_out(note))
+    # Brand-new note — no shares yet, so the explicit 0 keeps the
+    # response shape identical to GET /notes/{id} (frontend can rely
+    # on share_state being present on owner-side responses).
+    return ok(_out(note, internal_share_count=0))
 
 
 async def _ensure_folder_owned(db: AsyncSession, folder_id: int, owner_id: int) -> None:
@@ -240,12 +270,18 @@ async def get_note(
     if share_source is not None:
         owner = await db.execute(select(User.name).where(User.id == note.owner_id))
         owner_name = owner.scalar_one_or_none()
+    # share_state is owner-side only — single-note count is cheap.
+    share_count: int | None = None
+    if share_source is None:
+        counts = await note_internal_share_counts(db, [note.id])
+        share_count = counts.get(note.id, 0)
     return ok(
         _out(
             note,
             share_source=share_source,
             owner_name=owner_name,
             share_permission=perm,
+            internal_share_count=share_count,
         )
     )
 
@@ -316,12 +352,17 @@ async def patch_note(
     if share_source is not None:
         owner = await db.execute(select(User.name).where(User.id == note.owner_id))
         owner_name = owner.scalar_one_or_none()
+    share_count: int | None = None
+    if share_source is None:
+        counts = await note_internal_share_counts(db, [note.id])
+        share_count = counts.get(note.id, 0)
     return ok(
         _out(
             note,
             share_source=share_source,
             owner_name=owner_name,
             share_permission=perm,
+            internal_share_count=share_count,
         )
     )
 
