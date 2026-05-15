@@ -5,9 +5,9 @@ import type { Note, NoteFolder, Tag } from '@/types';
 import { Modal } from '@/components/Modal';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
-import { remarkWikilinks, parseWikilinkUrl } from '@/lib/wikilinks';
 import { VersionHistoryPanel } from '@/components/notes/VersionHistoryPanel';
-import { NoteToolbar } from '@/components/notes/NoteToolbar';
+import { NoteEditor } from '@/components/notes/NoteEditor';
+import { LegacyMarkdownView } from '@/components/notes/LegacyMarkdownView';
 import { NoteActionsMenu } from '@/components/notes/NoteActionsMenu';
 import { NoteMobileLayout } from '@/components/notes/NoteMobileLayout';
 import { NoteSummaryModal } from '@/components/notes/NoteSummaryModal';
@@ -25,8 +25,6 @@ import { useNoteEditingState } from '@/hooks/useNoteEditingState';
 import { hasActiveFilters, useNotesFilters } from '@/store/notesFilters';
 import { invalidateOverview, useOverviewQuery } from '@/hooks/useOverviewQuery';
 import { Plus, Search } from 'lucide-react';
-import MDEditor from '@uiw/react-md-editor';
-import remarkGfm from 'remark-gfm';
 
 const NOTE_DRAG_TYPE = 'application/x-lyst-note-id';
 
@@ -529,7 +527,7 @@ export function NotesPage() {
         {loading ? (
           <div className="text-muted/70">Lade…</div>
         ) : active ? (
-          <NoteEditor
+          <NoteEditorPane
             key={active.id}
             note={active}
             availableTags={tags}
@@ -850,9 +848,9 @@ function SidebarRow({
   );
 }
 
-// ---------- Editor ----------
+// ---------- Editor pane (desktop split-view) ----------
 
-function NoteEditor({
+function NoteEditorPane({
   note,
   availableTags,
   folders,
@@ -1112,108 +1110,23 @@ function NoteEditor({
         )}
       </div>
 
-      {/* Compact icon-only toolbar — replaces the lib's built-in toolbar
-          and matches the mobile bottom toolbar for consistency.
-          Hidden for VIEW recipients (no edit affordance). */}
-      {canEdit && (
-        <NoteToolbar
-          variant="desktop"
-          content={state.content}
-          setContent={state.setContent}
-          getTextarea={state.getTextarea}
-        />
-      )}
-
-      <div
-        data-color-mode="light"
-        className="flex-1 min-h-[400px] relative"
-        ref={state.editorWrapRef}
-      >
-        <MDEditor
-          value={state.content}
-          onChange={(v) => {
-            if (readOnly) return; // belt-and-suspenders; readOnly already blocks input
-            const next = v ?? '';
-            state.setContent(next);
-            state.detectAutocomplete(next);
-          }}
-          height={500}
-          preview={readOnly ? 'preview' : 'live'}
-          hideToolbar
-          textareaProps={{
-            readOnly,
-            // MDEditor's CodeMirror-ish wrapper disables these by default;
-            // forcing them on the underlying textarea gives mobile users
-            // the standard autocorrect / capitalise / spellcheck behaviour.
-            autoCapitalize: 'sentences',
-            autoCorrect: 'on',
-            spellCheck: true,
-            onKeyDown: state.onTextareaKeyDown,
-            onClick: () => state.detectAutocomplete(state.content),
-            onKeyUp: () => state.detectAutocomplete(state.content),
-            placeholder: 'Inhalt… Tippe [[ um eine andere Notiz zu verlinken.',
-          }}
-          previewOptions={{
-            remarkPlugins: [remarkGfm, remarkWikilinks],
-            components: {
-              a: ({ href, children, ...rest }: any) => {
-                const linked = parseWikilinkUrl(href);
-                if (linked !== null) {
-                  return (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        onOpenByTitle(linked);
-                      }}
-                      className="inline text-brand-700 underline decoration-dotted underline-offset-2 hover:decoration-solid"
-                    >
-                      {children}
-                    </button>
-                  );
-                }
-                return (
-                  <a href={href} {...rest} target="_blank" rel="noreferrer noopener">
-                    {children}
-                  </a>
-                );
-              },
-            },
-          }}
-        />
-        {state.autocomplete && state.titleSuggestions.length > 0 && (
-          (() => {
-            // Snapshot so TS narrows `ac` cleanly inside callbacks.
-            const ac = state.autocomplete;
-            return (
-              <div className="absolute z-20 left-2 right-2 sm:right-auto sm:max-w-sm bottom-2 card p-1 shadow-flat border border-line bg-surface">
-                <div className="text-[11px] text-muted px-2 py-1">
-                  Notiz verlinken — ↑/↓ wählen, Enter einfügen, Esc abbrechen
-                </div>
-                <ul className="max-h-48 overflow-auto">
-                  {state.titleSuggestions.map((s, i) => (
-                    <li key={s.id}>
-                      <button
-                        type="button"
-                        onMouseDown={(e) => {
-                          e.preventDefault(); // keep textarea focus
-                          state.insertWikilink(s.title);
-                        }}
-                        onMouseEnter={() =>
-                          state.setAutocomplete({ ...ac, index: i })
-                        }
-                        className={`w-full text-left px-2 py-1.5 text-sm rounded ${
-                          i === ac.index ? 'bg-brand-50 text-brand-700' : 'hover:bg-page'
-                        }`}
-                      >
-                        {s.title}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            );
-          })()
+      {/* TipTap WYSIWYG editor. Toolbar lives inside NoteEditor, hidden
+          automatically when `editable=false` (VIEW recipients). Pre-
+          migration markdown notes are detected via content_format and
+          rendered through the legacy markdown viewer instead — once the
+          one-shot migration script has run on production, that branch
+          becomes dead code and can be removed alongside the column. */}
+      <div className="flex-1 min-h-[400px] relative">
+        {note.content_format === 'MARKDOWN' ? (
+          <LegacyMarkdownView source={state.content} onOpenByTitle={onOpenByTitle} />
+        ) : (
+          <NoteEditor
+            content={state.content}
+            noteId={note.id}
+            editable={canEdit}
+            onChange={(html) => state.setContent(html)}
+            onNavigate={onOpenByTitle}
+          />
         )}
       </div>
 

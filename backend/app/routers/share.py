@@ -231,6 +231,7 @@ async def public_note(token: str, db: AsyncSession = Depends(get_db)):
         PublicNote(
             title=note.title,
             content=note.content or "",
+            content_format=note.content_format,
             tags=list(note.tags or []),
             updated_at=note.updated_at,
         ).model_dump(mode="json")

@@ -1,3 +1,4 @@
+import enum
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -23,6 +24,20 @@ if TYPE_CHECKING:
     from app.models.user import User
 
 
+class NoteContentFormat(str, enum.Enum):
+    """Transitional marker for the Markdown -> HTML editor migration
+    (alembic 0016 / data-migration 0017).
+
+    Newly-created notes are HTML (TipTap's serialized output). Existing
+    notes start as MARKDOWN and get flipped to HTML by the one-shot
+    `scripts/migrate_notes_to_html.py` run once after the schema is
+    applied. The column stays for one release so a botched conversion
+    can be rolled back per-note from a DB backup."""
+
+    MARKDOWN = "MARKDOWN"
+    HTML = "HTML"
+
+
 class Note(Base, TimestampMixin):
     __tablename__ = "notes"
 
@@ -32,6 +47,13 @@ class Note(Base, TimestampMixin):
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # Format of `content`: MARKDOWN for pre-migration rows, HTML for
+    # everything new. See NoteContentFormat docstring + alembic 0016.
+    content_format: Mapped[NoteContentFormat] = mapped_column(
+        Enum(NoteContentFormat, name="note_content_format"),
+        nullable=False,
+        default=NoteContentFormat.HTML,
+    )
     tags: Mapped[list[str]] = mapped_column(ARRAY(String), default=list, nullable=False)
     folder_id: Mapped[int | None] = mapped_column(
         ForeignKey("note_folders.id", ondelete="SET NULL"), nullable=True, index=True

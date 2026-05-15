@@ -212,6 +212,51 @@ Database migrations run automatically on backend startup
 **Always take a backup before updating across a major version** — Lyst is
 small but migrations are one-way.
 
+### One-off: notes Markdown → HTML migration (release ≥ 1.5)
+
+When you update to the release that swaps the Markdown editor for the new
+TipTap-based rich-text editor, an additional one-shot data migration is
+required. Alembic adds the `notes.content_format` column automatically
+on backend startup; the *content* conversion is a separate Python
+script so it can be run during a maintenance window and stopped /
+resumed without disturbing the schema.
+
+**Before running it, back up the `notes` table.** The conversion is
+one-way — once a row's HTML overwrites its Markdown, the original text
+is gone:
+
+```bash
+# Pick whichever fits your setup; the dump file lets you restore a
+# single misconverted note from a backup later if needed.
+docker compose exec db pg_dump -t notes -F c -U lyst lyst \
+  > notes-pre-html-migration.dump
+```
+
+Then run the migration:
+
+```bash
+# Default flags: batches of 100, no limit. Use --dry-run --verbose
+# first on a copy of production to eyeball a handful of conversions.
+docker compose exec backend python -m scripts.migrate_notes_to_html
+```
+
+Useful flags:
+
+- `--dry-run --verbose --limit 10` — preview 10 conversions without writing.
+- `--batch 50` — smaller commit batches on very large note tables.
+- `--limit 500` — stop after N notes (e.g. resume after a pause).
+
+The script is **idempotent**: it only touches rows where
+`content_format = 'MARKDOWN'`, and flips them to `'HTML'` as it writes.
+Re-running once it's finished is a no-op (0 converted).
+
+If a single note got mangled in the conversion (say, an unusual
+markdown construct that the converter mishandled), restore that one
+row from the dump and re-run the script with no other flags — it'll
+find the freshly-MARKDOWN row, retry, and leave the rest alone. The
+`content_format` column stays for one release before being dropped so
+this rollback window remains open.
+
 ---
 
 ## Troubleshooting

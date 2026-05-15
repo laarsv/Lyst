@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.models.collaborator import CollaboratorPermission
+from app.models.note import NoteContentFormat
 
 
 class NoteBase(BaseModel):
@@ -33,6 +34,10 @@ class NoteOut(NoteBase):
     owner_id: int
     created_at: datetime
     updated_at: datetime
+    # Storage format of `content` (transitional — alembic 0016). Frontend
+    # picks the renderer accordingly: TipTap for HTML, the legacy markdown
+    # viewer for any rows the migration script hasn't touched yet.
+    content_format: NoteContentFormat = NoteContentFormat.HTML
     # Public-share state — alembic 0013. Same shape as Recipe.
     share_enabled: bool = False
     share_token: str | None = None
@@ -53,6 +58,9 @@ class PublicNote(BaseModel):
     """Payload returned by GET /share/note/{token} — anyone-with-URL."""
     title: str
     content: str
+    # Public view needs to know whether `content` is markdown or HTML so
+    # it can pick the renderer. Same transitional column as NoteOut.
+    content_format: NoteContentFormat = NoteContentFormat.HTML
     tags: list[str]
     updated_at: datetime
 

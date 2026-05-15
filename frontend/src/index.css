@@ -91,58 +91,165 @@ html[data-theme="dark"] { color-scheme: dark; }
   }
 }
 
-/* Markdown rendering (note preview).
-   Tailwind's preflight strips list-style and padding from <ul>/<ol>, which
-   makes lists in the rendered note preview show as plain wrapped text.
-   The MDEditor lib applies its content under the `.wmde-markdown` class —
-   restore standard list styling there, plus a few small refinements. */
-.wmde-markdown ul { list-style: disc; padding-left: 1.5rem; margin: 0.5rem 0; }
-.wmde-markdown ol { list-style: decimal; padding-left: 1.5rem; margin: 0.5rem 0; }
-.wmde-markdown ul ul, .wmde-markdown ol ol,
-.wmde-markdown ul ol, .wmde-markdown ol ul { margin: 0.25rem 0; }
-.wmde-markdown li { margin: 0.25rem 0; }
-.wmde-markdown li > p { margin: 0; }
-/* GFM task lists — checkboxes get hidden by Tailwind's appearance reset. */
-.wmde-markdown li > input[type="checkbox"] {
-  appearance: auto;
-  vertical-align: -0.1em;
+/* ----------------------------------------------------------------------
+   Rich-text note rendering — applies to:
+     - `.note-editor-surface` : the TipTap editable surface (Notes page)
+     - `.note-public-html`    : the public share view + version history
+                                preview (read-only HTML, post-migration)
+     - `.legacy-markdown-view`: the transitional fallback for
+                                content_format=MARKDOWN rows
+
+   Tailwind's preflight strips list-style and padding from <ul>/<ol> and
+   removes default heading sizes, so we restore the typographic basics
+   under one common scope. We deliberately don't pull in
+   @tailwindcss/typography — the styles below are small and let us
+   control the wikilink chip + task-list look without fighting `prose`.
+   ---------------------------------------------------------------------- */
+
+.note-editor-surface,
+.note-public-html,
+.legacy-markdown-view {
+  /* Headings */
+  & h1 { font-size: 1.5rem; font-weight: 600; margin: 1.25rem 0 0.5rem; line-height: 1.2; }
+  & h2 { font-size: 1.25rem; font-weight: 600; margin: 1.1rem 0 0.45rem; line-height: 1.25; }
+  & h3 { font-size: 1.1rem; font-weight: 600; margin: 1rem 0 0.4rem; }
+  & h4, & h5, & h6 { font-weight: 600; margin: 0.9rem 0 0.35rem; }
+
+  /* Paragraphs + breaks */
+  & p { margin: 0.5rem 0; line-height: 1.55; }
+  & hr { margin: 1rem 0; border: 0; border-top: 1px solid rgb(var(--color-line)); }
+
+  /* Lists */
+  & ul, & ol { padding-left: 1.5rem; margin: 0.5rem 0; }
+  & ul { list-style: disc; }
+  & ol { list-style: decimal; }
+  & ul ul, & ol ol, & ul ol, & ol ul { margin: 0.25rem 0; }
+  & li { margin: 0.2rem 0; }
+  & li > p { margin: 0; }
+
+  /* Inline marks */
+  & strong { font-weight: 600; }
+  & em { font-style: italic; }
+  & code:not(pre code) {
+    background: rgb(var(--color-page));
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.9em;
+  }
+  & pre {
+    background: rgb(var(--color-page));
+    border: 1px solid rgb(var(--color-line));
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    overflow-x: auto;
+    margin: 0.75rem 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.9em;
+  }
+  & pre code { background: transparent; padding: 0; border-radius: 0; }
+
+  /* Blockquote */
+  & blockquote {
+    border-left: 3px solid rgb(var(--color-brand));
+    padding: 0.25rem 0 0.25rem 0.85rem;
+    margin: 0.75rem 0;
+    color: rgb(var(--color-muted));
+  }
+
+  /* Links */
+  & a {
+    color: rgb(var(--color-brand-700));
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 2px;
+  }
+  & a:hover { text-decoration-style: solid; }
+
+  /* Images */
+  & img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 8px;
+    margin: 0.5rem 0;
+  }
+
+  /* Tables */
+  & table { border-collapse: collapse; margin: 0.75rem 0; width: 100%; }
+  & th, & td {
+    border: 1px solid rgb(var(--color-line));
+    padding: 0.4rem 0.6rem;
+    text-align: left;
+    vertical-align: top;
+  }
+  & th { background: rgb(var(--color-page)); font-weight: 600; }
 }
-/* GFM task lists: align flush with paragraph text on BOTH viewports.
-   The wmde-markdown library ships its own rule
-       .wmde-markdown .contains-task-list input[type='checkbox']
-         { margin: 0 0.2em 0.25em -1.6em; }
-   which assumes the parent ul keeps its default 2em padding-left. Our
-   project overrides that padding to 1.5rem AND used to also pull the
-   whole task-list li back by -1.5rem — combined with the library's
-   -1.6em checkbox margin that put the checkbox ~3em off-screen left.
-   The fix: drop the parent ul's padding entirely for task-lists, cancel
-   the library's negative checkbox margin, and lay out each row as a
-   small flex row so the checkbox & text align cleanly. Scoped to
-   .wmde-markdown so the rest of the app's list styles are unaffected. */
-.wmde-markdown ul.contains-task-list {
-  padding-left: 0;
-  list-style: none;
+
+/* Wikilink chip — emitted by the WikilinkExtension as
+   `<span data-wikilink="Title" class="wikilink-chip">Title</span>`.
+   Same visual as the old markdown-era anchor so users don't see a
+   step-change on migration. */
+.wikilink-chip {
+  display: inline;
+  color: rgb(var(--color-brand-700));
+  background: rgb(var(--color-brand-50));
+  padding: 0.05em 0.4em;
+  border-radius: 6px;
+  text-decoration: none;
+  cursor: pointer;
 }
-.wmde-markdown li.task-list-item {
+.note-editor-surface .wikilink-chip {
+  /* Inside the editor the chip is non-clickable (caret lands inside
+     when arrowed) — drop the pointer to communicate that. */
+  cursor: text;
+}
+
+/* TipTap task-list shape we emit:
+     <ul data-type="taskList"><li data-type="taskItem"
+       data-checked="true|false"><p>Item</p></li></ul>
+   Use flex so the checkbox sits left of the text, baseline-aligned,
+   flush with the surrounding paragraph margin. Drop the bullet for
+   task-list items only. */
+.note-editor-surface ul[data-type="taskList"],
+.note-public-html ul[data-type="taskList"] {
   list-style: none;
-  margin-left: 0;
   padding-left: 0;
+}
+.note-editor-surface li[data-type="taskItem"],
+.note-public-html li[data-type="taskItem"] {
   display: flex;
-  align-items: baseline;
-  gap: 0.4rem;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0.2rem 0;
 }
-.wmde-markdown li.task-list-item > input[type="checkbox"],
-.wmde-markdown .contains-task-list input[type="checkbox"],
-.wmde-markdown .task-list-item-checkbox {
-  margin: 0;
+.note-editor-surface li[data-type="taskItem"] > label,
+.note-public-html li[data-type="taskItem"] > label {
   flex: 0 0 auto;
-  vertical-align: baseline;
-  translate: 0 0.15em; /* slight optical alignment with x-height */
+  margin-top: 0.25em;
 }
-/* Nested task-lists inside a task-list: keep them indented one step. */
-.wmde-markdown li.task-list-item ul.contains-task-list,
-.wmde-markdown li.task-list-item ol {
-  padding-left: 1.25rem;
-  flex-basis: 100%;
-  margin-top: 0.25rem;
+.note-editor-surface li[data-type="taskItem"] > div,
+.note-public-html li[data-type="taskItem"] > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.note-editor-surface li[data-type="taskItem"] input[type="checkbox"],
+.note-public-html li[data-type="taskItem"] input[type="checkbox"] {
+  appearance: auto;
+  margin: 0;
+  vertical-align: middle;
+}
+.note-editor-surface li[data-type="taskItem"][data-checked="true"] > div,
+.note-public-html li[data-type="taskItem"][data-checked="true"] > div {
+  text-decoration: line-through;
+  color: rgb(var(--color-muted));
+}
+
+/* Placeholder styling — Placeholder extension adds .is-editor-empty
+   to the first node and the data-placeholder attribute. */
+.note-editor-surface p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: rgb(var(--color-muted) / 0.6);
+  float: left;
+  height: 0;
+  pointer-events: none;
 }

@@ -18,3 +18,9 @@ resend==2.4.0
 httpx==0.27.2
 beautifulsoup4==4.12.3
 anthropic==0.40.0
+# Rich-text editor backend (alembic 0016): bleach sanitises HTML that the
+# TipTap frontend sends, markdown-it-py + mdit-py-plugins run the one-off
+# Markdown -> HTML conversion for pre-existing notes.
+bleach==6.1.0
+markdown-it-py==3.0.0
+mdit-py-plugins==0.4.1

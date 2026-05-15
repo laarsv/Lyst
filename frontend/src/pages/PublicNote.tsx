@@ -1,11 +1,16 @@
 /** Public read-only note view (route: /share/note/:token).
- *  No nav, no auth, no edit controls — just the note + Lyst footer. */
+ *  No nav, no auth, no edit controls — just the note + Lyst footer.
+ *
+ *  Renders the backend-sanitised HTML directly. The bleach allowlist
+ *  guarantees no script/style/event-handler attributes survived, so
+ *  dangerouslySetInnerHTML here is safe — the backend is authoritative.
+ *  Falls back to the legacy markdown viewer if the row hasn't been
+ *  migrated yet. */
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import MDEditor from '@uiw/react-md-editor';
-import remarkGfm from 'remark-gfm';
 import { NotesApi } from '@/api/endpoints';
 import type { PublicNoteData } from '@/types';
+import { LegacyMarkdownView } from '@/components/notes/LegacyMarkdownView';
 
 export function PublicNotePage() {
   const { token } = useParams();
@@ -51,12 +56,19 @@ export function PublicNotePage() {
             ))}
           </div>
         )}
-        <div data-color-mode="light" className="mt-4 max-w-none">
-          <MDEditor.Markdown
-            source={data.content || '_Leere Notiz._'}
-            style={{ background: 'transparent' }}
-            remarkPlugins={[remarkGfm]}
-          />
+        <div className="mt-4 max-w-none">
+          {data.content_format === 'MARKDOWN' ? (
+            <LegacyMarkdownView source={data.content || '_Leere Notiz._'} />
+          ) : (
+            // Bleach has stripped everything outside the allowlist on the
+            // way out of the backend; rendering as HTML is safe.
+            <div
+              className="note-public-html"
+              dangerouslySetInnerHTML={{
+                __html: data.content || '<p><em>Leere Notiz.</em></p>',
+              }}
+            />
+          )}
         </div>
       </article>
 

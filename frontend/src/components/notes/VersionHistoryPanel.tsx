@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import MDEditor from '@uiw/react-md-editor';
 import { NotesApi } from '@/api/endpoints';
 import type { Note, NoteVersionFull, NoteVersionListItem } from '@/types';
 import { toast } from '@/components/Toast';
 import { useConfirm } from '@/components/Dialogs';
 import { getApiError } from '@/api/client';
 import { relativeDe } from '@/lib/relativeTime';
+import { LegacyMarkdownView } from './LegacyMarkdownView';
 
 interface Props {
   noteId: number;
@@ -180,11 +180,24 @@ export function VersionHistoryPanel({ noteId, open, onClose, onRestored }: Props
                     {restoring ? 'Wiederherstellen…' : 'Diese Version wiederherstellen'}
                   </button>
                 </div>
-                <div data-color-mode="light" className="flex-1 min-h-0">
-                  <MDEditor.Markdown
-                    source={selected.content || '_(leer)_'}
-                    style={{ background: 'transparent' }}
-                  />
+                {/* Versions saved before the markdown -> HTML migration
+                    fall back to the legacy renderer (LegacyMarkdownView
+                    handles wikilinks + GFM). Post-migration versions are
+                    HTML, sanitised on save — safe to inject. We branch
+                    on a heuristic: HTML strings begin with `<` after
+                    trimming. Robust enough for the transition window;
+                    once we drop content_format we can drop this too. */}
+                <div className="flex-1 min-h-0 overflow-auto">
+                  {(selected.content || '').trimStart().startsWith('<') ? (
+                    <div
+                      className="note-public-html"
+                      dangerouslySetInnerHTML={{
+                        __html: selected.content || '<p><em>(leer)</em></p>',
+                      }}
+                    />
+                  ) : (
+                    <LegacyMarkdownView source={selected.content || '*(leer)*'} />
+                  )}
                 </div>
               </>
             ) : (

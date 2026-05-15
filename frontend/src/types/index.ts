@@ -79,11 +79,19 @@ export interface Reminder {
   created_at: string;
 }
 
+/** Storage format of Note.content. Transitional column added by
+ *  alembic 0016. New notes are always 'HTML' (TipTap output);
+ *  'MARKDOWN' only appears on rows that haven't yet been processed by
+ *  `scripts/migrate_notes_to_html.py`. Frontend branches on this to
+ *  pick the right renderer. */
+export type NoteContentFormat = 'MARKDOWN' | 'HTML';
+
 export interface Note {
   id: number;
   owner_id: number;
   title: string;
   content: string;
+  content_format: NoteContentFormat;
   tags: string[];
   folder_id: number | null;
   is_pinned: boolean;
@@ -105,6 +113,7 @@ export interface Note {
 export interface PublicNoteData {
   title: string;
   content: string;
+  content_format: NoteContentFormat;
   tags: string[];
   updated_at: string;
 }

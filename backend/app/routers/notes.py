@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -7,8 +7,9 @@ from app.core.database import get_db
 from app.core.dependencies import require_user
 from app.core.responses import ok
 from app.models.collaborator import CollaboratorPermission
-from app.models.note import Note
+from app.models.note import Note, NoteContentFormat
 from app.models.user import User
+from app.services.note_html import sanitize_note_html
 from app.schemas.note import (
     NoteCreate,
     NoteOut,
@@ -120,6 +121,12 @@ async def post_note(
     # Archived notes can't also be pinned (spec).
     if data.get("is_archived") and data.get("is_pinned"):
         data["is_pinned"] = False
+    # New notes are always HTML (the TipTap editor is the only client
+    # writing now). Run the same sanitiser as PATCH so a malicious
+    # payload at creation time doesn't end up stored.
+    if "content" in data and data["content"]:
+        data["content"] = sanitize_note_html(data["content"])
+    data["content_format"] = NoteContentFormat.HTML
     note = Note(owner_id=user.id, **data)
     db.add(note)
     await db.commit()
@@ -165,22 +172,42 @@ async def get_backlinks(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Notes whose markdown content contains [[<this note's title>]]."""
+    """Notes whose content references this note. Matches both the
+    legacy markdown wikilink syntax `[[Title]]` (pre-migration rows)
+    and TipTap's HTML form `data-wikilink="Title"` (post-migration)
+    so backlinks work continuously across the editor switchover."""
     target = await db.execute(
         select(Note).where(Note.id == note_id, Note.owner_id == user.id)
     )
     note = target.scalar_one_or_none()
     if not note:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    # PostgreSQL ILIKE with the literal `[[Title]]` string. We escape the
-    # SQL wildcard chars `_` and `%` in the title so a title that happens to
-    # contain them doesn't widen the search.
+    # PostgreSQL ILIKE with the literal title. We escape the SQL wildcard
+    # chars `_` and `%` so a title that happens to contain them doesn't
+    # widen the search. The HTML pattern also escapes `"` defensively
+    # (a title like `5" record` becomes `5&quot; record` after sanitise).
     safe_title = note.title.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    pattern = f"%[[{safe_title}]]%"
+    md_pattern = f"%[[{safe_title}]]%"
+    # data-wikilink attribute survives bleach as-is for ASCII titles;
+    # special chars get HTML-escaped by markdown_to_html, so we look up
+    # both the raw and the escaped form. The double-escaped form covers
+    # titles containing `"`, `<`, `>`, `&`.
+    html_safe = (
+        safe_title.replace("&", "&amp;")
+        .replace('"', "&quot;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+    html_pattern = f'%data-wikilink="{html_safe}"%'
     result = await db.execute(
         select(Note.id, Note.title)
         .where(Note.owner_id == user.id, Note.id != note.id, Note.is_archived.is_(False))
-        .where(Note.content.ilike(pattern, escape="\\"))
+        .where(
+            or_(
+                Note.content.ilike(md_pattern, escape="\\"),
+                Note.content.ilike(html_pattern, escape="\\"),
+            )
+        )
         .order_by(Note.updated_at.desc())
     )
     return ok([{"id": i, "title": t} for i, t in result.all()])
@@ -238,6 +265,18 @@ async def patch_note(
         patch["is_pinned"] = False
     elif patch.get("is_pinned") is True and (patch.get("is_archived") or note.is_archived):
         patch["is_pinned"] = False
+
+    # Run TipTap-emitted HTML through bleach before anything else so we
+    # never compare a stripped value against the pre-strip user input
+    # when deciding whether to version. The sanitiser is idempotent, so
+    # if the migration script already passed the markdown through it
+    # this is a no-op.
+    if "content" in patch and patch["content"] is not None:
+        patch["content"] = sanitize_note_html(patch["content"])
+        # A user editing in TipTap is necessarily producing HTML; flip
+        # the format flag so a partially-migrated row doesn't get
+        # re-converted by a future script run.
+        patch["content_format"] = NoteContentFormat.HTML
 
     # If title or content is changing, snapshot the *current* state as a
     # version first (debounced server-side to 60 s, see service). Metadata-
@@ -351,6 +390,73 @@ async def del_note(
     await db.delete(note)
     await db.commit()
     return ok({"message": "Deleted"})
+
+
+# ---------- Inline image upload (TipTap toolbar Image button) ----------
+#
+# Mirrors POST /recipes/{id}/image — files land under /app/uploads/notes/{id}
+# and are served back via the /static/ mount. The frontend embeds the
+# returned URL in an <img src> tag and the next save persists it. Multiple
+# images per note are fine (unlike recipes where image_url is single).
+
+import pathlib as _pathlib
+import uuid as _uuid
+
+_NOTE_IMAGE_ALLOWED = {
+    "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+}
+_NOTE_IMAGE_MAX_BYTES = 10 * 1024 * 1024
+_UPLOADS_BASE = _pathlib.Path("/app/uploads")
+
+
+@router.post("/{note_id}/images", status_code=status.HTTP_200_OK)
+async def post_note_image(
+    note_id: int,
+    file: UploadFile = File(...),
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload an inline image for the TipTap editor. EDIT permission
+    required (owner or EDIT recipient). Returns `{ "url": "/static/…" }`
+    which the editor's Image extension renders as `<img src=…>`. We do
+    NOT mutate the note here — the editor inserts the img tag itself
+    and the next autosave persists the new content."""
+    await _require_note_edit(db, note_id, user.id)
+
+    if file.content_type not in _NOTE_IMAGE_ALLOWED:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Nur JPG, PNG, WebP und GIF werden unterstützt",
+        )
+
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(64 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > _NOTE_IMAGE_MAX_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Maximale Bildgröße: 10 MB",
+            )
+        chunks.append(chunk)
+    data = b"".join(chunks)
+    if not data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Leere Datei")
+
+    ext = _NOTE_IMAGE_ALLOWED[file.content_type]
+    fname = f"{_uuid.uuid4().hex}{ext}"
+    target_dir = _UPLOADS_BASE / "notes" / str(note_id)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    (target_dir / fname).write_bytes(data)
+
+    return ok({"url": f"/static/notes/{note_id}/{fname}"})
 
 
 # =============================================================================

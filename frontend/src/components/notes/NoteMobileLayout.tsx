@@ -4,27 +4,28 @@
  *    [Top bar]   ← back, kebab
  *    [Title row] tap-to-edit title + pin toggle
  *    [Tag row]   inline chips + "+ tag" input
- *    [Mode]      "Bearbeiten | Vorschau" segmented control
- *    [Content]   either MDEditor (edit-only) or rendered Markdown
- *    [Toolbar]   sticky to viewport bottom, only in edit mode, follows
- *                the iOS keyboard via visualViewport.
+ *    [Content]   TipTap WYSIWYG editor (the toolbar lives inside it,
+ *                sticky to the top of the editor surface).
  *
- *  All state plumbing (autosave, autocomplete, backlinks) is reused from
- *  the shared `useNoteEditingState` hook, so the editing semantics are
- *  identical to the desktop split-view. */
+ *  The Bearbeiten / Vorschau toggle is gone — the WYSIWYG editor IS the
+ *  document, so there's no separate preview mode any more. VIEW recipients
+ *  get an `editable=false` instance that looks identical but rejects input
+ *  (and clicks on wikilinks then navigate via onNavigate).
+ *
+ *  All shared state (autosave, backlinks) still goes through
+ *  `useNoteEditingState` so desktop and mobile keep parity.
+ */
 import { useEffect, useRef, useState } from 'react';
-import MDEditor from '@uiw/react-md-editor';
 import { ArrowLeft, Loader2, Pin, Sparkles, Users, X } from 'lucide-react';
 import type { Note, NoteFolder, Tag } from '@/types';
 import { NotesApi } from '@/api/endpoints';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
 import type { NoteEditingState } from '@/hooks/useNoteEditingState';
-import { remarkWikilinks, parseWikilinkUrl } from '@/lib/wikilinks';
-import remarkGfm from 'remark-gfm';
 import { FolderChip } from './FolderChip';
 import { NoteActionsMenu } from './NoteActionsMenu';
-import { NoteToolbar } from './NoteToolbar';
+import { NoteEditor } from './NoteEditor';
+import { LegacyMarkdownView } from './LegacyMarkdownView';
 import { SaveIndicator, type SaveIndicatorApi } from '@/components/SaveIndicator';
 
 interface Props {
@@ -52,8 +53,8 @@ interface Props {
   onLeaveShare?: () => void;
   /** Owner-only chrome (folder, pin, archive entries) gates on this. */
   isRecipient?: boolean;
-  /** Content-edit gate (title, mode toggle, edit body, AI buttons, tag
-   *  editor). Owner OR EDIT recipient -> true. */
+  /** Content-edit gate (title, edit body, AI buttons, tag editor).
+   *  Owner OR EDIT recipient -> true. */
   canEdit?: boolean;
   onBack: () => void;
   onOpenByTitle: (title: string) => void;
@@ -87,7 +88,6 @@ export function NoteMobileLayout({
   const isRecipient = isRecipientProp ?? note.share_source !== null;
   const canEdit = canEditProp ?? !isRecipient;
   const readOnly = !canEdit;
-  const [mode, setMode] = useState<'edit' | 'preview'>('preview');
   const [titleEditing, setTitleEditing] = useState(false);
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
   const [titleSuggesting, setTitleSuggesting] = useState(false);
@@ -127,17 +127,10 @@ export function NoteMobileLayout({
     if (titleEditing) titleInputRef.current?.focus();
   }, [titleEditing]);
 
-  // Reset to preview every time the user opens a different note.
+  // Reset edit-only chrome when switching notes.
   useEffect(() => {
-    setMode('preview');
     setTitleEditing(false);
   }, [note.id]);
-
-  // VIEW recipients can never enter edit mode — force preview. EDIT
-  // recipients get the same toggle as owners.
-  useEffect(() => {
-    if (readOnly && mode !== 'preview') setMode('preview');
-  }, [readOnly, mode]);
 
   const handlePin = () => {
     if (note.is_archived) return;
@@ -344,192 +337,56 @@ export function NoteMobileLayout({
         )}
       </div>
 
-      {/* Mode toggle — only when content edits are possible. */}
-      {canEdit && (
-      <div className="px-3 mt-3 shrink-0">
-        <div className="inline-flex bg-surface border border-line rounded-ctl p-0.5 text-sm">
-          <ModeButton active={mode === 'edit'} onClick={() => setMode('edit')}>
-            Bearbeiten
-          </ModeButton>
-          <ModeButton active={mode === 'preview'} onClick={() => setMode('preview')}>
-            Vorschau
-          </ModeButton>
-        </div>
-      </div>
-      )}
-
-      {/* Content — fills the remaining space, scrolls. The bottom padding
-          accounts for the sticky toolbar + iOS keyboard so the cursor
-          line is never hidden behind them. */}
-      <div
-        className="flex-1 min-h-0 overflow-y-auto px-3 pt-3"
-        style={{ paddingBottom: mode === 'edit' ? `${72 + keyboardOffset}px` : '24px' }}
-      >
-        {mode === 'edit' ? (
-          <div data-color-mode="light" className="relative" ref={state.editorWrapRef}>
-            <MDEditor
-              value={state.content}
-              onChange={(v) => {
-                const next = v ?? '';
-                state.setContent(next);
-                state.detectAutocomplete(next);
-              }}
-              preview="edit"
-              hideToolbar
-              visibleDragbar={false}
-              height={600}
-              textareaProps={{
-                // MDEditor's textarea defaults disable mobile keyboard
-                // helpers — re-enable so iOS/Android behave like a normal
-                // text field (sentence caps, autocorrect, spell check).
-                autoCapitalize: 'sentences',
-                autoCorrect: 'on',
-                spellCheck: true,
-                onKeyDown: state.onTextareaKeyDown,
-                onClick: () => state.detectAutocomplete(state.content),
-                onKeyUp: () => state.detectAutocomplete(state.content),
-                placeholder: 'Inhalt… Tippe [[ um eine andere Notiz zu verlinken.',
-              }}
-            />
-            {state.autocomplete && state.titleSuggestions.length > 0 && (
-              <WikilinkPopup state={state} />
-            )}
+      {/* Editor — fills the remaining space, scrolls. Bottom padding
+          clears the iOS keyboard so the cursor line never hides behind
+          it. NoteEditor's own toolbar sits sticky-top of this scroll
+          region, so toolbar + keyboard are visible together when the
+          user taps inside the editor surface. */}
+      <div className="flex-1 min-h-0 overflow-hidden px-3 pt-3">
+        {note.content_format === 'MARKDOWN' ? (
+          <div className="h-full overflow-y-auto">
+            <LegacyMarkdownView source={state.content} onOpenByTitle={onOpenByTitle} />
           </div>
         ) : (
-          <div data-color-mode="light" className="max-w-none">
-            <MDEditor.Markdown
-              source={state.content || '_Leere Notiz._'}
-              style={{ background: 'transparent' }}
-              remarkPlugins={[remarkGfm, remarkWikilinks]}
-              components={{
-                a: ({ href, children, ...rest }: any) => {
-                  const linked = parseWikilinkUrl(href);
-                  if (linked !== null) {
-                    return (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          onOpenByTitle(linked);
-                        }}
-                        className="inline text-brand-700 underline decoration-dotted underline-offset-2"
-                      >
-                        {children}
-                      </button>
-                    );
-                  }
-                  return (
-                    <a href={href} {...rest} target="_blank" rel="noreferrer noopener">
-                      {children}
-                    </a>
-                  );
-                },
-              }}
-            />
-            {state.backlinks.length > 0 && (
-              <section className="border-t border-line mt-6 pt-3">
-                <div className="text-xs uppercase tracking-wide text-muted mb-2">
-                  Wird erwähnt in ({state.backlinks.length})
-                </div>
-                <ul className="space-y-1">
-                  {state.backlinks.map((b) => (
-                    <li key={b.id}>
-                      <button
-                        type="button"
-                        onClick={() => onOpenByTitle(b.title)}
-                        className="text-sm text-brand-700 underline decoration-dotted"
-                      >
-                        {b.title}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
-          </div>
+          <NoteEditor
+            content={state.content}
+            noteId={note.id}
+            editable={canEdit}
+            onChange={(html) => state.setContent(html)}
+            onNavigate={onOpenByTitle}
+            contentPaddingBottom={canEdit ? 24 + keyboardOffset : 24}
+            className="h-full"
+          />
         )}
       </div>
 
-      {/* Sticky bottom toolbar (only in edit mode). `bottom` follows the
-          iOS keyboard via the visualViewport hook so the bar stays visible
-          right above the keys. */}
-      {mode === 'edit' && (
-        <div
-          className="fixed left-0 right-0 z-30"
-          style={{
-            bottom: `${keyboardOffset}px`,
-            paddingBottom: keyboardOffset > 0 ? 0 : 'env(safe-area-inset-bottom, 0)',
-          }}
-        >
-          <NoteToolbar
-            variant="mobile"
-            content={state.content}
-            setContent={state.setContent}
-            getTextarea={state.getTextarea}
-          />
-        </div>
+      {state.backlinks.length > 0 && (
+        <section className="border-t border-line px-3 py-2 shrink-0 bg-surface">
+          <div className="text-[10px] uppercase tracking-wide text-muted mb-1">
+            Wird erwähnt in ({state.backlinks.length})
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {state.backlinks.map((b) => (
+              <button
+                key={b.id}
+                type="button"
+                onClick={() => onOpenByTitle(b.title)}
+                className="text-xs text-brand-700 px-2 py-0.5 rounded-chip bg-brand-50"
+              >
+                {b.title}
+              </button>
+            ))}
+          </div>
+        </section>
       )}
-
-    </div>
-  );
-}
-
-function ModeButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`px-3 py-1.5 rounded text-sm font-medium transition ${
-        active ? 'bg-page text-ink shadow-sm' : 'text-muted hover:text-ink'
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
-function WikilinkPopup({ state }: { state: NoteEditingState }) {
-  const ac = state.autocomplete!;
-  return (
-    <div className="absolute z-20 left-2 right-2 sm:right-auto sm:max-w-sm bottom-2 card p-1 shadow-flat border border-line bg-surface">
-      <div className="text-[11px] text-muted px-2 py-1">
-        Notiz verlinken — Enter einfügen, Esc abbrechen
-      </div>
-      <ul className="max-h-48 overflow-auto">
-        {state.titleSuggestions.map((s, i) => (
-          <li key={s.id}>
-            <button
-              type="button"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                state.insertWikilink(s.title);
-              }}
-              onMouseEnter={() => state.setAutocomplete({ ...ac, index: i })}
-              className={`w-full text-left px-2 py-1.5 text-sm rounded ${
-                i === ac.index ? 'bg-brand-50 text-brand-700' : 'hover:bg-page'
-              }`}
-            >
-              {s.title}
-            </button>
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }
 
 /** Returns the on-screen keyboard's height in pixels. Uses visualViewport
  *  (iOS Safari, Chrome Android, modern desktop browsers); falls back to 0
- *  when the API is missing. The toolbar binds its `bottom` to this value
- *  so it sits right above the keyboard. */
+ *  when the API is missing. NoteEditor uses this to inset its scrollable
+ *  surface so the cursor stays visible above the keyboard. */
 function useKeyboardOffset(): number {
   const [offset, setOffset] = useState(0);
   useEffect(() => {
