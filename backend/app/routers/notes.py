@@ -9,7 +9,7 @@ from app.core.responses import ok
 from app.models.collaborator import CollaboratorPermission
 from app.models.note import Note, NoteContentFormat
 from app.models.user import User
-from app.services.note_html import sanitize_note_html
+from app.services.note_html import html_to_snippet, sanitize_note_html
 from app.services.note_mention_service import (
     dispatch_new_mentions,
     list_mentionable_users,
@@ -46,11 +46,17 @@ def _out(
     owner_name: str | None = None,
     share_permission: "CollaboratorPermission | None" = None,
 ) -> dict:
+    # Snippet is computed at serialise time rather than stored — the
+    # cost (one bs4 parse per note in the response) is negligible
+    # versus the migration risk of caching a stale snippet in the
+    # row. For the notes overview that's typically <50 notes per
+    # response; for the detail-page payload that's one note. Fine.
     return NoteOut.model_validate(n).model_copy(
         update={
             "share_source": share_source,
             "owner_name": owner_name,
             "share_permission": share_permission,
+            "snippet": html_to_snippet(n.content or ""),
         }
     ).model_dump(mode="json")
 

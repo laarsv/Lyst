@@ -729,7 +729,10 @@ function NoteCard({
         </button>
       </div>
       <div className="text-xs text-muted truncate mt-0.5">
-        {note.content.replace(/[#*_>`-]/g, '').slice(0, 80) || 'leer'}
+        {/* Backend-computed snippet — stripped of HTML/markdown noise,
+            collapsed whitespace, ~120 chars. Falls back to "leer" for
+            empty notes. */}
+        {note.snippet || 'leer'}
       </div>
       <div className="mt-2 flex items-end justify-between gap-2">
         <div className="flex flex-wrap items-center gap-1 min-w-0">

@@ -38,6 +38,11 @@ class NoteOut(NoteBase):
     # picks the renderer accordingly: TipTap for HTML, the legacy markdown
     # viewer for any rows the migration script hasn't touched yet.
     content_format: NoteContentFormat = NoteContentFormat.HTML
+    # Clean preview text computed from `content` at serialise time.
+    # Populated by the router so the frontend doesn't have to parse
+    # HTML for the notes-overview snippet under each card. Detail
+    # pages keep using `content` directly.
+    snippet: str = ""
     # Public-share state — alembic 0013. Same shape as Recipe.
     share_enabled: bool = False
     share_token: str | None = None

@@ -422,3 +422,138 @@ def _reshape_task_lists(html: str) -> str:
             if "class" in parent_ul.attrs:
                 del parent_ul.attrs["class"]
     return str(soup)
+
+
+# ---------------------------------------------------------------------------
+# Plain-text snippet generation (note-card preview)
+# ---------------------------------------------------------------------------
+
+# Tags we drop entirely along with their contents — code blocks dominate
+# a note's visual when they appear in a 120-char snippet (one fence and
+# the snippet is just shell commands), and <img>/<input> have no useful
+# text content for a preview. The <pre> case catches code blocks plus
+# any other pre-formatted block.
+_SKIP_TAGS_AND_CONTENT = frozenset(["pre", "img", "input", "style", "script"])
+
+# Block-level tags whose text content should be separated by a single
+# space when concatenated, so paragraph + heading text doesn't run
+# together as one word.
+_BLOCK_TAGS = frozenset(
+    [
+        "p",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "li",
+        "blockquote",
+        "tr",
+        "td",
+        "th",
+        "div",
+        "summary",
+        "br",
+    ]
+)
+
+_SNIPPET_MAX = 120
+_WHITESPACE_RE = re.compile(r"\s+")
+
+
+def html_to_snippet(html: str | None, *, max_length: int = _SNIPPET_MAX) -> str:
+    """Turn a TipTap-serialised HTML note body into a clean preview line.
+
+    Rules:
+      - Strip every tag, keeping only the visible text.
+      - Drop the content of <pre>, <img>, <input>, <style>, <script>
+        wholesale — code blocks + asset placeholders make for noisy
+        previews and rarely capture the note's gist.
+      - Wikilink / mention chips render their visible text (e.g.
+        "Anna" / "Mein Plan"), since that IS the readable label.
+      - Block elements get a single space between their text content
+        so `<h1>Title</h1><p>Body</p>` becomes "Title Body" rather
+        than "TitleBody".
+      - Collapse all whitespace to single spaces, trim ends.
+      - Truncate to `max_length` with an ellipsis when longer.
+
+    Empty / whitespace-only input -> "" (the caller decides how to
+    render the empty case). Idempotent on plain text.
+    """
+    if not html:
+        return ""
+    # Plain text shortcut — saves the bs4 parse for the legacy
+    # MARKDOWN content_format rows. Markdown's syntax markers ARE
+    # readable enough as preview noise, so we just collapse
+    # whitespace and let the strip below remove the heading hashes.
+    if "<" not in html:
+        return _truncate(_collapse(_strip_markdown_markers(html)), max_length)
+
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+
+    # Remove skip-tag subtrees up front so the walk below doesn't
+    # have to special-case them at every depth.
+    for tag_name in _SKIP_TAGS_AND_CONTENT:
+        for el in soup.find_all(tag_name):
+            el.decompose()
+
+    parts: list[str] = []
+
+    def visit(node) -> None:
+        # NavigableString — emit the text directly. We don't strip
+        # here because intra-line whitespace (e.g. a space between
+        # two inline marks) matters; the final _collapse() pass
+        # normalises everything.
+        if isinstance(node, str):
+            parts.append(str(node))
+            return
+        name = getattr(node, "name", None)
+        if name is None:
+            return
+        # Block boundary — prepend a space so adjacent blocks don't
+        # smush together. The leading space is fine; _collapse()
+        # eats consecutive spaces.
+        is_block = name in _BLOCK_TAGS
+        if is_block:
+            parts.append(" ")
+        for child in node.children:
+            visit(child)
+        if is_block:
+            parts.append(" ")
+
+    for child in soup.children:
+        visit(child)
+
+    text = _collapse("".join(parts))
+    return _truncate(text, max_length)
+
+
+def _collapse(text: str) -> str:
+    return _WHITESPACE_RE.sub(" ", text).strip()
+
+
+def _truncate(text: str, max_length: int) -> str:
+    if len(text) <= max_length:
+        return text
+    # Trim back to the last word boundary so the ellipsis doesn't
+    # split mid-word. Fall back to the hard cut when there's no
+    # space in the leading window (very long single word).
+    cut = text[: max_length - 1]
+    sp = cut.rfind(" ")
+    if sp > max_length // 2:
+        cut = cut[:sp]
+    return cut.rstrip(" ,;:.-") + "…"
+
+
+# Markdown-mark strip for the legacy MARKDOWN content_format case.
+# Mirrors the old `note.content.replace(/[#*_>`-]/g, '')` heuristic
+# the frontend used to apply, so the preview UX is identical across
+# the transition window.
+_MD_MARKER_RE = re.compile(r"[#*_>`~\-]")
+
+
+def _strip_markdown_markers(text: str) -> str:
+    return _MD_MARKER_RE.sub("", text)

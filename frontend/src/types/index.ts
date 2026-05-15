@@ -134,6 +134,10 @@ export interface Note {
   title: string;
   content: string;
   content_format: NoteContentFormat;
+  /** Backend-computed plain-text preview of `content`. Used by the
+   *  notes overview card (NoteCard) so the frontend doesn't have to
+   *  parse HTML. ~120 chars with an ellipsis when truncated. */
+  snippet: string;
   tags: string[];
   folder_id: number | null;
   is_pinned: boolean;
