@@ -43,10 +43,18 @@ import TextStyle from '@tiptap/extension-text-style';
 import Color from '@tiptap/extension-color';
 import Highlight from '@tiptap/extension-highlight';
 import Underline from '@tiptap/extension-underline';
-import { ReactRenderer } from '@tiptap/react';
-import { computePosition, flip, offset, shift } from '@floating-ui/dom';
 import { lowlight } from '@/lib/lowlight';
 import { TableFloatingMenu } from './TableFloatingMenu';
+import Wikilink from './WikilinkExtension';
+import Mention from './MentionExtension';
+import { AtSuggestion, createAtRenderer, type AtItem } from './AtSuggestionExtension';
+import { DetailsKit } from './DetailsExtension';
+import GlobalDragHandle from 'tiptap-extension-global-drag-handle';
+import {
+  SlashCommand,
+  createSlashRenderer,
+  type SlashCommand as SlashCommandItem,
+} from './SlashCommandExtension';
 import {
   AlignCenter,
   AlignLeft,
@@ -64,6 +72,7 @@ import {
   ListOrdered,
   Loader2,
   Minus as HorizontalRuleIcon,
+  PanelTopOpen,
   Palette,
   Quote,
   Redo2,
@@ -73,8 +82,6 @@ import {
   Undo2,
   type LucideIcon,
 } from 'lucide-react';
-import Wikilink from './WikilinkExtension';
-import { SearchApi, type NoteTitleResult } from '@/api/endpoints';
 import { toast } from '@/components/Toast';
 import { api, getApiError } from '@/api/client';
 
@@ -185,8 +192,24 @@ export const NoteEditor = forwardRef<NoteEditorRef, Props>(function NoteEditor(
           placeholder,
           showOnlyWhenEditable: true,
         }),
-        Wikilink.configure({
-          suggestion: createWikilinkSuggestion(),
+        Wikilink,
+        Mention,
+        AtSuggestion.configure({
+          noteId,
+          renderItems: createAtRenderer(AtPopover),
+        }),
+        ...DetailsKit,
+        // Drag handle (left of every block). Headless by default — the
+        // `.drag-handle` class in index.css turns it into a GripVertical
+        // icon. We exclude table cells so the handle doesn't appear next
+        // to a single cell inside an otherwise-draggable table (the
+        // whole table still has a handle on its first row).
+        GlobalDragHandle.configure({
+          excludedTags: ['td', 'th'],
+        }),
+        SlashCommand.configure({
+          commands: buildSlashCommands(noteId),
+          renderItems: createSlashRenderer(SlashPopover),
         }),
       ],
       content: content || '',
@@ -519,6 +542,12 @@ function NoteEditorToolbar({ editor, noteId }: { editor: Editor; noteId: number 
           label: 'Trennlinie',
           icon: HorizontalRuleIcon,
           onClick: () => editor.chain().focus().setHorizontalRule().run(),
+        })}
+        {btn({
+          key: 'details',
+          label: 'Aufklappbarer Bereich',
+          icon: PanelTopOpen,
+          onClick: () => editor.chain().focus().insertDetails().run(),
         })}
       </ToolbarGroup>
 
@@ -941,107 +970,349 @@ function LinkDialog({
 }
 
 // ---------------------------------------------------------------------------
-// @-trigger suggestion renderer (note-title autocomplete)
+// @-trigger popover (Notizen + Personen sections)
 // ---------------------------------------------------------------------------
 
-/** Returns the `items` and `render` halves of a Suggestion configuration.
- *  The popover is a floating panel anchored to the caret via the
- *  Floating UI library. Items come from SearchApi.noteTitles. */
-function createWikilinkSuggestion(): {
-  items: (props: { query: string }) => Promise<NoteTitleResult[]>;
-  render: () => {
-    onStart: (props: any) => void;
-    onUpdate: (props: any) => void;
-    onKeyDown: (props: any) => boolean;
-    onExit: () => void;
-  };
-} {
-  return {
-    items: async ({ query }) => {
-      try {
-        return await SearchApi.noteTitles(query);
-      } catch {
-        return [];
-      }
-    },
-    render: () => {
-      let component: ReactRenderer<WikilinkPopoverHandle, WikilinkPopoverProps> | null = null;
-      let popupEl: HTMLDivElement | null = null;
-
-      const reposition = (clientRect: (() => DOMRect | null) | null) => {
-        if (!popupEl) return;
-        const rect = clientRect?.();
-        if (!rect) return;
-        // Virtual reference for Floating UI.
-        const reference = {
-          getBoundingClientRect: () => rect,
-        } as any;
-        void computePosition(reference, popupEl, {
-          placement: 'bottom-start',
-          middleware: [offset(6), flip(), shift({ padding: 8 })],
-        }).then(({ x, y }) => {
-          if (!popupEl) return;
-          Object.assign(popupEl.style, {
-            left: `${x}px`,
-            top: `${y}px`,
-            position: 'absolute',
-          });
-        });
-      };
-
-      return {
-        onStart: (props) => {
-          component = new ReactRenderer<WikilinkPopoverHandle, WikilinkPopoverProps>(
-            WikilinkPopover,
-            { props, editor: props.editor },
-          );
-          popupEl = document.createElement('div');
-          popupEl.style.position = 'absolute';
-          popupEl.style.zIndex = '60';
-          popupEl.appendChild(component.element);
-          document.body.appendChild(popupEl);
-          reposition(props.clientRect);
-        },
-        onUpdate: (props) => {
-          component?.updateProps(props);
-          reposition(props.clientRect);
-        },
-        onKeyDown: (props) => {
-          if (props.event.key === 'Escape') {
-            // Close handled by Suggestion on Escape; just signal handled.
-            return true;
-          }
-          return component?.ref?.onKeyDown(props.event) ?? false;
-        },
-        onExit: () => {
-          if (popupEl) {
-            popupEl.remove();
-            popupEl = null;
-          }
-          component?.destroy();
-          component = null;
-        },
-      };
-    },
-  };
+interface AtPopoverProps {
+  items: AtItem[];
+  command: (item: AtItem) => void;
 }
 
-interface WikilinkPopoverProps {
-  items: NoteTitleResult[];
-  command: (item: { title: string }) => void;
-  // The Suggestion plugin also passes editor + clientRect + range; we
-  // only need items and command for rendering.
-}
-
-interface WikilinkPopoverHandle {
+interface AtPopoverHandle {
   onKeyDown: (event: KeyboardEvent) => boolean;
 }
 
-const WikilinkPopover = forwardRef<WikilinkPopoverHandle, WikilinkPopoverProps>(
-  function WikilinkPopover({ items, command }, ref) {
+const AtPopover = forwardRef<AtPopoverHandle, AtPopoverProps>(function AtPopover(
+  { items, command },
+  ref,
+) {
+  const [index, setIndex] = useState(0);
+
+  // Reset highlight whenever the flat list changes (user keeps typing).
+  useEffect(() => {
+    setIndex(0);
+  }, [items]);
+
+  const select = (i: number) => {
+    const it = items[i];
+    if (!it) return;
+    command(it);
+  };
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      onKeyDown: (event: KeyboardEvent) => {
+        if (event.key === 'ArrowDown') {
+          setIndex((i) => (items.length === 0 ? 0 : (i + 1) % items.length));
+          return true;
+        }
+        if (event.key === 'ArrowUp') {
+          setIndex((i) =>
+            items.length === 0 ? 0 : (i - 1 + items.length) % items.length,
+          );
+          return true;
+        }
+        if (event.key === 'Enter' || event.key === 'Tab') {
+          select(index);
+          return true;
+        }
+        return false;
+      },
+    }),
+    [items, index],
+  );
+
+  if (items.length === 0) {
+    return (
+      <div className="card p-2 shadow-flat border border-line bg-surface text-xs text-muted min-w-[240px]">
+        Keine Treffer
+      </div>
+    );
+  }
+
+  // Group while preserving the flat index — the keyboard nav steps
+  // through `items` order, so we render two sections but each row's
+  // `flatIndex` maps back to that single array.
+  const noteRows: { item: AtItem; flatIndex: number }[] = [];
+  const userRows: { item: AtItem; flatIndex: number }[] = [];
+  items.forEach((it, i) => {
+    if (it.kind === 'note') noteRows.push({ item: it, flatIndex: i });
+    else userRows.push({ item: it, flatIndex: i });
+  });
+
+  return (
+    <div className="card p-1 shadow-flat border border-line bg-surface min-w-[260px]">
+      <div className="text-[11px] text-muted px-2 py-1">
+        @ — ↑/↓ wählen, Enter einfügen, Esc abbrechen
+      </div>
+      <ul className="max-h-64 overflow-auto">
+        {noteRows.length > 0 && (
+          <>
+            <li
+              aria-hidden
+              className="px-2 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wider text-muted/70"
+            >
+              Notizen
+            </li>
+            {noteRows.map(({ item, flatIndex }) => (
+              <AtPopoverRow
+                key={`n-${item.kind === 'note' ? item.id : ''}`}
+                active={index === flatIndex}
+                onPick={() => select(flatIndex)}
+                onHover={() => setIndex(flatIndex)}
+              >
+                {item.kind === 'note' && (
+                  <>
+                    <span className="text-muted/70 mr-1.5">📄</span>
+                    <span className="truncate">{item.title}</span>
+                  </>
+                )}
+              </AtPopoverRow>
+            ))}
+          </>
+        )}
+        {userRows.length > 0 && (
+          <>
+            <li
+              aria-hidden
+              className="px-2 pt-2 pb-0.5 text-[10px] uppercase tracking-wider text-muted/70"
+            >
+              Personen
+            </li>
+            {userRows.map(({ item, flatIndex }) => (
+              <AtPopoverRow
+                key={`u-${item.kind === 'user' ? item.id : ''}`}
+                active={index === flatIndex}
+                onPick={() => select(flatIndex)}
+                onHover={() => setIndex(flatIndex)}
+              >
+                {item.kind === 'user' && (
+                  <>
+                    <span className="text-muted/70 mr-1.5">@</span>
+                    <span className="truncate">{item.name}</span>
+                    <span className="ml-auto text-[11px] text-muted/70 truncate">
+                      {item.email}
+                    </span>
+                  </>
+                )}
+              </AtPopoverRow>
+            ))}
+          </>
+        )}
+      </ul>
+    </div>
+  );
+});
+
+function AtPopoverRow({
+  active,
+  onPick,
+  onHover,
+  children,
+}: {
+  active: boolean;
+  onPick: () => void;
+  onHover: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          onPick();
+        }}
+        onMouseEnter={onHover}
+        className={`w-full flex items-center text-left px-2 py-1.5 text-sm rounded ${
+          active ? 'bg-brand-50 text-brand-700' : 'hover:bg-page'
+        }`}
+      >
+        {children}
+      </button>
+    </li>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Slash command palette
+// ---------------------------------------------------------------------------
+
+/** Curated `/` command list. Each entry's `run` first deletes the
+ *  typed `/query` range, then performs the block-insertion command,
+ *  so the slash + query disappear before the new block lands. */
+function buildSlashCommands(noteId: number): SlashCommandItem[] {
+  return [
+    {
+      key: 'h1',
+      label: 'Überschrift 1',
+      aliases: ['heading 1', 'title'],
+      icon: Heading2,
+      run: ({ editor, range }) =>
+        editor.chain().focus().deleteRange(range).setNode('heading', { level: 1 }).run(),
+    },
+    {
+      key: 'h2',
+      label: 'Überschrift 2',
+      aliases: ['heading 2'],
+      icon: Heading2,
+      run: ({ editor, range }) =>
+        editor.chain().focus().deleteRange(range).setNode('heading', { level: 2 }).run(),
+    },
+    {
+      key: 'h3',
+      label: 'Überschrift 3',
+      aliases: ['heading 3'],
+      icon: Heading2,
+      run: ({ editor, range }) =>
+        editor.chain().focus().deleteRange(range).setNode('heading', { level: 3 }).run(),
+    },
+    {
+      key: 'ul',
+      label: 'Aufzählung',
+      aliases: ['bullet list', 'unordered list'],
+      icon: List,
+      run: ({ editor, range }) =>
+        editor.chain().focus().deleteRange(range).toggleBulletList().run(),
+    },
+    {
+      key: 'ol',
+      label: 'Nummerierte Liste',
+      aliases: ['ordered list', 'numbered'],
+      icon: ListOrdered,
+      run: ({ editor, range }) =>
+        editor.chain().focus().deleteRange(range).toggleOrderedList().run(),
+    },
+    {
+      key: 'task',
+      label: 'Aufgabenliste',
+      aliases: ['task list', 'todo'],
+      icon: ListChecks,
+      run: ({ editor, range }) =>
+        editor.chain().focus().deleteRange(range).toggleTaskList().run(),
+    },
+    {
+      key: 'quote',
+      label: 'Zitat',
+      aliases: ['blockquote'],
+      icon: Quote,
+      run: ({ editor, range }) =>
+        editor.chain().focus().deleteRange(range).toggleBlockquote().run(),
+    },
+    {
+      key: 'hr',
+      label: 'Trennlinie',
+      aliases: ['horizontal rule', 'divider'],
+      icon: HorizontalRuleIcon,
+      run: ({ editor, range }) =>
+        editor.chain().focus().deleteRange(range).setHorizontalRule().run(),
+    },
+    {
+      key: 'codeblock',
+      label: 'Code-Block',
+      aliases: ['code'],
+      icon: FileCode,
+      run: ({ editor, range }) =>
+        editor.chain().focus().deleteRange(range).toggleCodeBlock().run(),
+    },
+    {
+      key: 'image',
+      label: 'Bild hochladen',
+      aliases: ['image', 'photo', 'upload'],
+      icon: ImageIcon,
+      run: ({ editor, range }) => {
+        // Drop the `/query` first so the file picker isn't racing with
+        // the editor state, then open a transient file input. Same
+        // upload path as the toolbar button.
+        editor.chain().focus().deleteRange(range).run();
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/png,image/jpeg,image/webp,image/gif';
+        input.style.display = 'none';
+        document.body.appendChild(input);
+        input.onchange = async () => {
+          const file = input.files?.[0];
+          input.remove();
+          if (!file) return;
+          try {
+            const form = new FormData();
+            form.append('file', file);
+            const r = await api.post<{ data: { url: string } }>(
+              `/notes/${noteId}/images`,
+              form,
+              { headers: { 'Content-Type': 'multipart/form-data' } },
+            );
+            editor
+              .chain()
+              .focus()
+              .setImage({ src: r.data.data.url, alt: file.name })
+              .run();
+          } catch (e) {
+            toast.error(getApiError(e));
+          }
+        };
+        input.click();
+      },
+    },
+    {
+      key: 'table',
+      label: 'Tabelle',
+      aliases: ['table'],
+      icon: TableIcon,
+      run: ({ editor, range }) =>
+        editor
+          .chain()
+          .focus()
+          .deleteRange(range)
+          .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+          .run(),
+    },
+    {
+      key: 'details',
+      label: 'Aufklappbarer Bereich',
+      aliases: ['details', 'collapsible', 'toggle'],
+      icon: PanelTopOpen,
+      run: ({ editor, range }) =>
+        editor.chain().focus().deleteRange(range).insertDetails().run(),
+    },
+    {
+      key: 'wikilink',
+      label: 'Notiz verlinken',
+      aliases: ['note link', 'wikilink'],
+      icon: LinkIcon,
+      run: ({ editor, range }) => {
+        // Replace `/query` with an `@` so the AtSuggestion plugin
+        // picks up the new trigger character and opens its popover.
+        editor.chain().focus().deleteRange(range).insertContent('@').run();
+      },
+    },
+    {
+      key: 'mention',
+      label: 'Erwähnung',
+      aliases: ['mention', 'person', '@'],
+      icon: Highlighter,
+      run: ({ editor, range }) => {
+        // Same trick as wikilink: drop the slash + insert `@` so the
+        // existing user-mention path kicks in.
+        editor.chain().focus().deleteRange(range).insertContent('@').run();
+      },
+    },
+  ];
+}
+
+interface SlashPopoverProps {
+  items: SlashCommandItem[];
+  command: (item: SlashCommandItem) => void;
+}
+interface SlashPopoverHandle {
+  onKeyDown: (event: KeyboardEvent) => boolean;
+}
+
+const SlashPopover = forwardRef<SlashPopoverHandle, SlashPopoverProps>(
+  function SlashPopover({ items, command }, ref) {
     const [index, setIndex] = useState(0);
 
-    // Reset highlight when the suggestion list changes (user keeps typing).
     useEffect(() => {
       setIndex(0);
     }, [items]);
@@ -1049,7 +1320,7 @@ const WikilinkPopover = forwardRef<WikilinkPopoverHandle, WikilinkPopoverProps>(
     const select = (i: number) => {
       const it = items[i];
       if (!it) return;
-      command({ title: it.title });
+      command(it);
     };
 
     useImperativeHandle(
@@ -1078,35 +1349,42 @@ const WikilinkPopover = forwardRef<WikilinkPopoverHandle, WikilinkPopoverProps>(
 
     if (items.length === 0) {
       return (
-        <div className="card p-2 shadow-flat border border-line bg-surface text-xs text-muted min-w-[220px]">
-          Keine Notiz gefunden
+        <div className="card p-2 shadow-flat border border-line bg-surface text-xs text-muted min-w-[240px]">
+          Kein Befehl gefunden
         </div>
       );
     }
 
     return (
-      <div className="card p-1 shadow-flat border border-line bg-surface min-w-[220px]">
+      <div className="card p-1 shadow-flat border border-line bg-surface min-w-[260px]">
         <div className="text-[11px] text-muted px-2 py-1">
-          Notiz verlinken — ↑/↓ wählen, Enter einfügen, Esc abbrechen
+          / Befehl einfügen — Enter wählt
         </div>
-        <ul className="max-h-48 overflow-auto">
-          {items.map((it, i) => (
-            <li key={it.id}>
-              <button
-                type="button"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  select(i);
-                }}
-                onMouseEnter={() => setIndex(i)}
-                className={`w-full text-left px-2 py-1.5 text-sm rounded ${
-                  i === index ? 'bg-brand-50 text-brand-700' : 'hover:bg-page'
-                }`}
-              >
-                {it.title}
-              </button>
-            </li>
-          ))}
+        <ul className="max-h-72 overflow-auto">
+          {items.map((it, i) => {
+            const Icon = it.icon;
+            const active = i === index;
+            return (
+              <li key={it.key}>
+                <button
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    select(i);
+                  }}
+                  onMouseEnter={() => setIndex(i)}
+                  className={`w-full flex items-center gap-2 text-left px-2 py-1.5 text-sm rounded ${
+                    active ? 'bg-brand-50 text-brand-700' : 'hover:bg-page'
+                  }`}
+                >
+                  {Icon && (
+                    <Icon size={14} className={active ? '' : 'text-muted'} />
+                  )}
+                  <span className="truncate">{it.label}</span>
+                </button>
+              </li>
+            );
+          })}
         </ul>
       </div>
     );

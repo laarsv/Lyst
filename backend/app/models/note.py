@@ -70,6 +70,36 @@ class Note(Base, TimestampMixin):
     folder: Mapped["NoteFolder | None"] = relationship(back_populates="notes")
 
 
+class NoteMention(Base):
+    """Tracks which users have ever been notified about being mentioned
+    in a given note. The PATCH /notes handler diffs the set of mention
+    IDs in the new content against this table — anyone NEW gets an email
+    + a row inserted here; anyone already present is ignored (re-saves
+    don't spam the recipient with duplicate notifications).
+
+    Cascading deletes from notes / users keep the table self-cleaning."""
+
+    __tablename__ = "note_mentions"
+    __table_args__ = (
+        UniqueConstraint(
+            "note_id",
+            "mentioned_user_id",
+            name="uq_note_mentions_note_user",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    note_id: Mapped[int] = mapped_column(
+        ForeignKey("notes.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    mentioned_user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class NoteShare(Base):
     """Internal share row — grants a Lyst user direct in-app access to one
     note. Carries a VIEW/EDIT permission (alembic 0014). Distinct from the

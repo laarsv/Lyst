@@ -144,6 +144,32 @@ def recipe_book_share_email(
     )
 
 
+def note_mention_email(
+    actor_name: str, note_title: str, note_url: str
+) -> tuple[str, str]:
+    """Sent when somebody @-mentions a Lyst user inside a note they have
+    access to. note_url deep-links into the editor at the note id; the
+    in-app mention chip carries the same user id so a future
+    "highlight first mention on open" pass can target it.
+
+    Permission is enforced on the *backend* before the email goes out —
+    a mention of a user who doesn't have access to the note never
+    reaches this function. (See `dispatch_new_mentions`.)"""
+    safe_title = (note_title or "(ohne Titel)").replace("<", "&lt;").replace(">", "&gt;")
+    body = (
+        f"<p><strong>{actor_name}</strong> hat dich in der Notiz "
+        f'<em>„{safe_title}"</em> erwähnt.</p>'
+        f"{_btn(note_url, 'Notiz öffnen')}"
+        f'<p style="color:{_MUTED};font-size:13px;">'
+        f"Du erhältst diese E-Mail, weil jemand dich mit @ in einer dir "
+        f"freigegebenen Notiz erwähnt hat.</p>"
+    )
+    return (
+        f"{actor_name} hat dich in „{note_title}\" erwähnt",
+        _BASE.format(title="Erwähnung in einer Notiz", body=body),
+    )
+
+
 def note_share_email(
     sharer_name: str, note_title: str, share_url: str
 ) -> tuple[str, str]:

@@ -72,6 +72,8 @@ ALLOWED_TAGS = frozenset(
         "span",
         "div",  # TipTap occasionally emits div wrappers around tables / code blocks
         "input",  # task-list checkboxes only (gated by attribute filter below)
+        "details",  # collapsible block
+        "summary",  # title row of a <details>
     ]
 )
 
@@ -138,13 +140,17 @@ def _allow_ul_attrs(tag: str, name: str, value: str) -> bool:
 def _allow_span_attrs(tag: str, name: str, value: str) -> bool:
     # Wikilink markup (custom TipTap extension):
     #   <span data-wikilink="<title>">Title</span>
-    # The frontend renders that as a tappable internal link.
     if name == "data-wikilink":
         return True
+    # User-mention markup (custom Mention extension):
+    #   <span data-mention="<user-id>">@Name</span>
+    # The value must be a positive integer — anything else is dropped
+    # so a paste from another app can't forge fake mentions.
+    if name == "data-mention":
+        return value.isdigit()
     # TextStyle + Color extension serialises text colour as
     # <span style="color: …">; CSSSanitizer (configured below) gates
-    # which CSS properties survive. The attribute name itself is
-    # always allowed — bleach passes the value through the sanitizer.
+    # which CSS properties survive.
     if name == "style":
         return True
     return False
@@ -210,6 +216,11 @@ ALLOWED_ATTRIBUTES = {
     "pre": ["class"],  # syntax-highlight class survives
     "code": ["class"],  # ditto
     "div": ["class", "data-type"],
+    # <details open> serialises the toggle state; <summary> needs no
+    # attributes but bleach drops the element entirely if there's no
+    # whitelist entry — empty list keeps it tag-only.
+    "details": ["open"],
+    "summary": [],
 }
 
 # URL protocols allowed in `href` / `src`. `lyst-note` was the legacy

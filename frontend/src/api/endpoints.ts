@@ -280,10 +280,25 @@ export const NotesApi = {
   /** Recipient leaves a share that was granted to them. */
   leaveShare: (id: number) =>
     api.delete(`/notes/${id}/shares/me`),
+  /** Users the current viewer can @-mention in this note (owner + share
+   *  recipients, minus self). Drives the "Personen" half of the
+   *  @-popover. Permission filter is enforced server-side. */
+  mentionableUsers: (id: number, q?: string) =>
+    api
+      .get<{ data: MentionableUser[] }>(`/notes/${id}/mentionable_users`, {
+        params: q ? { q } : {},
+      })
+      .then(unwrap),
   // Public read (no auth — same path scheme as recipes).
   getPublic: (token: string) =>
     api.get<{ data: PublicNoteData }>(`/share/note/${token}`).then(unwrap),
 };
+
+export interface MentionableUser {
+  id: number;
+  name: string;
+  email: string;
+}
 
 export interface NoteTitleResult {
   id: number;

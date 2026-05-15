@@ -250,6 +250,125 @@ html[data-theme="dark"] { color-scheme: dark; }
   cursor: text;
 }
 
+/* User mention chip — same anatomy as wikilink, different palette so
+   the user can tell at a glance whether `@something` points at a note
+   or at a person. */
+.mention-chip {
+  display: inline;
+  color: rgb(var(--color-brand-700));
+  background: rgb(var(--color-brand-100));
+  padding: 0.05em 0.4em;
+  border-radius: 6px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+/* Details / collapsible block — emitted by DetailsExtension. <details>
+   handles the open/close toggle natively in the browser; we just give
+   it a card-shaped frame and animate the chevron on the <summary>. */
+.note-editor-surface .note-details,
+.note-public-html .note-details {
+  border: 1px solid rgb(var(--color-line));
+  border-radius: 8px;
+  margin: 0.75rem 0;
+  background: rgb(var(--color-surface));
+}
+.note-editor-surface .note-details-summary,
+.note-public-html .note-details-summary {
+  /* Native <summary> shows the disclosure triangle on the left; we
+     replace it with our own chevron via ::before so the cursor + colour
+     match the rest of the editor chrome. */
+  list-style: none;
+  padding: 0.5rem 0.75rem 0.5rem 1.5rem;
+  cursor: pointer;
+  position: relative;
+  font-weight: 500;
+}
+.note-editor-surface .note-details-summary::-webkit-details-marker,
+.note-public-html .note-details-summary::-webkit-details-marker {
+  display: none;
+}
+.note-editor-surface .note-details-summary::before,
+.note-public-html .note-details-summary::before {
+  content: '';
+  position: absolute;
+  left: 0.6rem;
+  top: 50%;
+  width: 0;
+  height: 0;
+  border-left: 5px solid rgb(var(--color-muted));
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transform: translateY(-50%) rotate(0deg);
+  transition: transform 120ms ease-out;
+}
+.note-editor-surface .note-details[open] > .note-details-summary::before,
+.note-public-html .note-details[open] > .note-details-summary::before {
+  transform: translateY(-50%) rotate(90deg);
+}
+.note-editor-surface .note-details-content,
+.note-public-html .note-details-content {
+  padding: 0.25rem 0.75rem 0.75rem 1.5rem;
+  border-top: 1px solid rgb(var(--color-line) / 0.5);
+}
+/* Inner paragraphs inside details shouldn't double-margin against
+   the panel padding. */
+.note-editor-surface .note-details-content > p:first-child,
+.note-public-html .note-details-content > p:first-child {
+  margin-top: 0.25rem;
+}
+.note-editor-surface .note-details-content > p:last-child,
+.note-public-html .note-details-content > p:last-child {
+  margin-bottom: 0.25rem;
+}
+
+/* Drag handle (GlobalDragHandle extension, headless). Appears in the
+   gutter to the left of the hovered block. Hidden by default — the
+   extension toggles `display:none` when the handle leaves the
+   document; we paint the GripVertical glyph via ::before. */
+.drag-handle {
+  position: fixed;
+  width: 18px;
+  height: 22px;
+  margin-left: -22px;
+  cursor: grab;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 100ms ease-out, background 100ms;
+  /* Lucide GripVertical inlined as a data-URI so we don't import
+     another React island just to render one icon. Two columns of
+     dots, matches the rest of the toolbar's grip cue. */
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23888884' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='9' cy='5' r='1.2'/><circle cx='9' cy='12' r='1.2'/><circle cx='9' cy='19' r='1.2'/><circle cx='15' cy='5' r='1.2'/><circle cx='15' cy='12' r='1.2'/><circle cx='15' cy='19' r='1.2'/></svg>");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 14px 18px;
+  z-index: 10;
+}
+.drag-handle:hover {
+  background-color: rgb(var(--color-page));
+}
+.drag-handle:active {
+  cursor: grabbing;
+}
+/* Reveal on editor hover. The extension only mounts the element when
+   the cursor enters a block, so opacity is enough — no need for the
+   block-hover selector to be exact. */
+.note-editor-surface:hover ~ .drag-handle,
+.drag-handle:hover {
+  opacity: 1;
+}
+/* Always-visible variant on touch. The extension repositions the
+   handle on touchstart; we keep it visible whenever it's mounted so
+   long-press lands somewhere reachable. */
+@media (hover: none) {
+  .drag-handle {
+    opacity: 0.6;
+  }
+}
+
 /* TipTap task-list shape:
      <ul data-type="taskList">
        <li data-type="taskItem" data-checked="false">

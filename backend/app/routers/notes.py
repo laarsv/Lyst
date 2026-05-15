@@ -10,6 +10,10 @@ from app.models.collaborator import CollaboratorPermission
 from app.models.note import Note, NoteContentFormat
 from app.models.user import User
 from app.services.note_html import sanitize_note_html
+from app.services.note_mention_service import (
+    dispatch_new_mentions,
+    list_mentionable_users,
+)
 from app.schemas.note import (
     NoteCreate,
     NoteOut,
@@ -290,6 +294,18 @@ async def patch_note(
         setattr(note, k, v)
     await db.commit()
     await db.refresh(note)
+    # Mention pipeline — only on content changes. Runs after the commit
+    # so the note row visible to the recipient (who may click the email
+    # link immediately) already has the new HTML. Email failures are
+    # logged inside the service and never bubble up.
+    if content_changing:
+        try:
+            await dispatch_new_mentions(db, note, user, note.content)
+        except Exception as e:  # pragma: no cover - mention dispatch is best-effort
+            import logging
+            logging.getLogger(__name__).warning(
+                "dispatch_new_mentions failed for note=%s: %s", note.id, e
+            )
     owner_name = None
     if share_source is not None:
         owner = await db.execute(select(User.name).where(User.id == note.owner_id))
@@ -301,6 +317,36 @@ async def patch_note(
             owner_name=owner_name,
             share_permission=perm,
         )
+    )
+
+
+@router.get("/{note_id}/mentionable_users")
+async def get_mentionable_users(
+    note_id: int,
+    q: str | None = None,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Users the current viewer can @-mention in this note: owner +
+    everyone in its internal-share rows, minus the current user. Used
+    by the editor's @-popover to populate the "Personen" section
+    alongside note titles ("Notizen").
+
+    Permission gate: the caller must already have access to the note
+    (otherwise the share row that lets them edit doesn't exist).
+    """
+    try:
+        note, _src, _perm = await get_accessible_note(db, note_id, user.id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    users = await list_mentionable_users(db, note, q=q)
+    # Drop the current user from the list — no point @-mentioning yourself.
+    return ok(
+        [
+            {"id": u.id, "name": u.name, "email": u.email}
+            for u in users
+            if u.id != user.id
+        ]
     )
 
 
