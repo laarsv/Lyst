@@ -36,7 +36,8 @@ from mdit_py_plugins.tasklists import tasklists_plugin
 # Element names we accept. Anything not in here is stripped entirely
 # (bleach `strip=True`). Headings, lists, basic inline marks, links,
 # code, blockquote, tables, images, a generic `span` for wikilinks +
-# inline marks, `input` for task-list checkboxes.
+# inline marks, `<mark>` for the Highlight extension, `input` for
+# task-list checkboxes.
 ALLOWED_TAGS = frozenset(
     [
         "p",
@@ -52,6 +53,7 @@ ALLOWED_TAGS = frozenset(
         "em",
         "u",
         "s",
+        "mark",  # Highlight extension
         "code",
         "pre",
         "a",
@@ -139,6 +141,30 @@ def _allow_span_attrs(tag: str, name: str, value: str) -> bool:
     # The frontend renders that as a tappable internal link.
     if name == "data-wikilink":
         return True
+    # TextStyle + Color extension serialises text colour as
+    # <span style="color: …">; CSSSanitizer (configured below) gates
+    # which CSS properties survive. The attribute name itself is
+    # always allowed — bleach passes the value through the sanitizer.
+    if name == "style":
+        return True
+    return False
+
+
+def _allow_mark_attrs(tag: str, name: str, value: str) -> bool:
+    # Highlight extension serialises as <mark style="background-color: …">.
+    if name == "style":
+        return True
+    return False
+
+
+def _allow_text_block_attrs(tag: str, name: str, value: str) -> bool:
+    """For paragraphs + headings — the TextAlign extension emits inline
+    `style="text-align: …"`. The CSS allowlist below restricts which
+    property values can survive."""
+    if name == "style":
+        return True
+    if name == "class":
+        return True
     return False
 
 
@@ -164,6 +190,17 @@ ALLOWED_ATTRIBUTES = {
     "li": _allow_li_attrs,
     "ul": _allow_ul_attrs,
     "span": _allow_span_attrs,
+    "mark": _allow_mark_attrs,
+    # Paragraphs and headings carry the TextAlign extension's inline
+    # `style="text-align: …"`. CSSSanitizer below scrubs the value to
+    # left/center/right/justify only.
+    "p": _allow_text_block_attrs,
+    "h1": _allow_text_block_attrs,
+    "h2": _allow_text_block_attrs,
+    "h3": _allow_text_block_attrs,
+    "h4": _allow_text_block_attrs,
+    "h5": _allow_text_block_attrs,
+    "h6": _allow_text_block_attrs,
     "table": ["class"],
     "thead": ["class"],
     "tbody": ["class"],
@@ -181,11 +218,17 @@ ALLOWED_ATTRIBUTES = {
 # leftover anchors.
 ALLOWED_PROTOCOLS = frozenset(["http", "https", "mailto", "tel", "lyst-note"])
 
-# CSS sanitiser — bleach strips `style=""` entirely otherwise, which is
-# fine since TipTap doesn't emit inline styles for the marks we ship.
-# Configured to allow nothing so a paste from a Word doc doesn't sneak
-# colour/font in.
-_CSS_SANITIZER = CSSSanitizer(allowed_css_properties=[])
+# CSS sanitiser — narrow allowlist of inline-style properties the
+# TipTap extensions we ship actually emit:
+#   - TextStyle + Color  → `color`
+#   - Highlight          → `background-color`
+#   - TextAlign          → `text-align`
+# Anything else (font, position, display, …) gets stripped before the
+# `style=""` attribute lands back on the element. A paste from Word
+# therefore can't sneak in 12-point Calibri or absolute positioning.
+_CSS_SANITIZER = CSSSanitizer(
+    allowed_css_properties=["color", "background-color", "text-align"],
+)
 
 
 def sanitize_note_html(html: str | None) -> str:
