@@ -32,7 +32,6 @@ import type { ListItem, ListType } from '@/types';
 import clsx from 'clsx';
 import {
   CalendarClock,
-  MoreVertical,
   Trash2,
 } from 'lucide-react';
 import {
@@ -86,32 +85,10 @@ export function SortableItem({
     disabled: !canEdit,
   });
 
-  // Viewport detection — drives tap-to-edit vs tap-to-open-sheet.
-  const [isMobile, setIsMobile] = useState(() =>
-    typeof window === 'undefined' ? false : window.matchMedia(MOBILE_MQ).matches,
-  );
-  useEffect(() => {
-    const mq = window.matchMedia(MOBILE_MQ);
-    const onChange = () => setIsMobile(mq.matches);
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, []);
-
-  // Inline edit state (desktop only). On mobile the text tap opens
-  // the sheet — `editing` stays false.
-  const [editing, setEditing] = useState(false);
-  const [text, setText] = useState(item.text);
-  const [qty, setQty] = useState(item.quantity?.toString() ?? '');
-  const [unit, setUnit] = useState(item.unit ?? '');
-  useEffect(() => {
-    setText(item.text);
-    setQty(item.quantity?.toString() ?? '');
-    setUnit(item.unit ?? '');
-  }, [item.id, item.text, item.quantity, item.unit]);
-
-  // Sheet state (mobile bottom sheet OR desktop popover via kebab).
+  // Sheet state — the single canonical edit surface for the row.
+  // Mobile and desktop both open it on tap-text; mobile gets the
+  // bottom-sheet presentation, desktop gets a centred modal.
   const [sheetOpen, setSheetOpen] = useState(false);
-  const kebabRef = useRef<HTMLButtonElement | null>(null);
 
   // ---- Swipe state -------------------------------------------------------
   const rowRef = useRef<HTMLDivElement>(null);
@@ -137,7 +114,7 @@ export function SortableItem({
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.pointerType !== 'touch') return;
-    if (!canEdit || editing || committed) return;
+    if (!canEdit || committed) return;
     if ((e.target as HTMLElement).closest('button,input,a,select,textarea')) return;
     dragState.current = {
       startX: e.clientX,
@@ -243,26 +220,13 @@ export function SortableItem({
     opacity: isDragging ? 0.5 : 1,
   };
 
-  const save = () => {
-    onUpdate(item, {
-      text: text.trim() || item.text,
-      quantity: qty === '' ? null : Number(qty),
-      unit: unit.trim() || null,
-    });
-    setEditing(false);
-  };
-
-  // Tap on the row's text area:
-  //   - read-only: no-op
-  //   - mobile + can edit: open sheet
-  //   - desktop + can edit: inline edit
+  // Tap on the row's text area opens the ItemSheet for editing —
+  // single behaviour across viewports. Read-only viewers don't open
+  // the sheet. The sheet handles name/qty/unit + category + task
+  // fields + the Löschen action.
   const onTextClick = () => {
     if (!canEdit) return;
-    if (isMobile) {
-      setSheetOpen(true);
-    } else {
-      setEditing(true);
-    }
+    setSheetOpen(true);
   };
 
   // Compute derived chip data.
@@ -301,64 +265,36 @@ export function SortableItem({
         className="size-5 rounded-md accent-brand cursor-pointer shrink-0"
       />
 
-      {editing && canEdit ? (
-        <div className="flex-1 flex flex-wrap items-center gap-2">
-          <input
-            className="input flex-1 py-1.5 min-w-[150px]"
-            value={text}
-            autoFocus
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && save()}
-            onBlur={save}
-          />
-          <input
-            className="input w-20 py-1.5"
-            value={qty}
-            inputMode="decimal"
-            placeholder="Menge"
-            onChange={(e) => setQty(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && save()}
-          />
-          <input
-            className="input w-24 py-1.5"
-            value={unit}
-            placeholder="Einheit"
-            onChange={(e) => setUnit(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && save()}
-          />
-          <button className="btn-primary text-xs py-1" onClick={save}>OK</button>
-        </div>
-      ) : (
-        // Text area — clickable to open sheet (mobile) or enter inline
-        // edit (desktop). Truncates aggressively; qty/unit ride with
-        // the text via a separator so they never wrap to a second line.
-        <button
-          type="button"
-          onClick={onTextClick}
-          disabled={!canEdit}
+      {/* Text area — single entry point on both viewports: tap opens
+          the ItemSheet. Truncates aggressively; qty/unit ride after
+          the text via a separator so they never wrap to a second
+          line. Focusable via Tab → Enter (button semantics) so
+          keyboard users get to the sheet without a mouse. */}
+      <button
+        type="button"
+        onClick={onTextClick}
+        disabled={!canEdit}
+        className={clsx(
+          'flex-1 min-w-0 text-left',
+          canEdit && 'cursor-pointer',
+        )}
+      >
+        <div
           className={clsx(
-            'flex-1 min-w-0 text-left',
-            canEdit && 'cursor-pointer',
+            'truncate text-[15px] sm:text-sm leading-snug',
+            item.is_checked && 'line-through text-muted/70',
           )}
         >
-          <div
-            className={clsx(
-              'truncate text-[15px] sm:text-sm leading-snug',
-              item.is_checked && 'line-through text-muted/70',
-            )}
-          >
-            {item.text}
-            {hasQtyOrUnit && (
-              <span className="text-muted">{qtyUnitLabel}</span>
-            )}
-          </div>
-        </button>
-      )}
+          {item.text}
+          {hasQtyOrUnit && (
+            <span className="text-muted">{qtyUnitLabel}</span>
+          )}
+        </div>
+      </button>
 
       {/* Chips — strict "render iff value set" rule. Order: assignee,
-          due, category. Sized for 44px row height with comfortable
-          spacing. */}
-      {!editing && item.assignee_id !== null && (
+          due, category. Sized for the 44px row height. */}
+      {item.assignee_id !== null && (
         <span
           title={item.assignee_name ?? 'Zugewiesen'}
           aria-label={item.assignee_name ?? 'Zugewiesen'}
@@ -367,7 +303,7 @@ export function SortableItem({
           {taskInitials(item.assignee_name)}
         </span>
       )}
-      {!editing && item.due_at && (
+      {item.due_at && (
         <span
           className={clsx(
             'inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-chip shrink-0',
@@ -381,7 +317,7 @@ export function SortableItem({
           {formatTaskDue(item.due_at)}
         </span>
       )}
-      {!editing && CategoryIcon && item.category && (
+      {CategoryIcon && item.category && (
         // Wrap in a span so the native `title` tooltip surfaces the
         // category name on hover/long-press without an extra label
         // node in the row.
@@ -392,21 +328,6 @@ export function SortableItem({
         >
           <CategoryIcon size={16} className="text-muted/70" />
         </span>
-      )}
-
-      {/* Desktop kebab — opens the sheet as a popover. Hover-revealed
-          to keep the row quiet at rest; on touch devices it doesn't
-          appear at all (swipe-right is the touch entry point). */}
-      {canEdit && !editing && !isMobile && (
-        <button
-          ref={kebabRef}
-          type="button"
-          aria-label="Mehr"
-          onClick={() => setSheetOpen(true)}
-          className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition shrink-0 size-7 inline-flex items-center justify-center rounded-ctl text-muted hover:text-ink hover:bg-page"
-        >
-          <MoreVertical size={15} />
-        </button>
       )}
     </div>
   );
@@ -468,7 +389,6 @@ export function SortableItem({
       {canEdit && listType && (
         <ItemSheet
           open={sheetOpen}
-          anchor={kebabRef.current}
           item={item}
           listType={listType}
           canEdit={canEdit}

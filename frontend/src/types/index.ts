@@ -35,6 +35,10 @@ export interface AuthResponse {
 export interface ShareState {
   internal_count: number;
   public: boolean;
+  /** Recipe-only: true when the owner has any active recipe-book
+   *  share. Every recipe they own is then reachable to those book
+   *  recipients, independent of per-recipe RecipeShare rows. */
+  via_book?: boolean;
 }
 
 /** Row of GET /me/share-suggestions — people the current user has
@@ -321,6 +325,8 @@ export interface Recipe extends RecipeBase {
   share_source: 'individual' | 'book' | null;
   owner_name: string | null;
   share_permission: CollaboratorPermission | null;
+  /** Owner-side share summary. Null on shared-with-me rows. */
+  share_state: ShareState | null;
 }
 
 // ---------- Internal sharing (alembic 0012) ----------

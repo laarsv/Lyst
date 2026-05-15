@@ -13,10 +13,14 @@ class ShareState(BaseModel):
 
     `internal_count` is the number of in-app share rows (collaborators
     for lists, share recipients for notes/recipes). `public` is whether
-    the anyone-with-URL token is enabled."""
+    the anyone-with-URL token is enabled. `via_book` only applies to
+    recipes — set to true when the recipe's owner has any active
+    recipe-book share row (the recipe is reachable to all book
+    recipients even without its own RecipeShare entry)."""
 
     internal_count: int = 0
     public: bool = False
+    via_book: bool = False
 
 
 class ShareSuggestion(BaseModel):

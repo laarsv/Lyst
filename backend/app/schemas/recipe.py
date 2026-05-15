@@ -143,6 +143,10 @@ class RecipeOut(RecipeBase):
     owner_name: str | None = None
     share_source: str | None = None  # "individual" | "book" | None
     share_permission: "CollaboratorPermission | None" = None
+    # Owner-side share summary, mirrors RecipeSummary. Null on rows
+    # the viewer doesn't own (a recipient doesn't need to see how
+    # many other people have access to the owner's recipe).
+    share_state: ShareState | None = None
 
 
 # --- Public share views (no auth) ---

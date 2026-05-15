@@ -40,8 +40,6 @@ interface AssignableUser {
 
 interface Props {
   open: boolean;
-  /** DOM anchor for the desktop popover. Mobile ignores it. */
-  anchor: HTMLElement | null;
   item: ListItem;
   listType: ListType;
   canEdit: boolean;
@@ -55,7 +53,6 @@ const MOBILE_MQ = '(max-width: 767.98px)';
 
 export function ItemSheet({
   open,
-  anchor,
   item,
   listType,
   canEdit,
@@ -67,8 +64,6 @@ export function ItemSheet({
   const [isMobile, setIsMobile] = useState(() =>
     typeof window === 'undefined' ? false : window.matchMedia(MOBILE_MQ).matches,
   );
-  const popoverRef = useRef<HTMLDivElement | null>(null);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
   useEffect(() => {
     const mq = window.matchMedia(MOBILE_MQ);
@@ -77,59 +72,29 @@ export function ItemSheet({
     return () => mq.removeEventListener('change', onChange);
   }, []);
 
-  // Position the popover on desktop. Always opens to the LEFT of the
-  // anchor (kebab is usually on the right edge of the row).
-  useEffect(() => {
-    if (!open || !anchor || isMobile) return;
-    const update = () => {
-      const r = anchor.getBoundingClientRect();
-      setPos({
-        top: r.bottom + window.scrollY + 6,
-        left: Math.max(8, r.right + window.scrollX - 340),
-      });
-    };
-    update();
-    window.addEventListener('scroll', update, { passive: true });
-    window.addEventListener('resize', update);
-    return () => {
-      window.removeEventListener('scroll', update);
-      window.removeEventListener('resize', update);
-    };
-  }, [open, anchor, isMobile]);
-
-  // Click-outside + Escape.
+  // Escape closes; backdrop click handled inline on the wrapper.
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (
-        popoverRef.current &&
-        !popoverRef.current.contains(e.target as Node) &&
-        !anchor?.contains(e.target as Node)
-      ) {
-        onClose();
-      }
-    };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
-    document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
     return () => {
-      document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
     };
-  }, [open, onClose, anchor]);
+  }, [open, onClose]);
 
-  // Body lock while the mobile sheet is up so the list behind doesn't
-  // scroll under the fingertip.
+  // Body lock for both presentations — the same component drives the
+  // mobile bottom sheet AND the desktop centred modal, and both
+  // benefit from a frozen background.
   useEffect(() => {
-    if (!open || !isMobile) return;
+    if (!open) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
       document.body.style.overflow = prev;
     };
-  }, [open, isMobile]);
+  }, [open]);
 
   // Mobile-only: swipe-down on the sheet handle closes it. Cheap
   // touch-event listener — we only need the y-delta on release.
@@ -218,21 +183,24 @@ export function ItemSheet({
     );
   }
 
-  // Desktop: popover anchored to the kebab.
+  // Desktop: centred modal. 480px wide, vertically centred, dimmed
+  // backdrop, click-outside to close. Same fields/buttons as the
+  // mobile bottom sheet — only the chrome differs.
   return createPortal(
     <div
-      ref={popoverRef}
-      style={{
-        position: 'absolute',
-        top: pos?.top ?? 0,
-        left: pos?.left ?? 0,
-        zIndex: 60,
-        width: 340,
+      className="fixed inset-0 z-[70] bg-ink/40 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
       }}
-      className="card border border-line bg-surface shadow-flat"
-      onMouseDown={(e) => e.stopPropagation()}
     >
-      {body}
+      <div
+        className="w-full max-w-[480px] bg-surface rounded-card border border-line shadow-flat max-h-[85vh] overflow-y-auto"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        {body}
+      </div>
     </div>,
     document.body,
   );

@@ -113,6 +113,7 @@ def _summary(
     share_source: str | None = None,
     owner_name: str | None = None,
     internal_share_count: int | None = None,
+    book_shared: bool = False,
 ) -> dict:
     # share_permission lives on RecipeOut only — RecipeSummary stays compact.
     from app.schemas.share import ShareState
@@ -121,6 +122,7 @@ def _summary(
         share_state = ShareState(
             internal_count=internal_share_count,
             public=bool(rec.share_enabled),
+            via_book=book_shared,
         )
     return RecipeSummary.model_validate(rec).model_copy(
         update={
@@ -171,13 +173,24 @@ def _full(
     share_source: str | None = None,
     owner_name: str | None = None,
     share_permission: CollaboratorPermission | None = None,
+    internal_share_count: int | None = None,
+    book_shared: bool = False,
 ) -> dict:
+    from app.schemas.share import ShareState
+    share_state = None
+    if internal_share_count is not None:
+        share_state = ShareState(
+            internal_count=internal_share_count,
+            public=bool(rec.share_enabled),
+            via_book=book_shared,
+        )
     return RecipeOut.model_validate(rec).model_copy(
         update={
             "nutrition_per_serving": _nutrition_per_serving(rec),
             "share_source": share_source,
             "owner_name": owner_name,
             "share_permission": share_permission,
+            "share_state": share_state,
         }
     ).model_dump(mode="json")
 
@@ -200,6 +213,21 @@ async def get_recipes(
     from app.services.share_state_service import recipe_internal_share_counts
     owned_ids = [r.id for r, _c, src, _name, _perm in rows if src is None]
     counts = await recipe_internal_share_counts(db, owned_ids)
+    # Book-share coverage: a single per-viewer flag. Every recipe the
+    # viewer owns is reachable to anyone they've granted a recipe-book
+    # share to — independent of per-recipe RecipeShare rows. Cost:
+    # one COUNT-ish query per overview request.
+    from sqlalchemy import select as _select, func as _func
+    from app.models.recipe import RecipeBookShare
+    book_shared = bool(
+        (
+            await db.execute(
+                _select(_func.count(RecipeBookShare.id)).where(
+                    RecipeBookShare.owner_id == user.id
+                )
+            )
+        ).scalar_one()
+    )
     # Permission isn't surfaced on the summary — the detail endpoint adds it
     # when the user opens a specific recipe.
     return ok([
@@ -209,6 +237,7 @@ async def get_recipes(
             share_source=src,
             owner_name=name,
             internal_share_count=counts.get(r.id, 0) if src is None else None,
+            book_shared=book_shared if src is None else False,
         )
         for r, c, src, name, _perm in rows
     ])
@@ -246,12 +275,33 @@ async def get_recipe_route(
         # it's a single user.
         owner = await db.execute(select(User.name).where(User.id == rec.owner_id))
         owner_name = owner.scalar_one_or_none()
+    # share_state is owner-side only — recipients don't see how many
+    # others were granted access. Single COUNT + single boolean.
+    share_count: int | None = None
+    book_shared = False
+    if share_source is None:
+        from app.services.share_state_service import recipe_internal_share_counts
+        counts = await recipe_internal_share_counts(db, [rec.id])
+        share_count = counts.get(rec.id, 0)
+        from sqlalchemy import func as _func
+        from app.models.recipe import RecipeBookShare
+        book_shared = bool(
+            (
+                await db.execute(
+                    select(_func.count(RecipeBookShare.id)).where(
+                        RecipeBookShare.owner_id == user.id
+                    )
+                )
+            ).scalar_one()
+        )
     return ok(
         _full(
             rec,
             share_source=share_source,
             owner_name=owner_name,
             share_permission=perm,
+            internal_share_count=share_count,
+            book_shared=book_shared,
         )
     )
 

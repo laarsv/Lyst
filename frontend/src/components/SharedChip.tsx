@@ -25,22 +25,34 @@ interface Props {
 
 export function SharedChip({ state, className }: Props) {
   if (!state) return null;
-  const { internal_count, public: isPublic } = state;
-  if (internal_count === 0 && !isPublic) return null;
+  const { internal_count, public: isPublic, via_book: viaBook } = state;
+  if (internal_count === 0 && !isPublic && !viaBook) return null;
 
   // Pick the icon by what's primary. Public-only gets the globe; any
-  // internal sharing gets the people glyph (even when public is also
-  // on — internal is the more interesting signal for the owner).
-  const Icon = internal_count > 0 ? Users : Globe;
+  // internal sharing OR book coverage gets the people glyph since
+  // both imply "named individuals can see this".
+  const showsPeople = internal_count > 0 || viaBook;
+  const Icon = showsPeople ? Users : Globe;
 
-  let label: string;
-  if (internal_count > 0 && isPublic) {
-    label = `Geteilt mit ${internal_count} ${internal_count === 1 ? 'Person' : 'Personen'} und öffentlich`;
-  } else if (internal_count > 0) {
-    label = `Geteilt mit ${internal_count} ${internal_count === 1 ? 'Person' : 'Personen'}`;
-  } else {
-    label = 'Öffentlich geteilt';
+  // Build a multi-phrase tooltip when several share modes apply at once.
+  const parts: string[] = [];
+  if (internal_count > 0) {
+    parts.push(
+      `Geteilt mit ${internal_count} ${
+        internal_count === 1 ? 'Person' : 'Personen'
+      }`,
+    );
   }
+  if (viaBook) {
+    parts.push('Teil des geteilten Rezeptbuchs');
+  }
+  if (isPublic) {
+    parts.push('Öffentlich geteilt');
+  }
+  // Join with " · " — keeps the tooltip compact even when all three
+  // are true. The default branch can't fire here (we already
+  // returned early when nothing was set).
+  const label = parts.join(' · ');
 
   return (
     <span

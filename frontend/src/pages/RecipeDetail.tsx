@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChefHat, Copy, Loader2, LogOut, Pencil, Share2, ShoppingCart, Sparkles, Trash2, Users } from 'lucide-react';
+import { SharedChip } from '@/components/SharedChip';
 import { Modal } from '@/components/Modal';
 import { ShareRecipePanel } from '@/components/recipes/ShareRecipePanel';
 import { RecipesApi } from '@/api/endpoints';
@@ -125,6 +126,15 @@ export function RecipeDetailPage() {
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-2xl font-semibold">{recipe.title}</h1>
+                {/* Owner-side share badge — same icon/tooltip the
+                    overview card uses, surfaced again on the detail
+                    page so the owner can confirm at a glance who can
+                    see this recipe. Recipient-side views (share_source
+                    set) keep the existing "Geteilt von …" banner
+                    below instead. */}
+                {!recipe.share_source && (
+                  <SharedChip state={recipe.share_state} />
+                )}
               </div>
               {recipe.share_source && recipe.owner_name && (
                 <div className="text-xs text-brand-700 mt-1.5 inline-flex items-center gap-1">
