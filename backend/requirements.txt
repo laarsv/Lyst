@@ -22,5 +22,5 @@ anthropic==0.40.0
 # TipTap frontend sends, markdown-it-py + mdit-py-plugins run the one-off
 # Markdown -> HTML conversion for pre-existing notes.
 bleach[css]==6.1.0
-markdown-it-py==3.0.0
+markdown-it-py[linkify]==3.0.0
 mdit-py-plugins==0.4.1
