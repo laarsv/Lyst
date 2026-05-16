@@ -24,7 +24,7 @@ import { useConfirm, usePrompt } from '@/components/Dialogs';
 import { BackLink } from '@/components/BackLink';
 import { IconAction } from '@/components/IconAction';
 import { SaveIndicator, useSaveIndicator } from '@/components/SaveIndicator';
-import { invalidateOverview } from '@/hooks/useOverviewQuery';
+import { invalidateOverview, useResourceQuery } from '@/hooks/useOverviewQuery';
 import { formatPreview, hasParse, parseItem } from '@/utils/parseItemInput';
 import {
   ChevronRight,
@@ -124,9 +124,13 @@ export function ListDetailPage() {
     }
   }, [listId, nav]);
 
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+  // Network-first detail fetch: runs on mount, on focus/visibility
+  // return, and whenever a list-detail invalidation fires (e.g. a
+  // sibling tab adds an item and the user-WS dispatch pings
+  // `list-detail:${listId}`). Without this, the SW's previous SWR
+  // strategy fed React a stale snapshot on cold mount and the list
+  // appeared empty until the user navigated away and back.
+  useResourceQuery(`list-detail:${listId}`, refresh);
 
   // Live collab — receive remote changes (skipped for messages we caused
   // ourselves: backend filters by X-Client-Id header). Polling fallback

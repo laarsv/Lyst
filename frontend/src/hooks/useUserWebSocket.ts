@@ -62,14 +62,16 @@ function dispatchEvent(ev: UserEvent): void {
     case 'note':
       log(`${ev.event} note=${ev.resource_id}`);
       // The notes overview keys under `notes:<scope>:<folder>:<tag>`;
-      // invalidateOverview('notes') prefix-matches them all. The
-      // currently-open note detail can re-fetch on its next render
-      // via the same hook contract.
+      // invalidateOverview('notes') prefix-matches them all.
       invalidateOverview('notes');
       // The /tasks aggregator surfaces note-task rows too; an
       // editor save that changed task text wants the global view
       // to refresh.
       invalidateOverview('tasks');
+      // Detail: deep-linked-archived-note fallback subscribers under
+      // `note:${id}` re-fetch — without this the fallback note went
+      // stale after the first paint.
+      invalidateOverview(`note:${ev.resource_id}`);
       if (ev.event === 'note.deleted') {
         // No targeted "got deleted" handler yet — the open note's
         // detail page will hit a 404 on its next refetch and route
@@ -81,6 +83,9 @@ function dispatchEvent(ev: UserEvent): void {
       log(`${ev.event} list=${ev.resource_id}`);
       invalidateOverview('lists');
       invalidateOverview('templates');
+      // Detail page: if the user has /lists/<resource_id> open, refresh
+      // its metadata. Prefix-match catches the parameterized subscriber.
+      invalidateOverview(`list-detail:${ev.resource_id}`);
       // Meal planner sidebar has a recipes overview, not lists —
       // skip it.
       break;
@@ -89,16 +94,25 @@ function dispatchEvent(ev: UserEvent): void {
       log(`${ev.event} list_item=${ev.resource_id} parent=${ev.parent_id}`);
       // The lists overview shows per-list progress; any item
       // change can shift the counter. Invalidate to keep cards
-      // current. The currently-open list's detail page already
-      // gets its updates via the per-list /ws/lists/{id} channel.
+      // current.
       invalidateOverview('lists');
       invalidateOverview('tasks');
+      // Detail page: per-list /ws/lists/{id} channel handles the
+      // incremental DOM update, but if the user reached this list via
+      // an offline-replay on another device the per-list channel may
+      // not have been live yet. Ping the detail subscriber so it
+      // re-fetches authoritative items.
+      if (ev.parent_id != null) {
+        invalidateOverview(`list-detail:${ev.parent_id}`);
+      }
       break;
 
     case 'recipe':
       log(`${ev.event} recipe=${ev.resource_id}`);
       invalidateOverview('recipes');
       invalidateOverview('mealplans');
+      // Detail: open recipe page refreshes if it matches.
+      invalidateOverview(`recipe:${ev.resource_id}`);
       break;
 
     case 'share':

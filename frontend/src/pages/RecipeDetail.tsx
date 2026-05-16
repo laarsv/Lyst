@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChefHat, Copy, Loader2, LogOut, Pencil, Share2, ShoppingCart, Sparkles, Trash2, Users } from 'lucide-react';
 import { SharedChip } from '@/components/SharedChip';
@@ -13,7 +13,7 @@ import { CookMode } from '@/components/recipes/CookMode';
 import { useConfirm } from '@/components/Dialogs';
 import { BackLink } from '@/components/BackLink';
 import { IconAction } from '@/components/IconAction';
-import { invalidateOverview } from '@/hooks/useOverviewQuery';
+import { invalidateOverview, useResourceQuery } from '@/hooks/useOverviewQuery';
 import { fmtQty } from '@/lib/format';
 
 export function RecipeDetailPage() {
@@ -28,18 +28,23 @@ export function RecipeDetailPage() {
   const [shareOpen, setShareOpen] = useState(false);
   const confirmDialog = useConfirm();
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        setRecipe(await RecipesApi.get(recipeId));
-      } catch (e) {
-        toast.error(getApiError(e));
-        nav('/recipes');
-      } finally {
-        setLoading(false);
-      }
-    })();
+  const fetchRecipe = useCallback(async () => {
+    try {
+      setRecipe(await RecipesApi.get(recipeId));
+    } catch (e) {
+      toast.error(getApiError(e));
+      nav('/recipes');
+    } finally {
+      setLoading(false);
+    }
   }, [recipeId, nav]);
+
+  // Network-first detail fetch — mount, focus return, cross-tab WS
+  // invalidations. Replaces the bare useEffect that fetched once and
+  // never reconciled against later remote changes; the page now
+  // reflects edits made on other devices as soon as the user comes
+  // back to the tab.
+  useResourceQuery(`recipe:${recipeId}`, fetchRecipe);
 
   const remove = async () => {
     if (!recipe) return;

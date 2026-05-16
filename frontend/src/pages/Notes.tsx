@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { NoteFoldersApi, NotesApi, SearchApi, TagsApi } from '@/api/endpoints';
 import type { Note, NoteFolder, Tag } from '@/types';
@@ -24,7 +24,7 @@ import { SaveIndicator, useSaveIndicator } from '@/components/SaveIndicator';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useNoteEditingState } from '@/hooks/useNoteEditingState';
 import { hasActiveFilters, useNotesFilters } from '@/store/notesFilters';
-import { invalidateOverview, useOverviewQuery } from '@/hooks/useOverviewQuery';
+import { invalidateOverview, useOverviewQuery, useResourceQuery } from '@/hooks/useOverviewQuery';
 import { Plus, Search } from 'lucide-react';
 
 const NOTE_DRAG_TYPE = 'application/x-lyst-note-id';
@@ -141,33 +141,14 @@ export function NotesPage() {
   const [activeFallback, setActiveFallback] = useState<Note | null>(null);
   const active = inList ?? activeFallback;
 
-  // If the focused note isn't visible in the currently scoped list (e.g. deep
-  // link to an archived note), fetch it directly so the editor still opens.
+  // Clear the fallback when activeId/inList means it's no longer needed
+  // (e.g. the note showed up in the scoped list after a reload). The
+  // actual fetch is handled by <NoteFallbackLoader> below so it can
+  // subscribe to focus/visibility refetches via useResourceQuery —
+  // otherwise a deep-linked archived note fetched once would never
+  // pick up later remote edits.
   useEffect(() => {
-    if (!activeId) {
-      setActiveFallback(null);
-      return;
-    }
-    if (inList) {
-      setActiveFallback(null);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const n = await NotesApi.get(activeId);
-        if (!cancelled) setActiveFallback(n);
-      } catch {
-        if (!cancelled) {
-          setActiveFallback(null);
-          toast.info('Notiz nicht gefunden');
-          setActiveId(null);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    if (!activeId || inList) setActiveFallback(null);
   }, [activeId, inList]);
 
   const create = async () => {
@@ -302,25 +283,46 @@ export function NotesPage() {
   const isMobile = useMediaQuery('(max-width: 767.98px)');
   const showMobileFullScreen = isMobile && !!active;
 
+  // Mounts the deep-link fallback fetcher only while needed (activeId
+  // set + the note isn't already in the visible scope's list). Lives
+  // in its own component so it can subscribe via useResourceQuery
+  // unconditionally — the parent can't, because hook order is bound
+  // to render order. Returns null; side-effects only.
+  const fallbackNode = activeId && !inList ? (
+    <NoteFallbackLoader
+      key={activeId}
+      noteId={activeId}
+      onLoaded={setActiveFallback}
+      onMissing={() => {
+        setActiveFallback(null);
+        toast.info('Notiz nicht gefunden');
+        setActiveId(null);
+      }}
+    />
+  ) : null;
+
   if (showMobileFullScreen) {
     return (
-      <MobileNoteShell
-        note={active!}
-        availableTags={tags}
-        folders={folders}
-        onChange={(patch) => updateNote(active!, patch)}
-        onDelete={() => removeNote(active!)}
-        onTogglePin={() => togglePin(active!)}
-        onToggleArchive={() => toggleArchive(active!)}
-        onLeaveShare={() => leaveShare(active!)}
-        onBack={() => setActiveId(null)}
-        onOpenByTitle={openByTitle}
-        onCreateFolder={() => setFolderModal({ open: true, edit: null })}
-        onRestored={(n) => {
-          setNotes((cur) => cur.map((x) => (x.id === n.id ? n : x)));
-          setActiveFallback(n);
-        }}
-      />
+      <>
+        {fallbackNode}
+        <MobileNoteShell
+          note={active!}
+          availableTags={tags}
+          folders={folders}
+          onChange={(patch) => updateNote(active!, patch)}
+          onDelete={() => removeNote(active!)}
+          onTogglePin={() => togglePin(active!)}
+          onToggleArchive={() => toggleArchive(active!)}
+          onLeaveShare={() => leaveShare(active!)}
+          onBack={() => setActiveId(null)}
+          onOpenByTitle={openByTitle}
+          onCreateFolder={() => setFolderModal({ open: true, edit: null })}
+          onRestored={(n) => {
+            setNotes((cur) => cur.map((x) => (x.id === n.id ? n : x)));
+            setActiveFallback(n);
+          }}
+        />
+      </>
     );
   }
 
@@ -329,6 +331,7 @@ export function NotesPage() {
   if (isMobile) {
     return (
       <div className="-mx-4 -my-4 sm:-my-6 flex flex-col min-h-[calc(100vh-56px)] bg-page">
+        {fallbackNode}
         {/* Sticky search row — pinned under the AppShell header (~56px). */}
         <div className="sticky top-14 z-20 bg-surface border-b border-line px-3 py-2 flex items-center gap-2">
           <div className="relative flex-1">
@@ -417,6 +420,7 @@ export function NotesPage() {
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-4 min-h-[60vh]">
+      {fallbackNode}
       <aside className="card p-3 flex flex-col gap-3 max-h-[78vh] sticky top-20">
         <div className="flex gap-2">
           <input
@@ -1505,4 +1509,42 @@ function ManageTagsModal({
 function sortNotes(a: Note, b: Note): number {
   if (a.is_pinned !== b.is_pinned) return a.is_pinned ? -1 : 1;
   return b.updated_at.localeCompare(a.updated_at);
+}
+
+/** Side-effect-only loader for the deep-link / archived-note path.
+ *
+ *  Mounted by NotesPage only while a focus target exists outside the
+ *  currently scoped list (`activeId && !inList`). Subscribes via
+ *  useResourceQuery so the note re-fetches on focus return and when
+ *  the user-WS broadcasts an edit — the earlier one-shot useEffect
+ *  fetched once and then went stale on later remote changes.
+ *
+ *  `key={activeId}` on the parent's render means a different deep link
+ *  re-mounts this loader cleanly, so we don't have to track the
+ *  previous id ourselves. */
+function NoteFallbackLoader({
+  noteId,
+  onLoaded,
+  onMissing,
+}: {
+  noteId: number;
+  onLoaded: (n: Note) => void;
+  onMissing: () => void;
+}) {
+  const onLoadedRef = useRef(onLoaded);
+  const onMissingRef = useRef(onMissing);
+  onLoadedRef.current = onLoaded;
+  onMissingRef.current = onMissing;
+
+  const fetcher = useCallback(async () => {
+    try {
+      const n = await NotesApi.get(noteId);
+      onLoadedRef.current(n);
+    } catch {
+      onMissingRef.current();
+    }
+  }, [noteId]);
+
+  useResourceQuery(`note:${noteId}`, fetcher);
+  return null;
 }
