@@ -421,35 +421,93 @@ html[data-theme="dark"] { color-scheme: dark; }
   }
 }
 
-/* TipTap task-list shape:
-     <ul data-type="taskList">
-       <li data-type="taskItem" data-checked="false">
-         <label><input type="checkbox"><span></span></label>
-         <div><p>task text</p></div>
-       </li>
-     </ul>
-   The wrapping <div> around <p> defaults to display:block, which breaks
-   the row in two (checkbox above, text below). Solution: flex the li so
-   label + content sit on one line, and zero out paragraph margins inside
-   the content div so a single-line task doesn't add extra vertical
-   space. Applies to the editor surface AND every read-only render
-   (public share view, version history) so the layout is consistent. */
+/* TipTap task-list — two different DOMs depending on render path:
+ *
+ *   LIVE EDITOR (NodeView, @tiptap/extension-task-item addNodeView):
+ *     <ul class="note-tasklist" data-type="taskList">
+ *       <li class="note-taskitem" data-checked="false" data-task-id="N">
+ *         <label contenteditable="false">
+ *           <input type="checkbox"><span></span>
+ *         </label>
+ *         <div><p>task text</p></div>
+ *       </li>
+ *     </ul>
+ *   The NodeView's `getRenderedAttributes` only forwards attributes
+ *   registered via `addAttributes()` (checked, taskId). It does NOT
+ *   forward the static `data-type` that renderHTML adds. So live <li>s
+ *   carry the .note-taskitem class but NO data-type attribute.
+ *
+ *   READ-ONLY HTML (renderHTML output → bleach → dangerouslySetInnerHTML):
+ *     <ul data-type="taskList">
+ *       <li data-type="taskItem" data-checked="false" data-task-id="N">
+ *         <label>...</label><div><p>...</p></div>
+ *       </li>
+ *     </ul>
+ *   Bleach's allowlist (backend/app/services/note_html.py:_allow_li_attrs)
+ *   accepts data-type/data-checked/data-task-id but ONLY accepts
+ *   class="task-list-item|task-list-item checked", so .note-taskitem is
+ *   stripped here. Read-only <li>s carry data-type but NO class.
+ *
+ * Earlier attempts at this fix only matched `li[data-type="taskItem"]`
+ * — that works in the saved-HTML view but never matches the live
+ * editor (no data-type). Hence checkbox-above-text in the editor while
+ * the public share view rendered correctly. Selectors below target
+ * BOTH shapes so the layout holds in either path.
+ *
+ * The wrapping <div> around <p> defaults to display:block, which
+ * breaks the row in two (checkbox above, text below). Solution: flex
+ * the li so label + content sit on one line, and zero out paragraph
+ * margins inside the content div so a single-line task is one line. */
+/* Wrapper <ul> — three scopes:
+ *   .ProseMirror         — present on the contenteditable surface
+ *                          regardless of any rebuild order; bumps
+ *                          specificity past any third-party rule that
+ *                          might re-establish list-item display.
+ *   .note-editor-surface — our editor class.
+ *   .note-public-html    — read-only sanitized HTML.
+ * The .ProseMirror selector is technically redundant with
+ * .note-editor-surface for the live editor, but its `!important` on
+ * display together makes the override unambiguous when CSS load
+ * order or vendor stylesheets shift around. */
+.ProseMirror ul[data-type="taskList"],
+.ProseMirror ul.note-tasklist,
 .note-editor-surface ul[data-type="taskList"],
-.note-public-html ul[data-type="taskList"] {
-  list-style: none;
+.note-editor-surface ul.note-tasklist,
+.note-public-html ul[data-type="taskList"],
+.note-public-html ul.note-tasklist {
+  list-style: none !important;
   padding-left: 0;
   margin: 0.5rem 0;
 }
+.ProseMirror li.note-taskitem,
+.ProseMirror li[data-type="taskItem"],
+.note-editor-surface li.note-taskitem,
 .note-editor-surface li[data-type="taskItem"],
+.note-public-html li.note-taskitem,
 .note-public-html li[data-type="taskItem"] {
-  display: flex;
+  /* !important needed because the previous (non-!important) fix did not
+     win at runtime — the live editor kept rendering checkbox-above-text.
+     The browser default `li { display: list-item }` is lower-specificity
+     than our class rule, so the only remaining explanation is a vendor
+     stylesheet (ProseMirror, an extension's adopted styles, or a
+     contenteditable shim) re-establishing block/list-item layout after
+     our cascade. !important on display is the surgical fix; list-style
+     is also marked !important because list-item display brings a
+     marker that would push the row's content further right than the
+     -0 padding allows. */
+  display: flex !important;
   align-items: flex-start;
   gap: 0.5rem;
   margin: 0.2rem 0;
+  list-style: none !important;
+  padding-left: 0;
 }
+.ProseMirror li.note-taskitem > label,
+.ProseMirror li[data-type="taskItem"] > label,
+.note-editor-surface li.note-taskitem > label,
 .note-editor-surface li[data-type="taskItem"] > label,
+.note-public-html li.note-taskitem > label,
 .note-public-html li[data-type="taskItem"] > label {
-  flex: 0 0 auto;
   /* Push the checkbox down to align with the first line of text. The
      exact pixel value matches the editor's body line-height (1.55) minus
      the checkbox visual height — empirically `3px` lands cleanly across
@@ -459,20 +517,34 @@ html[data-theme="dark"] { color-scheme: dark; }
   align-items: center;
   cursor: pointer;
   user-select: none;
+  flex: 0 0 auto;
+  flex-shrink: 0;
+  margin: 0;
 }
+.ProseMirror li.note-taskitem > div,
+.ProseMirror li[data-type="taskItem"] > div,
+.note-editor-surface li.note-taskitem > div,
 .note-editor-surface li[data-type="taskItem"] > div,
+.note-public-html li.note-taskitem > div,
 .note-public-html li[data-type="taskItem"] > div {
   flex: 1 1 auto;
   min-width: 0;
 }
 /* The paragraph inside the content div: kill the global p margin so a
-   single-line task is one line tall. Multi-paragraph tasks (rare) still
-   space themselves via line-height. */
+   single-line task is one line tall. */
+.ProseMirror li.note-taskitem > div > p,
+.ProseMirror li[data-type="taskItem"] > div > p,
+.note-editor-surface li.note-taskitem > div > p,
 .note-editor-surface li[data-type="taskItem"] > div > p,
+.note-public-html li.note-taskitem > div > p,
 .note-public-html li[data-type="taskItem"] > div > p {
   margin: 0;
 }
+.ProseMirror li.note-taskitem input[type="checkbox"],
+.ProseMirror li[data-type="taskItem"] input[type="checkbox"],
+.note-editor-surface li.note-taskitem input[type="checkbox"],
 .note-editor-surface li[data-type="taskItem"] input[type="checkbox"],
+.note-public-html li.note-taskitem input[type="checkbox"],
 .note-public-html li[data-type="taskItem"] input[type="checkbox"] {
   appearance: auto;
   margin: 0;
@@ -481,20 +553,31 @@ html[data-theme="dark"] { color-scheme: dark; }
 }
 /* Hide the empty <span> TipTap adds inside the label — it's only there
    to give the schema something to anchor selection to. */
+.ProseMirror li.note-taskitem > label > span,
+.ProseMirror li[data-type="taskItem"] > label > span,
+.note-editor-surface li.note-taskitem > label > span,
 .note-editor-surface li[data-type="taskItem"] > label > span,
+.note-public-html li.note-taskitem > label > span,
 .note-public-html li[data-type="taskItem"] > label > span {
   display: none;
 }
+.ProseMirror li.note-taskitem[data-checked="true"] > div,
+.ProseMirror li[data-type="taskItem"][data-checked="true"] > div,
+.note-editor-surface li.note-taskitem[data-checked="true"] > div,
 .note-editor-surface li[data-type="taskItem"][data-checked="true"] > div,
+.note-public-html li.note-taskitem[data-checked="true"] > div,
 .note-public-html li[data-type="taskItem"][data-checked="true"] > div {
   text-decoration: line-through;
   color: rgb(var(--color-muted));
 }
 /* Nested task lists: re-introduce an indent so the hierarchy is visible.
-   The outer ul has padding-left: 0 (above), so a nested ul without
-   padding would sit flush with the outer checkboxes. */
-.note-editor-surface li[data-type="taskItem"] ul[data-type="taskList"],
-.note-public-html li[data-type="taskItem"] ul[data-type="taskList"] {
+   Nested support is enabled via NoteTaskItem.configure({ nested: true }). */
+.ProseMirror li.note-taskitem ul,
+.ProseMirror li[data-type="taskItem"] ul,
+.note-editor-surface li.note-taskitem ul,
+.note-editor-surface li[data-type="taskItem"] ul,
+.note-public-html li.note-taskitem ul,
+.note-public-html li[data-type="taskItem"] ul {
   padding-left: 1.5rem;
   margin: 0.25rem 0 0;
 }
