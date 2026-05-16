@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import require_user
+from app.core.dependencies import get_client_id, require_user
 from app.core.responses import ok
 from app.models.user import User
 from app.schemas.share import (
@@ -105,6 +105,7 @@ async def post_collaborator(
     payload: CollaboratorInvite,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ):
     try:
         lst, is_owner, _ = await get_list_for_user(db, list_id, user.id)
@@ -116,6 +117,27 @@ async def post_collaborator(
         coll, target = await add_collaborator(db, list_id, payload.email, payload.permission)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    # Fan share.created + persist notification — same flow as notes/recipes.
+    from app.services.notification_service import notify_share_created
+    from app.services.realtime_events import emit_share_event
+    await emit_share_event(
+        recipient_id=target.id,
+        actor_id=user.id,
+        resource_type="list",
+        resource_id=list_id,
+        event="share.created",
+        client_id=client_id,
+        payload={"actor_name": user.name, "title": lst.title},
+    )
+    await notify_share_created(
+        db,
+        recipient_id=target.id,
+        actor_id=user.id,
+        actor_name=user.name,
+        resource_type="list",
+        resource_id=list_id,
+        title=lst.title,
+    )
     return ok(
         CollaboratorOut(
             user_id=target.id, email=target.email, name=target.name, permission=coll.permission

@@ -155,11 +155,37 @@ function dispatchEvent(ev: UserEvent): void {
       break;
 
     case 'notification':
-      // Deferred — no in-app notification center yet. Keeping the
-      // case here so dispatch is exhaustive and we don't log a
-      // confusing "unhandled" warning when the backend eventually
-      // starts firing these.
       log(`${ev.event} notification ${ev.resource_id}`);
+      // Backend (notification_service.create_notification) ships the
+      // freshly inserted row inside payload — same shape as the
+      // GET /notifications response. Push it onto the bell store so
+      // the badge + dropdown update without a refetch.
+      {
+        const row = ev.payload as
+          | {
+              id?: number;
+              kind?: string;
+              payload?: Record<string, unknown>;
+              created_at?: string;
+              read_at?: string | null;
+            }
+          | null;
+        if (row && typeof row.id === 'number' && typeof row.kind === 'string') {
+          import('@/store/notifications')
+            .then(({ useNotificationsStore }) => {
+              useNotificationsStore.getState().prepend({
+                id: row.id!,
+                kind: row.kind!,
+                payload: row.payload ?? {},
+                created_at: row.created_at ?? new Date().toISOString(),
+                read_at: row.read_at ?? null,
+              });
+            })
+            .catch(() => {
+              /* dynamic-import failure is harmless; next mount refetch will catch up */
+            });
+        }
+      }
       break;
 
     default:

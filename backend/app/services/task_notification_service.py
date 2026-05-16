@@ -60,6 +60,21 @@ async def notify_task_assigned_list_item(
         )
     ).scalar_one_or_none()
     parent_title = list_row or "(Liste)"
+    # Persist an in-app notification first (cheap, local) then fire email.
+    from app.services.notification_service import notify_task_assigned
+    try:
+        await notify_task_assigned(
+            db,
+            recipient_id=assignee_id,
+            actor_id=assigner.id,
+            actor_name=assigner.name,
+            source="list",
+            source_id=item.list_id,
+            task_id=item.id,
+            text=item.text,
+        )
+    except Exception as e:  # pragma: no cover
+        logger.warning("Task-assign in-app notify failed list_item=%s: %s", item.id, e)
     try:
         subject, html = task_assigned_email(
             actor_name=assigner.name,
@@ -91,6 +106,20 @@ async def notify_task_assigned_note_task(
         await db.execute(select(Note.title).where(Note.id == task.note_id))
     ).scalar_one_or_none()
     parent_title = note_row or "(Notiz)"
+    from app.services.notification_service import notify_task_assigned
+    try:
+        await notify_task_assigned(
+            db,
+            recipient_id=assignee_id,
+            actor_id=assigner.id,
+            actor_name=assigner.name,
+            source="note",
+            source_id=task.note_id,
+            task_id=task.id,
+            text=task.text,
+        )
+    except Exception as e:  # pragma: no cover
+        logger.warning("Task-assign in-app notify failed task_item=%s: %s", task.id, e)
     try:
         subject, html = task_assigned_email(
             actor_name=assigner.name,
@@ -132,6 +161,19 @@ async def notify_task_reminder_list_item(
             select(ListModel.title).where(ListModel.id == item.list_id)
         )
     ).scalar_one_or_none() or "(Liste)"
+    from app.services.notification_service import notify_task_reminder
+    try:
+        await notify_task_reminder(
+            db,
+            recipient_id=recipient_id,
+            source="list",
+            source_id=item.list_id,
+            task_id=item.id,
+            text=item.text,
+            due_at=item.due_at,
+        )
+    except Exception as e:  # pragma: no cover
+        logger.warning("Task-reminder in-app notify failed list_item=%s: %s", item.id, e)
     try:
         subject, html = task_reminder_email(
             task_text=item.text,
@@ -167,6 +209,19 @@ async def notify_task_reminder_note_task(
             select(Note.title).where(Note.id == task.note_id)
         )
     ).scalar_one_or_none() or "(Notiz)"
+    from app.services.notification_service import notify_task_reminder
+    try:
+        await notify_task_reminder(
+            db,
+            recipient_id=recipient_id,
+            source="note",
+            source_id=task.note_id,
+            task_id=task.id,
+            text=task.text,
+            due_at=task.due_at,
+        )
+    except Exception as e:  # pragma: no cover
+        logger.warning("Task-reminder in-app notify failed task_item=%s: %s", task.id, e)
     try:
         subject, html = task_reminder_email(
             task_text=task.text,

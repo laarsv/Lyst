@@ -673,3 +673,37 @@ export const TagsApi = {
     api.post<{ data: Tag }>('/tags', { name, color }).then(unwrap),
   remove: (id: number) => api.delete(`/tags/${id}`),
 };
+
+// ---------- Notifications (alembic 0019) ----------
+
+export type NotificationKind =
+  | 'share_created'
+  | 'mention'
+  | 'task_assigned'
+  | 'task_reminder';
+
+export interface NotificationRow {
+  id: number;
+  kind: NotificationKind | string;
+  // Per-kind shape — see backend notification_service.py docstring.
+  // Kept loose here because individual call sites narrow it themselves.
+  payload: Record<string, unknown>;
+  read_at: string | null;
+  created_at: string;
+}
+
+export interface NotificationListResponse {
+  items: NotificationRow[];
+  unread_count: number;
+}
+
+export const NotificationsApi = {
+  list: () =>
+    api
+      .get<{ data: NotificationListResponse }>('/notifications')
+      .then(unwrap),
+  markRead: (id: number) =>
+    api.patch<{ data: { message: string } }>(`/notifications/${id}/read`).then(unwrap),
+  markAllRead: () =>
+    api.post<{ data: { updated: number } }>('/notifications/mark-all-read').then(unwrap),
+};

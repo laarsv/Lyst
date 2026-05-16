@@ -871,6 +871,7 @@ async def post_share_by_email(
         # appears within a tick. The actor (us) is excluded by
         # exclude_client_id; we wouldn't reach our own channel since
         # the recipient is a different user anyway.
+        from app.services.notification_service import notify_share_created
         from app.services.realtime_events import emit_share_event
         await emit_share_event(
             recipient_id=recipient_id,
@@ -880,6 +881,15 @@ async def post_share_by_email(
             event="share.created",
             client_id=client_id,
             payload={"actor_name": user.name, "title": note.title},
+        )
+        await notify_share_created(
+            db,
+            recipient_id=recipient_id,
+            actor_id=user.id,
+            actor_name=user.name,
+            resource_type="note",
+            resource_id=note.id,
+            title=note.title,
         )
 
     return ok(NoteShareByEmailResponse(type=kind, user_name=name).model_dump())

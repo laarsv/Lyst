@@ -6,6 +6,7 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { SearchModal } from '@/components/SearchModal';
 import { SyncStatusBadge } from '@/components/SyncStatusBadge';
 import { LiveIndicator } from '@/components/LiveIndicator';
+import { NotificationBell } from '@/components/NotificationBell';
 import { useOverviewRouteRefresh } from '@/hooks/useOverviewQuery';
 import { useUserWebSocket } from '@/hooks/useUserWebSocket';
 import clsx from 'clsx';
@@ -129,6 +130,7 @@ export function AppShell() {
                 still mounts inside ListDetail for the per-list
                 channel (kept as parallel sync for now). */}
             <LiveIndicator connected={liveConnected} />
+            <NotificationBell />
             <SyncStatusBadge />
             <button
               type="button"

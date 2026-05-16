@@ -38,6 +38,7 @@ from app.services.import_service import (
     import_recipe_from_url,
     suggest_recipes_from_ingredients,
 )
+from app.services.notification_service import notify_share_created
 from app.services.realtime_events import (
     emit_recipe_deleted,
     emit_recipe_event,
@@ -1285,6 +1286,17 @@ async def post_share_recipe_by_email(
             client_id=client_id,
             payload={"actor_name": user.name, "title": rec.title},
         )
+        # Persist a notification row so the recipient still sees the
+        # share in their bell after a refresh / next session.
+        await notify_share_created(
+            db,
+            recipient_id=recipient_id,
+            actor_id=user.id,
+            actor_name=user.name,
+            resource_type="recipe",
+            resource_id=rec.id,
+            title=rec.title,
+        )
 
     return ok(ShareByEmailResponse(type=kind, user_name=name).model_dump())
 
@@ -1366,6 +1378,15 @@ async def post_share_book_by_email(
             event="share.created",
             client_id=client_id,
             payload={"actor_name": user.name, "title": "Rezeptbuch"},
+        )
+        await notify_share_created(
+            db,
+            recipient_id=recipient_id,
+            actor_id=user.id,
+            actor_name=user.name,
+            resource_type="recipe",
+            resource_id=user.id,
+            title="Rezeptbuch",
         )
 
     return ok(ShareByEmailResponse(type=kind, user_name=name).model_dump())

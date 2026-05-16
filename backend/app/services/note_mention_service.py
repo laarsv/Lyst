@@ -200,10 +200,32 @@ async def dispatch_new_mentions(
         await db.execute(stmt)
         await db.commit()
 
-    # Fire one email per newly-notified user.
+    # Fire one email + one in-app notification per newly-notified user.
+    # In-app notification fires regardless of whether the email succeeds —
+    # the bell entry is independent persistence, the email is a
+    # best-effort outbound channel that we no longer rely on as the only
+    # signal.
+    from app.services.notification_service import notify_mention
+
     url = _note_deeplink(note.id)
     sent = 0
     for u in users:
+        try:
+            await notify_mention(
+                db,
+                recipient_id=u.id,
+                actor_id=actor.id,
+                actor_name=actor.name,
+                note_id=note.id,
+                note_title=note.title,
+            )
+        except Exception as e:  # pragma: no cover
+            logger.warning(
+                "Mention in-app notify failed: note=%s user=%s err=%s",
+                note.id,
+                u.id,
+                e,
+            )
         try:
             subject, html = note_mention_email(actor.name, note.title, url)
             ok = await send_email(u.email, subject, html)
