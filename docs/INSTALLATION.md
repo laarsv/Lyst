@@ -212,7 +212,7 @@ Database migrations run automatically on backend startup
 **Always take a backup before updating across a major version** — Lyst is
 small but migrations are one-way.
 
-### One-off: notes Markdown → HTML migration (release ≥ 1.5)
+### One-off: notes Markdown → HTML migration (v1.2.0+)
 
 When you update to the release that swaps the Markdown editor for the new
 TipTap-based rich-text editor, an additional one-shot data migration is
@@ -257,7 +257,7 @@ find the freshly-MARKDOWN row, retry, and leave the rest alone. The
 `content_format` column stays for one release before being dropped so
 this rollback window remains open.
 
-### One-off: note tasks → task_items rows (release ≥ 1.6)
+### One-off: note tasks → task_items rows (v1.2.0+)
 
 The tasks layer (alembic 0018) makes every TipTap task-list checkbox
 inside a note individually addressable. Existing notes have those
