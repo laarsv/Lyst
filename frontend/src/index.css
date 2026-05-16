@@ -719,3 +719,22 @@ html[data-theme="dark"] { color-scheme: dark; }
   background: rgb(var(--color-brand-50));
   transition: background-color 1.2s ease-out;
 }
+
+/* Bottom-sheet entry animations (NotificationBell mobile branch).
+   200ms ease-out slide for the panel + a quick backdrop fade-in.
+   ItemSheet doesn't currently animate its entry; if we ever want
+   consistency the same two classes can be applied there too. */
+@keyframes sheet-slide-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+@keyframes sheet-backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.sheet-slide-up {
+  animation: sheet-slide-up 200ms ease-out;
+}
+.sheet-backdrop-in {
+  animation: sheet-backdrop-in 150ms ease-out;
+}

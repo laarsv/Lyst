@@ -10,12 +10,16 @@
  *  Click → navigate to the resource referenced by the payload + mark
  *  the row read. The dropdown closes on outside click or Escape. */
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { Bell, Check } from 'lucide-react';
+import { Bell, Check, X } from 'lucide-react';
 import { NotificationsApi, type NotificationRow } from '@/api/endpoints';
 import { useNotificationsStore } from '@/store/notifications';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
+
+// Same breakpoint ItemSheet uses — keeps "is mobile?" consistent app-wide.
+const MOBILE_MQ = '(max-width: 767.98px)';
 
 export function NotificationBell() {
   const items = useNotificationsStore((s) => s.items);
@@ -25,7 +29,23 @@ export function NotificationBell() {
   const markAllReadInStore = useNotificationsStore((s) => s.markAllRead);
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const sheetRef = useRef<HTMLDivElement | null>(null);
   const nav = useNavigate();
+
+  // Track viewport so we can pick the right presentation. SSR-safe init
+  // (browsers always have matchMedia; the typeof guard keeps the initial
+  // render happy if anyone ever pre-renders this component).
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window === 'undefined'
+      ? false
+      : window.matchMedia(MOBILE_MQ).matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(MOBILE_MQ);
+    const onChange = () => setIsMobile(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
 
   // Initial fetch + focus refetch. Same network-first pattern the
   // overview hook uses; we don't reuse useResourceQuery here because
@@ -50,9 +70,15 @@ export function NotificationBell() {
   }, [setRows]);
 
   // Close on outside click + Escape.
+  // - Desktop: panel lives inside wrapRef (anchored dropdown), so the
+  //   contains() check fires for clicks outside it.
+  // - Mobile: panel is portal-rendered, so the bottom sheet's own
+  //   backdrop handler covers the dim area; the document-level outside
+  //   check is skipped to avoid double-closing.
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
+      if (isMobile) return;
       if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
@@ -64,7 +90,54 @@ export function NotificationBell() {
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
     };
-  }, [open]);
+  }, [open, isMobile]);
+
+  // Body scroll lock + swipe-down dismiss on mobile (mirrors ItemSheet).
+  useEffect(() => {
+    if (!open || !isMobile) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [open, isMobile]);
+
+  useEffect(() => {
+    if (!open || !isMobile || !sheetRef.current) return;
+    const el = sheetRef.current;
+    let startY: number | null = null;
+    let dy = 0;
+    const onStart = (e: TouchEvent) => {
+      const t = e.touches[0];
+      const r = el.getBoundingClientRect();
+      // Only react to drags that start near the handle area (top 32px).
+      if (t.clientY - r.top > 32) return;
+      startY = t.clientY;
+      dy = 0;
+    };
+    const onMove = (e: TouchEvent) => {
+      if (startY === null) return;
+      dy = Math.max(0, e.touches[0].clientY - startY);
+      el.style.transform = `translateY(${dy}px)`;
+    };
+    const onEnd = () => {
+      if (startY === null) return;
+      el.style.transform = '';
+      if (dy > 80) setOpen(false);
+      startY = null;
+      dy = 0;
+    };
+    el.addEventListener('touchstart', onStart, { passive: true });
+    el.addEventListener('touchmove', onMove, { passive: true });
+    el.addEventListener('touchend', onEnd);
+    el.addEventListener('touchcancel', onEnd);
+    return () => {
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+      el.removeEventListener('touchend', onEnd);
+      el.removeEventListener('touchcancel', onEnd);
+    };
+  }, [open, isMobile]);
 
   const handleRowClick = async (row: NotificationRow) => {
     setOpen(false);
@@ -92,6 +165,58 @@ export function NotificationBell() {
     }
   };
 
+  // Shared panel body — header strip + list. Desktop wraps it in an
+  // anchored dropdown; mobile wraps it in a portal'd bottom sheet.
+  // The empty-state, mark-all-read button, and per-row click handlers
+  // are identical across both presentations.
+  const showCloseX = isMobile;
+  const panelBody = (
+    <>
+      <div className="flex items-center justify-between px-3 py-2 border-b border-line">
+        <span className="text-sm font-medium">Benachrichtigungen</span>
+        <div className="flex items-center gap-2">
+          {unreadCount > 0 && (
+            <button
+              type="button"
+              onClick={markAll}
+              className="text-[11px] text-muted hover:text-ink inline-flex items-center gap-1"
+            >
+              <Check size={11} />
+              Alle gelesen
+            </button>
+          )}
+          {showCloseX && (
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Schließen"
+              className="p-1 -mr-1 text-muted hover:text-ink"
+            >
+              <X size={16} />
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {items.length === 0 ? (
+          <div className="text-sm text-muted/70 py-8 text-center">
+            Keine neuen Benachrichtigungen.
+          </div>
+        ) : (
+          <ul>
+            {items.map((row) => (
+              <NotificationRowView
+                key={row.id}
+                row={row}
+                onClick={() => handleRowClick(row)}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
+    </>
+  );
+
   return (
     <div ref={wrapRef} className="relative">
       <button
@@ -112,44 +237,55 @@ export function NotificationBell() {
           </span>
         )}
       </button>
-      {open && (
+
+      {/* Desktop: anchored dropdown right of the bell. Same styling as
+          before this refactor — only mobile shifted to a bottom sheet. */}
+      {open && !isMobile && (
         <div
           role="dialog"
           aria-label="Benachrichtigungen"
           className="absolute right-0 mt-1 z-50 card shadow-flat border border-line bg-surface w-[320px] sm:w-[360px] max-h-[480px] flex flex-col"
         >
-          <div className="flex items-center justify-between px-3 py-2 border-b border-line">
-            <span className="text-sm font-medium">Benachrichtigungen</span>
-            {unreadCount > 0 && (
-              <button
-                type="button"
-                onClick={markAll}
-                className="text-[11px] text-muted hover:text-ink inline-flex items-center gap-1"
-              >
-                <Check size={11} />
-                Alle gelesen
-              </button>
-            )}
-          </div>
-          <div className="flex-1 overflow-y-auto">
-            {items.length === 0 ? (
-              <div className="text-sm text-muted/70 py-8 text-center">
-                Keine neuen Benachrichtigungen.
-              </div>
-            ) : (
-              <ul>
-                {items.map((row) => (
-                  <NotificationRowView
-                    key={row.id}
-                    row={row}
-                    onClick={() => handleRowClick(row)}
-                  />
-                ))}
-              </ul>
-            )}
-          </div>
+          {panelBody}
         </div>
       )}
+
+      {/* Mobile: portal'd bottom sheet — full width minus safe-area, max
+          85vh tall, dimmed backdrop, swipe-down-from-handle to close.
+          Same shape ItemSheet uses so the gesture vocabulary stays
+          consistent across the app. Lives outside this <div> via
+          createPortal so the parent's `relative` doesn't constrain it
+          and the document-level escape/outside-click logic still works. */}
+      {open && isMobile &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[70] bg-ink/40 flex items-end sheet-backdrop-in"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) setOpen(false);
+            }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Benachrichtigungen"
+          >
+            <div
+              ref={sheetRef}
+              className="w-full bg-surface rounded-t-card border-t border-line shadow-flat max-h-[85vh] flex flex-col transition-transform duration-200 ease-out sheet-slide-up"
+              style={{
+                paddingBottom: 'env(safe-area-inset-bottom, 16px)',
+              }}
+            >
+              {/* Drag handle */}
+              <div className="flex justify-center pt-2 pb-1 select-none shrink-0">
+                <span
+                  className="block w-10 h-1 rounded-full bg-line"
+                  aria-hidden
+                />
+              </div>
+              {panelBody}
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
