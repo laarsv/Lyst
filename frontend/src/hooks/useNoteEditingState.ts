@@ -28,6 +28,11 @@ export interface NoteEditingState {
   tags: string[];
   setTags: Dispatch<SetStateAction<string[]>>;
   backlinks: NoteTitleResult[];
+  /** True when local title/content/tags differ from the note prop —
+   *  i.e. there's a pending edit the 600ms debounce hasn't yet
+   *  persisted. The conflict-reload flow uses this to confirm before
+   *  overwriting unsaved work. */
+  isDirty: boolean;
 }
 
 interface SaveCallbacks {
@@ -112,6 +117,11 @@ export function useNoteEditingState(
     };
   }, [note.id, note.updated_at]);
 
+  const isDirty =
+    title !== note.title ||
+    content !== note.content ||
+    tags.join(',') !== note.tags.join(',');
+
   return {
     title,
     setTitle,
@@ -120,5 +130,6 @@ export function useNoteEditingState(
     tags,
     setTags,
     backlinks,
+    isDirty,
   };
 }

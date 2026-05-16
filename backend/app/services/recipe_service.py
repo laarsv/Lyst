@@ -620,11 +620,14 @@ async def share_recipe_with_email(
     owner: User,
     email: str,
     permission: CollaboratorPermission = CollaboratorPermission.VIEW,
-) -> tuple[str, str | None]:
-    """Returns (kind, user_name) where kind is "internal" or "external".
-    External case is the caller's responsibility to actually send the
-    Resend email; this just ensures share_token is provisioned. Re-sharing
-    with the same address updates the permission rather than 409-ing."""
+) -> tuple[str, str | None, int | None]:
+    """Returns (kind, user_name, recipient_id) where kind is "internal"
+    or "external" and recipient_id is the User.id of the recipient on
+    the internal path (so the caller can fan out a share.created
+    user-WS event). External path returns recipient_id=None and leaves
+    the caller responsible for sending the Resend email; this just
+    ensures share_token is provisioned. Re-sharing with the same
+    address updates the permission rather than 409-ing."""
     target_email = email.strip().lower()
     if target_email == owner.email.lower():
         raise ValueError("self-share")
@@ -635,7 +638,7 @@ async def share_recipe_with_email(
         # one exists.
         if not rec.share_token:
             await enable_recipe_share(db, rec)
-        return "external", None
+        return "external", None, None
 
     existing = await db.execute(
         select(RecipeShare).where(
@@ -662,7 +665,7 @@ async def share_recipe_with_email(
             await db.commit()
         except _IntegrityError:
             await db.rollback()
-    return "internal", target.name
+    return "internal", target.name, target.id
 
 
 async def share_book_with_email(
@@ -670,7 +673,10 @@ async def share_book_with_email(
     owner: User,
     email: str,
     permission: CollaboratorPermission = CollaboratorPermission.VIEW,
-) -> tuple[str, str | None]:
+) -> tuple[str, str | None, int | None]:
+    """Same 3-tuple shape as share_recipe_with_email — recipient_id
+    populated on the internal path so the router can emit a
+    share.created user-WS event."""
     target_email = email.strip().lower()
     if target_email == owner.email.lower():
         raise ValueError("self-share")
@@ -679,7 +685,7 @@ async def share_book_with_email(
     if target is None:
         if not owner.recipe_book_share_token:
             await enable_book_share(db, owner)
-        return "external", None
+        return "external", None, None
 
     existing = await db.execute(
         select(RecipeBookShare).where(
@@ -706,7 +712,7 @@ async def share_book_with_email(
             await db.commit()
         except _IntegrityError:
             await db.rollback()
-    return "internal", target.name
+    return "internal", target.name, target.id
 
 
 async def update_recipe_internal_share_permission(

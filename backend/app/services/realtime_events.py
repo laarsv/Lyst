@@ -278,6 +278,37 @@ async def emit_recipe_event(
     )
 
 
+async def recipe_audience(db: AsyncSession, recipe_id: int) -> set[int]:
+    """Public wrapper around _recipe_audience for callers that need to
+    snapshot the audience BEFORE deleting the resource (cascade
+    deletes the share rows we'd otherwise look up). Same shape as
+    note_audience."""
+    return await _recipe_audience(db, recipe_id)
+
+
+async def emit_recipe_deleted(
+    audience: set[int],
+    recipe_id: int,
+    *,
+    actor_id: int,
+    client_id: str | None = None,
+) -> None:
+    """Fan-out variant taking a pre-computed audience. Used by
+    DELETE /recipes/{id} where the row is gone before we'd otherwise
+    look up its shares."""
+    await _safe_broadcast(
+        audience,
+        _envelope(
+            event="recipe.deleted",
+            resource_type="recipe",
+            resource_id=recipe_id,
+            actor_id=actor_id,
+            payload=None,
+        ),
+        exclude_client_id=client_id,
+    )
+
+
 # Shares ----------------------------------------------------------------
 
 async def emit_share_event(

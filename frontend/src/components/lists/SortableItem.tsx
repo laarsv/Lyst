@@ -333,7 +333,15 @@ export function SortableItem({
   );
 
   return (
-    <div ref={setNodeRef} style={style} className="relative">
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="relative"
+      // data-list-item-id is the deep-link anchor for /lists/<id>?task=<item>.
+      // ListDetailPage scrolls the matching node into view + adds a brief
+      // .task-pulse ring when it lands.
+      data-list-item-id={item.id}
+    >
       {/* Red action backdrop — only shown while the user is actually
           swiping left or has the row locked open. Right-swipe doesn't
           need a backdrop; the row stops at +REVEAL_PX and the gesture

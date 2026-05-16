@@ -72,6 +72,25 @@ function dispatchEvent(ev: UserEvent): void {
       // `note:${id}` re-fetch — without this the fallback note went
       // stale after the first paint.
       invalidateOverview(`note:${ev.resource_id}`);
+      if (ev.event === 'note.updated') {
+        // Fan a CustomEvent at the editor pane(s). The note-conflict
+        // banner subscribes via window.addEventListener — it filters
+        // by noteId + actorId so a save bouncing back from another
+        // device of the same user (X-Client-Id collision misses)
+        // doesn't trigger a false "Neu laden?" prompt.
+        try {
+          window.dispatchEvent(
+            new CustomEvent('lyst:note-updated', {
+              detail: {
+                noteId: ev.resource_id,
+                actorId: ev.actor_id,
+              },
+            }),
+          );
+        } catch {
+          /* CustomEvent unsupported — rare; banner just won't appear */
+        }
+      }
       if (ev.event === 'note.deleted') {
         // No targeted "got deleted" handler yet — the open note's
         // detail page will hit a 404 on its next refetch and route

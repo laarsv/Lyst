@@ -23,6 +23,8 @@ import { BackLink } from '@/components/BackLink';
 import { SaveIndicator, useSaveIndicator } from '@/components/SaveIndicator';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useNoteEditingState } from '@/hooks/useNoteEditingState';
+import { useNoteConflict } from '@/hooks/useNoteConflict';
+import { NoteConflictBanner } from '@/components/notes/NoteConflictBanner';
 import { hasActiveFilters, useNotesFilters } from '@/store/notesFilters';
 import { invalidateOverview, useOverviewQuery, useResourceQuery } from '@/hooks/useOverviewQuery';
 import { Plus, Search } from 'lucide-react';
@@ -57,11 +59,57 @@ export function NotesPage() {
     if (!notes.some((n) => n.id === id)) {
       setScope({ kind: 'all' });
     }
-    // Strip the param so back-navigation doesn't keep re-focusing.
+    // Strip the focus param so back-navigation doesn't keep re-focusing.
+    // KEEP `?task=…` for the separate pulse effect below — it gets
+    // consumed once the TipTap doc has rendered the matching taskItem.
     params.delete('focus');
     setParams(params, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
+
+  // Deep-link pulse for note tasks: /notes?focus=<n>&task=<t> scrolls
+  // the matching <li data-task-id="…"> into view and pulses .task-pulse.
+  // TipTap inserts the doc asynchronously, so we poll for the node up
+  // to ~1.5s before giving up. Once we find it (or time out) we drop
+  // the `?task=` param so a re-render can't re-pulse.
+  useEffect(() => {
+    const taskId = params.get('task');
+    if (!taskId || activeId === null) return;
+    const id = Number(taskId);
+    if (!Number.isFinite(id)) return;
+    let cancelled = false;
+    let attempts = 0;
+    let timer: number | null = null;
+    const tryHighlight = () => {
+      if (cancelled) return;
+      const node = document.querySelector<HTMLElement>(
+        `.ProseMirror [data-task-id="${id}"]`,
+      );
+      if (node) {
+        node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        node.classList.add('task-pulse');
+        window.setTimeout(() => node.classList.remove('task-pulse'), 1600);
+        params.delete('task');
+        setParams(params, { replace: true });
+        return;
+      }
+      attempts += 1;
+      if (attempts > 15) {
+        // Give up after ~1.5s of polling. Clear the param so we don't
+        // get stuck pulsing on the next mount.
+        params.delete('task');
+        setParams(params, { replace: true });
+        return;
+      }
+      timer = window.setTimeout(tryHighlight, 100);
+    };
+    tryHighlight();
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId, params.get('task')]);
 
   // Navigate by note title — used by wikilink clicks in the markdown preview.
   const openByTitle = async (title: string) => {
@@ -890,6 +938,29 @@ function NoteEditorPane({
     onSaveSuccess: save.signalSaved,
     onSaveError: save.signalError,
   });
+  const conflict = useNoteConflict(note.id);
+  const confirmReload = useConfirm();
+  const reloadNote = async () => {
+    if (
+      state.isDirty &&
+      !(await confirmReload({
+        title: 'Lokale Änderungen verwerfen?',
+        message:
+          'Die Notiz wurde gerade von jemand anderem bearbeitet. Beim Neuladen gehen deine lokalen Änderungen verloren.',
+        confirmLabel: 'Neu laden',
+        variant: 'danger',
+      }))
+    ) {
+      return;
+    }
+    try {
+      const fresh = await NotesApi.get(note.id);
+      onRestored(fresh);
+      conflict.dismiss();
+    } catch (e) {
+      toast.error(getApiError(e));
+    }
+  };
   const [tagInput, setTagInput] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
@@ -1135,6 +1206,18 @@ function NoteEditorPane({
         )}
       </div>
 
+      {/* Soft-merge banner — appears when a remote edit lands on this
+          note. Stays visible until the user reloads (replacing local
+          state with the fresh server copy) or dismisses (keeping their
+          edit; next autosave clobbers the remote change, same
+          last-writer-wins behaviour we had before but now visible). */}
+      <NoteConflictBanner
+        visible={conflict.hasConflict}
+        isDirty={state.isDirty}
+        onReload={reloadNote}
+        onDismiss={conflict.dismiss}
+      />
+
       {/* TipTap WYSIWYG editor. Toolbar lives inside NoteEditor, hidden
           automatically when `editable=false` (VIEW recipients). Pre-
           migration markdown notes are detected via content_format and
@@ -1275,6 +1358,29 @@ function MobileNoteShell({
     onSaveSuccess: save.signalSaved,
     onSaveError: save.signalError,
   });
+  const conflict = useNoteConflict(note.id);
+  const confirmReload = useConfirm();
+  const reloadNote = async () => {
+    if (
+      state.isDirty &&
+      !(await confirmReload({
+        title: 'Lokale Änderungen verwerfen?',
+        message:
+          'Die Notiz wurde gerade von jemand anderem bearbeitet. Beim Neuladen gehen deine lokalen Änderungen verloren.',
+        confirmLabel: 'Neu laden',
+        variant: 'danger',
+      }))
+    ) {
+      return;
+    }
+    try {
+      const fresh = await NotesApi.get(note.id);
+      onRestored(fresh);
+      conflict.dismiss();
+    } catch (e) {
+      toast.error(getApiError(e));
+    }
+  };
   const [historyOpen, setHistoryOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -1302,6 +1408,14 @@ function MobileNoteShell({
         onBack={onBack}
         onOpenByTitle={onOpenByTitle}
         onCreateFolder={onCreateFolder}
+        conflictBanner={
+          <NoteConflictBanner
+            visible={conflict.hasConflict}
+            isDirty={state.isDirty}
+            onReload={reloadNote}
+            onDismiss={conflict.dismiss}
+          />
+        }
       />
       <VersionHistoryPanel
         noteId={note.id}

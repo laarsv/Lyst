@@ -15,7 +15,7 @@
  *  All shared state (autosave, backlinks) still goes through
  *  `useNoteEditingState` so desktop and mobile keep parity.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowLeft, Loader2, Pin, Sparkles, Users, X } from 'lucide-react';
 import type { Note, NoteFolder, Tag } from '@/types';
 import { NotesApi } from '@/api/endpoints';
@@ -59,6 +59,12 @@ interface Props {
   onBack: () => void;
   onOpenByTitle: (title: string) => void;
   onCreateFolder: () => void;
+  /** Optional slot rendered just above the editor surface — used by
+   *  the parent to mount a "Neu laden?" banner when a remote edit
+   *  lands on this note. Kept as a ReactNode rather than dedicated
+   *  conflict props so the mobile layout doesn't need to know about
+   *  the conflict hook. */
+  conflictBanner?: ReactNode;
 }
 
 export function NoteMobileLayout({
@@ -81,6 +87,7 @@ export function NoteMobileLayout({
   onBack,
   onOpenByTitle,
   onCreateFolder,
+  conflictBanner,
 }: Props) {
   // Fallback derivation when the parent doesn't pass the new flags
   // (keeps older callsites working). Defaults match the pre-permission
@@ -344,6 +351,18 @@ export function NoteMobileLayout({
           </>
         )}
       </div>
+
+      {/* Optional conflict-banner slot. Parent passes a NoteConflictBanner
+          when a remote edit hits the open note. Rendered above the editor
+          surface so the user notices before continuing to type. The
+          banner returns null when no conflict is active — we still wrap
+          in a sized div so the mobile layout's flex math doesn't shift,
+          but the wrapper collapses to 0 height when the banner is null. */}
+      {conflictBanner && (
+        <div className="px-3 shrink-0 empty:hidden [&:has(>*:empty)]:hidden">
+          {conflictBanner}
+        </div>
+      )}
 
       {/* Editor — fills the remaining space, scrolls. Bottom padding
           clears the iOS keyboard so the cursor line never hides behind

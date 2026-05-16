@@ -695,3 +695,27 @@ html[data-theme="dark"] { color-scheme: dark; }
 [data-theme="dark"] .hljs-built_in, [data-theme="dark"] .hljs-builtin-name { color: rgb(86 182 194); }
 [data-theme="dark"] .hljs-meta { color: rgb(92 99 112); }
 
+
+/* ----------------------------------------------------------------------
+   Task deep-link pulse — applied for ~1.5s after the user lands on a
+   /lists/:id?task=<item> or /notes?focus=<n>&task=<t> deep link.
+   ListDetailPage / NotesPage scroll the matching DOM node into view
+   then toggle `.task-pulse` on it.
+
+   Pulses with a brand ring shadow; works on both list-item rows and
+   TipTap taskItem <li>s. The class is removed by the parent after the
+   animation completes so it doesn't keep firing on re-render.
+   ---------------------------------------------------------------------- */
+@keyframes task-pulse {
+  0%   { box-shadow: 0 0 0 0 rgb(var(--color-brand) / 0.55); }
+  60%  { box-shadow: 0 0 0 10px rgb(var(--color-brand) / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(var(--color-brand) / 0); }
+}
+.task-pulse {
+  animation: task-pulse 1.5s ease-out 1;
+  border-radius: 10px;
+  /* Slight bg flash so the ring isn't the only signal — works in
+     dark mode too because brand-50 is themed. */
+  background: rgb(var(--color-brand-50));
+  transition: background-color 1.2s ease-out;
+}

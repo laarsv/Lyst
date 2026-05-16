@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.core.dependencies import require_user
+from app.core.dependencies import get_client_id, require_user
 from app.core.responses import ok
 from app.models.collaborator import CollaboratorPermission
 from app.models.recipe import Recipe
@@ -37,6 +37,12 @@ from app.services.import_service import (
     import_recipe_from_text,
     import_recipe_from_url,
     suggest_recipes_from_ingredients,
+)
+from app.services.realtime_events import (
+    emit_recipe_deleted,
+    emit_recipe_event,
+    emit_share_event,
+    recipe_audience,
 )
 from app.services.recipe_service import (
     add_ingredient,
@@ -248,11 +254,17 @@ async def post_recipe(
     payload: RecipeCreate,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ):
     data = payload.model_dump()
     ingredients = data.pop("ingredients", [])
     steps = data.pop("steps", [])
     rec = await create_recipe(db, user.id, ingredients=ingredients, steps=steps, **data)
+    # New recipe — audience is just the owner (no shares yet), so this
+    # mostly serves the cross-device-same-user case.
+    await emit_recipe_event(
+        db, rec.id, "recipe.created", actor_id=user.id, client_id=client_id
+    )
     return ok(_full(rec))
 
 
@@ -312,6 +324,7 @@ async def patch_recipe(
     payload: RecipeUpdate,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ):
     rec = await _require_recipe_edit(db, recipe_id, user.id)
     rec = await update_recipe(db, rec, **payload.model_dump(exclude_unset=True))
@@ -322,6 +335,9 @@ async def patch_recipe(
     if share_source is not None:
         owner = await db.execute(select(User.name).where(User.id == rec.owner_id))
         owner_name = owner.scalar_one_or_none()
+    await emit_recipe_event(
+        db, recipe_id, "recipe.updated", actor_id=user.id, client_id=client_id
+    )
     return ok(
         _full(
             rec,
@@ -337,12 +353,18 @@ async def del_recipe(
     recipe_id: int,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ):
     try:
         rec = await get_recipe(db, recipe_id, user.id)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    # Snapshot the audience BEFORE delete — cascade nukes the shares.
+    audience = await recipe_audience(db, recipe_id)
     await delete_recipe(db, rec)
+    await emit_recipe_deleted(
+        audience, recipe_id, actor_id=user.id, client_id=client_id
+    )
     return ok({"message": "Deleted"})
 
 
@@ -352,11 +374,18 @@ async def post_duplicate(
     payload: RecipeDuplicate,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ):
     # Open to recipients (any access) — the dup is created in their own
     # account and the source isn't mutated.
     src = await _recipe_with_any_access(db, recipe_id, user.id)
     new = await duplicate_recipe(db, src, user.id, payload.title)
+    # Duplicate lands in the duplicator's account — audience is just
+    # them (no shares yet), so this fires a recipe.created so any
+    # other device of the same user updates.
+    await emit_recipe_event(
+        db, new.id, "recipe.created", actor_id=user.id, client_id=client_id
+    )
     return ok(_full(new))
 
 
@@ -368,9 +397,15 @@ async def post_ingredient(
     payload: IngredientCreate,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ):
     await _require_recipe_edit(db, recipe_id, user.id)
     ing = await add_ingredient(db, recipe_id, **payload.model_dump())
+    # Sub-resource mutation → emit recipe.updated so the open detail
+    # page on other devices re-fetches and shows the new ingredient.
+    await emit_recipe_event(
+        db, recipe_id, "recipe.updated", actor_id=user.id, client_id=client_id
+    )
     return ok(IngredientOut.model_validate(ing).model_dump(mode="json"))
 
 
@@ -380,9 +415,13 @@ async def patch_ingredients_reorder(
     payload: ReorderRequest,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ):
     await _require_recipe_edit(db, recipe_id, user.id)
     await reorder_ingredients(db, recipe_id, [(i.id, i.position) for i in payload.items])
+    await emit_recipe_event(
+        db, recipe_id, "recipe.updated", actor_id=user.id, client_id=client_id
+    )
     return ok({"message": "Reordered"})
 
 
@@ -393,12 +432,16 @@ async def patch_ingredient(
     payload: IngredientUpdate,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ):
     await _require_recipe_edit(db, recipe_id, user.id)
     ing = await get_ingredient(db, recipe_id, ing_id)
     if not ing:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ingredient not found")
     ing = await update_ingredient(db, ing, **payload.model_dump(exclude_unset=True))
+    await emit_recipe_event(
+        db, recipe_id, "recipe.updated", actor_id=user.id, client_id=client_id
+    )
     return ok(IngredientOut.model_validate(ing).model_dump(mode="json"))
 
 
@@ -408,6 +451,7 @@ async def del_ingredient(
     ing_id: int,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ):
     # Spec: deleting an individual ingredient counts as "modifying content"
     # — EDIT recipients allowed.
@@ -416,6 +460,9 @@ async def del_ingredient(
     if not ing:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ingredient not found")
     await delete_ingredient(db, ing)
+    await emit_recipe_event(
+        db, recipe_id, "recipe.updated", actor_id=user.id, client_id=client_id
+    )
     return ok({"message": "Deleted"})
 
 
@@ -427,9 +474,13 @@ async def post_step(
     payload: StepCreate,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ):
     await _require_recipe_edit(db, recipe_id, user.id)
     step = await add_step(db, recipe_id, payload.description)
+    await emit_recipe_event(
+        db, recipe_id, "recipe.updated", actor_id=user.id, client_id=client_id
+    )
     return ok(StepOut.model_validate(step).model_dump(mode="json"))
 
 
@@ -439,9 +490,13 @@ async def patch_steps_reorder(
     payload: ReorderRequest,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ):
     await _require_recipe_edit(db, recipe_id, user.id)
     await reorder_steps(db, recipe_id, [(i.id, i.position) for i in payload.items])
+    await emit_recipe_event(
+        db, recipe_id, "recipe.updated", actor_id=user.id, client_id=client_id
+    )
     return ok({"message": "Reordered"})
 
 
@@ -452,12 +507,16 @@ async def patch_step(
     payload: StepUpdate,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ):
     await _require_recipe_edit(db, recipe_id, user.id)
     step = await get_step(db, recipe_id, step_id)
     if not step:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Step not found")
     step = await update_step(db, step, **payload.model_dump(exclude_unset=True))
+    await emit_recipe_event(
+        db, recipe_id, "recipe.updated", actor_id=user.id, client_id=client_id
+    )
     return ok(StepOut.model_validate(step).model_dump(mode="json"))
 
 
@@ -467,12 +526,16 @@ async def del_step(
     step_id: int,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ):
     await _require_recipe_edit(db, recipe_id, user.id)
     step = await get_step(db, recipe_id, step_id)
     if not step:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Step not found")
     await delete_step(db, step)
+    await emit_recipe_event(
+        db, recipe_id, "recipe.updated", actor_id=user.id, client_id=client_id
+    )
     return ok({"message": "Deleted"})
 
 
@@ -682,6 +745,7 @@ async def post_recipe_image(
     file: UploadFile = File(...),
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ):
     rec = await _require_recipe_edit(db, recipe_id, user.id)
 
@@ -729,6 +793,9 @@ async def post_recipe_image(
     if share_source is not None:
         owner = await db.execute(select(User.name).where(User.id == full.owner_id))
         owner_name = owner.scalar_one_or_none()
+    await emit_recipe_event(
+        db, recipe_id, "recipe.updated", actor_id=user.id, client_id=client_id
+    )
     return ok(
         _full(full, share_source=share_source, owner_name=owner_name, share_permission=perm)
     )
@@ -739,6 +806,7 @@ async def del_recipe_image(
     recipe_id: int,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ):
     rec = await _require_recipe_edit(db, recipe_id, user.id)
     _delete_owned_image(rec.image_url)
@@ -750,6 +818,9 @@ async def del_recipe_image(
     if share_source is not None:
         owner = await db.execute(select(User.name).where(User.id == full.owner_id))
         owner_name = owner.scalar_one_or_none()
+    await emit_recipe_event(
+        db, recipe_id, "recipe.updated", actor_id=user.id, client_id=client_id
+    )
     return ok(
         _full(full, share_source=share_source, owner_name=owner_name, share_permission=perm)
     )
@@ -1176,6 +1247,7 @@ async def post_share_recipe_by_email(
     payload: ShareByEmailRequest,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ):
     try:
         rec = await get_recipe(db, recipe_id, user.id)
@@ -1183,7 +1255,7 @@ async def post_share_recipe_by_email(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
     try:
-        kind, name = await share_recipe_with_email(
+        kind, name, recipient_id = await share_recipe_with_email(
             db, rec, user, payload.email, payload.permission
         )
     except ValueError as e:
@@ -1200,6 +1272,19 @@ async def post_share_recipe_by_email(
         url = f"{settings.FRONTEND_URL}/share/recipe/{rec.share_token}"
         subject, html = recipe_share_email(user.name, rec.title, url)
         await send_email(payload.email, subject, html)
+    elif kind == "internal" and recipient_id is not None:
+        # Fan out share.created → the new recipient's user-WS channel.
+        # Their recipes overview re-fetches and the just-shared recipe
+        # appears; the dispatcher also fires a toast.
+        await emit_share_event(
+            recipient_id=recipient_id,
+            actor_id=user.id,
+            resource_type="recipe",
+            resource_id=rec.id,
+            event="share.created",
+            client_id=client_id,
+            payload={"actor_name": user.name, "title": rec.title},
+        )
 
     return ok(ShareByEmailResponse(type=kind, user_name=name).model_dump())
 
@@ -1251,9 +1336,10 @@ async def post_share_book_by_email(
     payload: ShareByEmailRequest,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ):
     try:
-        kind, name = await share_book_with_email(
+        kind, name, recipient_id = await share_book_with_email(
             db, user, payload.email, payload.permission
         )
     except ValueError as e:
@@ -1268,6 +1354,19 @@ async def post_share_book_by_email(
         url = f"{settings.FRONTEND_URL}/share/recipe-book/{user.recipe_book_share_token}"
         subject, html = recipe_book_share_email(user.name, url)
         await send_email(payload.email, subject, html)
+    elif kind == "internal" and recipient_id is not None:
+        # Share-book recipient gets a share.created targeting the
+        # owner's user_id (resource_id) — the dispatcher's "share"
+        # branch already invalidates recipes for the recipient.
+        await emit_share_event(
+            recipient_id=recipient_id,
+            actor_id=user.id,
+            resource_type="recipe",
+            resource_id=user.id,  # whole-book share — owner id stands in
+            event="share.created",
+            client_id=client_id,
+            payload={"actor_name": user.name, "title": "Rezeptbuch"},
+        )
 
     return ok(ShareByEmailResponse(type=kind, user_name=name).model_dump())
 

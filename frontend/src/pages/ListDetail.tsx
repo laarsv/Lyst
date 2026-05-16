@@ -132,6 +132,31 @@ export function ListDetailPage() {
   // appeared empty until the user navigated away and back.
   useResourceQuery(`list-detail:${listId}`, refresh);
 
+  // Deep-link from /tasks: /lists/<id>?task=<item_id> scrolls the matching
+  // SortableItem into view and adds a .task-pulse ring for 1.5s.
+  // Fires once when both `?task=` and the items state line up; clears
+  // the search param so a re-render doesn't re-pulse, and re-runs when
+  // items become available (the highlight might land before the first
+  // refresh completes if the user deep-links into an unvisited list).
+  useEffect(() => {
+    const taskId = params.get('task');
+    if (!taskId || items.length === 0) return;
+    const id = Number(taskId);
+    if (!Number.isFinite(id)) return;
+    const node = document.querySelector<HTMLElement>(
+      `[data-list-item-id="${id}"]`,
+    );
+    if (!node) return;
+    node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    node.classList.add('task-pulse');
+    const t = window.setTimeout(() => node.classList.remove('task-pulse'), 1600);
+    // Drop the ?task=… so back-nav / re-render doesn't re-pulse.
+    params.delete('task');
+    setParams(params, { replace: true });
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items.length, params.get('task')]);
+
   // Live collab — receive remote changes (skipped for messages we caused
   // ourselves: backend filters by X-Client-Id header). Polling fallback
   // simply re-fetches items if the WS stays down.
