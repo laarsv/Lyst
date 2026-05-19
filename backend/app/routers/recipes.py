@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -16,6 +16,9 @@ from app.schemas.recipe import (
     IngredientCreate,
     IngredientOut,
     IngredientUpdate,
+    NutritionEstimateRequest,
+    NutritionEstimateResponse,
+    NutritionSearchResponse,
     NutritionTotals,
     RecipeCreate,
     RecipeDuplicate,
@@ -37,6 +40,10 @@ from app.services.import_service import (
     import_recipe_from_text,
     import_recipe_from_url,
     suggest_recipes_from_ingredients,
+)
+from app.services.nutrition_lookup_service import (
+    estimate_with_ollama,
+    search_off,
 )
 from app.services.notification_service import notify_share_created
 from app.services.realtime_events import (
@@ -562,6 +569,48 @@ async def del_step(
         db, recipe_id, "recipe.updated", actor_id=user.id, client_id=client_id
     )
     return ok({"message": "Deleted"})
+
+
+# ---------- Nutrition lookup ----------
+#
+# Two endpoints power the "Nährwerte" sheet on each ingredient row:
+#   GET  /recipes/ingredients/nutrition-search?q=…  — OFF candidates
+#   POST /recipes/ingredients/nutrition-estimate    — Ollama fallback
+#
+# `recipe_id` is typed as int on every /{recipe_id} route below, so the
+# literal "ingredients" segment can't collide with those paths.
+
+@router.get("/ingredients/nutrition-search")
+async def get_nutrition_search(
+    q: str = Query(..., min_length=1, max_length=255),
+    user: User = Depends(require_user),
+):
+    """Top 5 Open Food Facts candidates for the query. Returns
+    `unavailable=True` (with empty `results`) when the OFF lookup is
+    disabled by config OR the call failed/timed out — the frontend
+    shows the "Aktuell nicht erreichbar" hint and offers the KI /
+    manuell paths instead."""
+    hits, unavailable = await search_off(q)
+    return ok(
+        NutritionSearchResponse(results=hits, unavailable=unavailable).model_dump(
+            mode="json"
+        )
+    )
+
+
+@router.post("/ingredients/nutrition-estimate")
+async def post_nutrition_estimate(
+    payload: NutritionEstimateRequest,
+    user: User = Depends(require_user),
+):
+    """Local Ollama estimate for ingredients OFF doesn't know about.
+    Always returns a payload (the model surfaces a German note when it
+    can't make a confident guess), so the sheet can show *something*
+    instead of a hard error."""
+    resp: NutritionEstimateResponse = await estimate_with_ollama(
+        payload.name, payload.hint
+    )
+    return ok(resp.model_dump(mode="json"))
 
 
 # ---------- Import from URL via Ollama ----------

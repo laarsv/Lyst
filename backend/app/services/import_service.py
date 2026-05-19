@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.services.nutrition_lookup_service import search_off_for_each
 from app.services.ollama import (
     OllamaError,
     call_text_json,
@@ -71,6 +72,21 @@ class ImportedIngredient(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     quantity: float | None = None
     unit: str | None = Field(default=None, max_length=32)
+    # Per-100g nutrition fields — populated by the post-extraction
+    # Open Food Facts enrichment step. The LLM is NOT asked to produce
+    # these (its guesses are unreliable). Misses stay null; the user
+    # can request a KI-Schätzung from the ingredient row in the editor.
+    calories_per_100g: float | None = None
+    protein_per_100g: float | None = None
+    carbs_per_100g: float | None = None
+    fat_per_100g: float | None = None
+    fiber_per_100g: float | None = None
+    sugar_per_100g: float | None = None
+    salt_per_100g: float | None = None
+    # Same enum values as the DB column: "off" / "ai" / "manual" / null.
+    # The importer only ever sets "off" (when OFF returns a hit) or null.
+    nutrition_source: str | None = None
+    off_product_code: str | None = None
 
 
 class ImportedStep(BaseModel):
@@ -262,6 +278,42 @@ async def _call_anthropic(text: str, model: str) -> dict[str, Any]:
         raise RecipeImportError(500, "Rezept konnte nicht extrahiert werden") from e
 
 
+# ---------- Nutrition enrichment ----------
+
+async def _enrich_ingredients_with_off(recipe: ImportedRecipe) -> ImportedRecipe:
+    """Look each extracted ingredient up in Open Food Facts and pre-fill
+    per-100g nutrition + source on direct hits. Misses stay None — the
+    user can request a KI-Schätzung from the ingredient row later.
+
+    Best-effort: OFF disabled/unreachable yields no enrichment, no
+    error — the import preview still renders, just without 🌍 badges.
+    `search_off` already swallows transport errors and respects the
+    rate gate + 7-day cache, so this is a thin attach-and-go pass."""
+    if not recipe.ingredients:
+        return recipe
+    names = [ing.name for ing in recipe.ingredients]
+    try:
+        hits = await search_off_for_each(names)
+    except Exception as e:  # pragma: no cover — search_off already eats its own errors
+        logger.debug("OFF enrichment skipped: %s", e)
+        return recipe
+    for ing in recipe.ingredients:
+        hit = hits.get(ing.name)
+        if hit is None:
+            continue
+        nut = hit.nutrition
+        ing.calories_per_100g = nut.calories_per_100g
+        ing.protein_per_100g = nut.protein_per_100g
+        ing.carbs_per_100g = nut.carbs_per_100g
+        ing.fat_per_100g = nut.fat_per_100g
+        ing.fiber_per_100g = nut.fiber_per_100g
+        ing.sugar_per_100g = nut.sugar_per_100g
+        ing.salt_per_100g = nut.salt_per_100g
+        ing.nutrition_source = "off"
+        ing.off_product_code = hit.code
+    return recipe
+
+
 # ---------- Image attachment helpers ----------
 
 async def _attach_image_from_html(
@@ -325,10 +377,11 @@ async def _extract_recipe_from_text(
                 step["position"] = i
 
     try:
-        return ImportedRecipe.model_validate(parsed)
+        recipe = ImportedRecipe.model_validate(parsed)
     except ValidationError as e:
         logger.error("LLM JSON failed validation (provider=%s): %s — payload: %s", provider, e, parsed)
         raise RecipeImportError(500, "Extrahierte Daten haben unerwartetes Format") from e
+    return await _enrich_ingredients_with_off(recipe)
 
 
 async def import_recipe_from_url(url: str, db: AsyncSession) -> ImportedRecipe:
@@ -481,7 +534,7 @@ async def import_recipe_from_image(image_bytes: bytes) -> ImportedRecipe:
             )
     except Exception as e:  # pragma: no cover
         logger.debug("Photo image attach failed: %s", e)
-    return recipe
+    return await _enrich_ingredients_with_off(recipe)
 
 
 # ---------- "Was kann ich kochen?" suggestions ----------
