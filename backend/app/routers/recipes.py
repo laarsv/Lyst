@@ -145,16 +145,33 @@ def _nutrition_per_serving(rec) -> NutritionTotals:
     """Sum each macro = (qty_in_grams / 100) * per100g, then divide by servings.
     Only ingredients with both `quantity` and a unit that resolves to grams
     (g, gr, gramm, kg) contribute. ml/EL/Stk are ignored — we'd need a density
-    table to convert them."""
+    table to convert them.
+
+    `is_estimate` flips true when any contributing ingredient was filled
+    from an AI estimate (nutrition_source == "ai"). The recipe detail
+    card renders a "~" prefix when this is set."""
     GRAM_FACTOR = {"g": 1.0, "gr": 1.0, "gramm": 1.0, "kg": 1000.0}
-    totals = {"calories": None, "protein": None, "carbs": None, "fat": None}
     fields = (
         ("calories", "calories_per_100g"),
         ("protein", "protein_per_100g"),
         ("carbs", "carbs_per_100g"),
         ("fat", "fat_per_100g"),
+        ("fiber", "fiber_per_100g"),
+        ("sugar", "sugar_per_100g"),
+        ("salt", "salt_per_100g"),
     )
+    totals: dict[str, float | None] = {k: None for k, _ in fields}
+    is_estimate = False
+    ingredients_with_data = 0
     for ing in rec.ingredients:
+        # "Has nutrition data" = at least one of the seven per-100g
+        # fields is set. Independent of whether the unit converts to
+        # grams — the count drives the "X von Y Zutaten" hint, which
+        # is about the *data* gap, not the unit-conversion gap.
+        if any(getattr(ing, attr) is not None for _, attr in fields):
+            ingredients_with_data += 1
+            if getattr(ing, "nutrition_source", None) and ing.nutrition_source.value == "ai":
+                is_estimate = True
         if ing.quantity is None:
             continue
         unit_key = (ing.unit or "").strip().lower()
@@ -169,8 +186,15 @@ def _nutrition_per_serving(rec) -> NutritionTotals:
             contrib = grams / 100.0 * v
             totals[key] = (totals[key] or 0.0) + contrib
     servings = max(rec.servings, 1)
+    per_serving = {
+        k: round(v / servings, 1) if v is not None else None
+        for k, v in totals.items()
+    }
     return NutritionTotals(
-        **{k: round(v / servings, 1) if v is not None else None for k, v in totals.items()}
+        **per_serving,
+        is_estimate=is_estimate,
+        ingredients_with_data=ingredients_with_data,
+        ingredients_total=len(rec.ingredients),
     )
 
 

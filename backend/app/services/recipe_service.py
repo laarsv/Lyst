@@ -4,7 +4,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.list import List as ListModel, ListType
 from app.models.list_item import ListItem
-from app.models.recipe import Recipe, RecipeIngredient, RecipeStep
+from app.models.recipe import NutritionSource, Recipe, RecipeIngredient, RecipeStep
 
 
 # ---------- Recipe CRUD ----------
@@ -133,6 +133,11 @@ async def add_ingredient(
     protein_per_100g: float | None = None,
     carbs_per_100g: float | None = None,
     fat_per_100g: float | None = None,
+    fiber_per_100g: float | None = None,
+    sugar_per_100g: float | None = None,
+    salt_per_100g: float | None = None,
+    nutrition_source: NutritionSource | None = None,
+    off_product_code: str | None = None,
 ) -> RecipeIngredient:
     pos = await _next_pos(db, RecipeIngredient, RecipeIngredient.recipe_id, recipe_id)
     ing = RecipeIngredient(
@@ -145,6 +150,11 @@ async def add_ingredient(
         protein_per_100g=protein_per_100g,
         carbs_per_100g=carbs_per_100g,
         fat_per_100g=fat_per_100g,
+        fiber_per_100g=fiber_per_100g,
+        sugar_per_100g=sugar_per_100g,
+        salt_per_100g=salt_per_100g,
+        nutrition_source=nutrition_source,
+        off_product_code=off_product_code,
     )
     db.add(ing)
     await db.commit()

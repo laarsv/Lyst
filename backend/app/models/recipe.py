@@ -1,9 +1,23 @@
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ARRAY, Boolean, Float, ForeignKey, Integer, String, Text
+import enum
+
+from sqlalchemy import ARRAY, Boolean, Enum, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
+
+
+class NutritionSource(str, enum.Enum):
+    """Where an ingredient's nutrition values originated.
+
+    NULL on the column (no enum value) means "no nutrition data yet" —
+    kept distinct from `manual` so the auto-lookup pipeline can tell
+    apart "never tried" from "user supplied these by hand".
+    """
+    OFF = "off"
+    AI = "ai"
+    MANUAL = "manual"
 
 if TYPE_CHECKING:
     from app.models.user import User
@@ -63,6 +77,17 @@ class RecipeIngredient(Base, TimestampMixin):
     protein_per_100g: Mapped[float | None] = mapped_column(Float, nullable=True)
     carbs_per_100g: Mapped[float | None] = mapped_column(Float, nullable=True)
     fat_per_100g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fiber_per_100g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sugar_per_100g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    salt_per_100g: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Provenance — null when no values are set. See NutritionSource above.
+    nutrition_source: Mapped[NutritionSource | None] = mapped_column(
+        Enum(NutritionSource, name="nutrition_source", create_type=False),
+        nullable=True,
+    )
+    # OFF barcode the row was filled from; only set when nutrition_source == OFF.
+    off_product_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     recipe: Mapped["Recipe"] = relationship(back_populates="ingredients")
 

@@ -2,6 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.recipe import NutritionSource
 from app.schemas.share import ShareState
 
 
@@ -15,6 +16,11 @@ class IngredientBase(BaseModel):
     protein_per_100g: float | None = Field(default=None, ge=0)
     carbs_per_100g: float | None = Field(default=None, ge=0)
     fat_per_100g: float | None = Field(default=None, ge=0)
+    fiber_per_100g: float | None = Field(default=None, ge=0)
+    sugar_per_100g: float | None = Field(default=None, ge=0)
+    salt_per_100g: float | None = Field(default=None, ge=0)
+    nutrition_source: NutritionSource | None = None
+    off_product_code: str | None = Field(default=None, max_length=32)
 
 
 class IngredientCreate(IngredientBase):
@@ -29,6 +35,11 @@ class IngredientUpdate(BaseModel):
     protein_per_100g: float | None = Field(default=None, ge=0)
     carbs_per_100g: float | None = Field(default=None, ge=0)
     fat_per_100g: float | None = Field(default=None, ge=0)
+    fiber_per_100g: float | None = Field(default=None, ge=0)
+    sugar_per_100g: float | None = Field(default=None, ge=0)
+    salt_per_100g: float | None = Field(default=None, ge=0)
+    nutrition_source: NutritionSource | None = None
+    off_product_code: str | None = Field(default=None, max_length=32)
 
 
 class IngredientOut(IngredientBase):
@@ -41,11 +52,25 @@ class IngredientOut(IngredientBase):
 class NutritionTotals(BaseModel):
     """Per-serving aggregates derived from ingredient nutrition fields.
     All fields are None until at least one ingredient has nutrition data
-    for that macro (so partial information still renders sensibly)."""
+    for that macro (so partial information still renders sensibly).
+
+    `is_estimate` is true when ANY contributing ingredient was filled
+    from an AI estimate — the recipe-detail card renders a "~" prefix
+    in that case so the user knows the totals carry uncertainty.
+
+    `ingredients_with_data` / `ingredients_total` drive the "Werte
+    basieren auf X von Y Zutaten" hint: lets the UI nudge the user to
+    fill the missing rows without hiding the partial totals."""
     calories: float | None = None
     protein: float | None = None
     carbs: float | None = None
     fat: float | None = None
+    fiber: float | None = None
+    sugar: float | None = None
+    salt: float | None = None
+    is_estimate: bool = False
+    ingredients_with_data: int = 0
+    ingredients_total: int = 0
 
 
 # --- Steps ---
@@ -254,6 +279,52 @@ class AiSuggestedStep(BaseModel):
 class AiVariationRequest(BaseModel):
     """The user's desired variation — preset string or free-form."""
     variation: str = Field(min_length=1, max_length=500)
+
+
+# ---------- Nutrition lookup (v1.3.0) ----------
+
+class NutritionValues(BaseModel):
+    """Per-100g block returned by the lookup endpoints — same seven
+    fields the ingredient row stores. All nullable so partial OFF
+    entries (e.g. fiber missing) still come through."""
+    calories_per_100g: float | None = None
+    protein_per_100g: float | None = None
+    carbs_per_100g: float | None = None
+    fat_per_100g: float | None = None
+    fiber_per_100g: float | None = None
+    sugar_per_100g: float | None = None
+    salt_per_100g: float | None = None
+
+
+class NutritionSearchHit(BaseModel):
+    """One candidate from Open Food Facts."""
+    name: str
+    brand: str | None = None
+    code: str  # OFF barcode → off_product_code on save
+    image_url: str | None = None
+    nutrition: NutritionValues
+
+
+class NutritionSearchResponse(BaseModel):
+    results: list[NutritionSearchHit] = Field(default_factory=list)
+    # True when OFF lookup was disabled or unreachable — the frontend
+    # uses this to show "Aktuell nicht erreichbar, KI oder manuell
+    # verwenden" instead of an empty state.
+    unavailable: bool = False
+
+
+class NutritionEstimateRequest(BaseModel):
+    """User-typed ingredient name + optional context ('Tante Käthes
+    Spezialgewürz, etwa wie Curry') to bias the Ollama estimate."""
+    name: str = Field(min_length=1, max_length=255)
+    hint: str | None = Field(default=None, max_length=255)
+
+
+class NutritionEstimateResponse(BaseModel):
+    nutrition: NutritionValues
+    # Free-text note from the model — surfaced as a small italic line in
+    # the Nährwerte sheet so the user knows it's a guess.
+    note: str | None = None
 
 
 # ---------- Internal sharing (alembic 0012, permissions added in 0014) ----
