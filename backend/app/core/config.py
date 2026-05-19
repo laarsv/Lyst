@@ -55,6 +55,13 @@ class Settings(BaseSettings):
     ANTHROPIC_MODEL: str = "claude-haiku-4-5"
     ANTHROPIC_TIMEOUT_SECONDS: int = 60
 
+    # Open Food Facts integration for ingredient nutrition lookup.
+    # When false: the Nährwerte sheet skips the OFF call and only offers
+    # the Ollama estimate + manual paths (also documented in CONFIGURATION.md).
+    # Default on — OFF is free, anonymous, and one of the few high-quality
+    # nutrition datasets we can hit without an API key.
+    NUTRITION_LOOKUP_ENABLED: bool = True
+
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.BACKEND_CORS_ORIGINS.split(",") if o.strip()]

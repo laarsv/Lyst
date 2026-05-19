@@ -101,9 +101,23 @@ async def duplicate_recipe(db: AsyncSession, src: Recipe, owner_id: int, title: 
     db.add(new)
     await db.flush()
     for ing in src.ingredients:
+        # Carry nutrition fields + provenance forward — the common case
+        # for "Rezept duplizieren" is "alles wie das Original, ich passe
+        # nur ein paar Schritte an", not "Nährwerte fang ich neu an".
+        # off_product_code stays attached so a later "Werte aktualisieren"
+        # on the copy can re-pull the exact same OFF product.
         db.add(RecipeIngredient(
             recipe_id=new.id, name=ing.name, quantity=ing.quantity,
             unit=ing.unit, position=ing.position,
+            calories_per_100g=ing.calories_per_100g,
+            protein_per_100g=ing.protein_per_100g,
+            carbs_per_100g=ing.carbs_per_100g,
+            fat_per_100g=ing.fat_per_100g,
+            fiber_per_100g=ing.fiber_per_100g,
+            sugar_per_100g=ing.sugar_per_100g,
+            salt_per_100g=ing.salt_per_100g,
+            nutrition_source=ing.nutrition_source,
+            off_product_code=ing.off_product_code,
         ))
     for step in src.steps:
         db.add(RecipeStep(
