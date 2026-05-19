@@ -123,10 +123,29 @@ async def _next_pos(db: AsyncSession, model, fk_col, fk_value: int) -> int:
 
 
 async def add_ingredient(
-    db: AsyncSession, recipe_id: int, *, name: str, quantity: float | None, unit: str | None,
+    db: AsyncSession,
+    recipe_id: int,
+    *,
+    name: str,
+    quantity: float | None,
+    unit: str | None,
+    calories_per_100g: float | None = None,
+    protein_per_100g: float | None = None,
+    carbs_per_100g: float | None = None,
+    fat_per_100g: float | None = None,
 ) -> RecipeIngredient:
     pos = await _next_pos(db, RecipeIngredient, RecipeIngredient.recipe_id, recipe_id)
-    ing = RecipeIngredient(recipe_id=recipe_id, name=name, quantity=quantity, unit=unit, position=pos)
+    ing = RecipeIngredient(
+        recipe_id=recipe_id,
+        name=name,
+        quantity=quantity,
+        unit=unit,
+        position=pos,
+        calories_per_100g=calories_per_100g,
+        protein_per_100g=protein_per_100g,
+        carbs_per_100g=carbs_per_100g,
+        fat_per_100g=fat_per_100g,
+    )
     db.add(ing)
     await db.commit()
     await db.refresh(ing)

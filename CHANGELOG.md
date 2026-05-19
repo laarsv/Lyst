@@ -2,6 +2,15 @@
 
 Alle nennenswerten Änderungen pro Release. Datumsangaben sind ISO 8601.
 
+## v1.2.1 — 2026-05-19
+
+Patch-Release mit zwei Regressionen aus v1.2.0.
+
+### Fixes
+
+- **Rezept-Zutaten speichern** — 500-Fehler beim Anlegen/Bearbeiten einer Zutat mit Nährwert-Feldern (`calories_per_100g`, `protein_per_100g`, `carbs_per_100g`, `fat_per_100g`). Die Service-Funktion `add_ingredient` akzeptierte die neuen Felder nicht und scheiterte mit einem `TypeError`. Beide Felder werden jetzt sauber durchgereicht.
+- **WebSocket `/ws/user` 403** — verbindete sich zuverlässig nicht mehr, der „Live"-Indikator blieb grau. Der Auth-Pfad gleicht jetzt exakt `get_current_user` (User-Lookup + `is_active`-Check) und protokolliert die jeweilige Reject-Ursache, damit ein erneutes Auftreten direkt im Log sichtbar ist.
+
 ## v1.2.0 — 2026-05-16
 
 Größtes Update seit dem ersten Release. Schwerpunkte:
