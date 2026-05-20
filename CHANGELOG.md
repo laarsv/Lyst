@@ -2,6 +2,14 @@
 
 Alle nennenswerten Änderungen pro Release. Datumsangaben sind ISO 8601.
 
+## v1.3.1 — 2026-05-20
+
+Hotfix für eine Regression aus v1.3.0.
+
+### Fixes
+
+- **Zutat mit Nährwerten speichern (500-Fehler)** — beim Speichern eines bestehenden Rezepts mit gesetzter Nährwert-Quelle quittierte der Server jede PATCH-Anfrage auf `/recipes/{id}/ingredients/{ingId}` mit `500 Internal Server Error` (Postgres: `invalid input value for enum nutrition_source: "OFF"`). Ursache: SQLAlchemy's Enum-Typ persistierte den Enum-NAMEN (`OFF`) statt des -WERTS (`off`), der von Migration 0020 als Postgres-Enum-Wert angelegt wurde. Fix: `values_callable` auf der SA-Column, damit der Lowercase-Wert geschrieben wird — passt zum API-Contract end-to-end (Frontend, Pydantic-Schema und Postgres-Enum erwarten alle Lowercase). Keine Datenmigration nötig.
+
 ## v1.3.0 — 2026-05-20
 
 Automatische Nährwert-Erfassung für Rezept-Zutaten — Open Food Facts

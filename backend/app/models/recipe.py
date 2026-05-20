@@ -82,8 +82,23 @@ class RecipeIngredient(Base, TimestampMixin):
     salt_per_100g: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # Provenance — null when no values are set. See NutritionSource above.
+    #
+    # `values_callable` is load-bearing here. SQLAlchemy's Enum() defaults
+    # to writing the Python enum's NAME ("OFF") to the DB column. Our
+    # Postgres enum type, however, only knows the lowercase VALUES
+    # ("off", "ai", "manual") — that's what alembic 0020 created and what
+    # the API contract uses end-to-end. Without this callable, every
+    # PATCH /ingredients carrying nutrition_source hits an
+    # "invalid input value for enum nutrition_source: OFF" and 500s.
+    # (CollaboratorPermission gets away without it because its names
+    # already coincide with its values, "VIEW"/"EDIT".)
     nutrition_source: Mapped[NutritionSource | None] = mapped_column(
-        Enum(NutritionSource, name="nutrition_source", create_type=False),
+        Enum(
+            NutritionSource,
+            name="nutrition_source",
+            create_type=False,
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
         nullable=True,
     )
     # OFF barcode the row was filled from; only set when nutrition_source == OFF.
