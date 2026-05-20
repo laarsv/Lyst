@@ -2,7 +2,7 @@
 
 Alle nennenswerten Änderungen pro Release. Datumsangaben sind ISO 8601.
 
-## Unreleased — v1.3.0
+## v1.3.0 — 2026-05-20
 
 Automatische Nährwert-Erfassung für Rezept-Zutaten — Open Food Facts
 als Primärquelle, lokales Ollama als Fallback, manuelle Eingabe als
