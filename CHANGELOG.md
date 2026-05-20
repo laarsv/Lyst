@@ -2,6 +2,55 @@
 
 Alle nennenswerten Änderungen pro Release. Datumsangaben sind ISO 8601.
 
+## Unreleased — v1.3.0
+
+Automatische Nährwert-Erfassung für Rezept-Zutaten — Open Food Facts
+als Primärquelle, lokales Ollama als Fallback, manuelle Eingabe als
+Letzte Instanz. Quelle pro Zutat sichtbar, Recipe-Detail rechnet
+pro Portion zusammen.
+
+### Highlights
+
+- **Open Food Facts integriert** — beim Anlegen einer Zutat (manuell oder per AI-Import) schlägt Lyst bis zu 5 OFF-Treffer vor; ein Klick übernimmt Kalorien, Eiweiß, Kohlenhydrate, Fett, Ballaststoffe, Zucker und Salz pro 100 g.
+- **AI-Recipe-Import füllt Nährwerte vor** — URL, Foto, HTML, PDF und Freitext lösen nach der Extraktion automatisch eine OFF-Abfrage pro Zutat aus. Erfolgreiche Treffer landen in der Import-Vorschau mit 🌍-Badge.
+- **KI-Schätzung als Fallback** — Zutaten, die OFF nicht kennt („Tante Käthes Spezialgewürz"), bekommen über das lokale Ollama-Modell eine Schätzung der sieben Werte plus kurzem Hinweistext. Markiert mit 🤖-Badge.
+- **Quelle pro Zutat sichtbar** — jede Zutat zeigt im Editor und in der Detailansicht ein kleines Icon: 🌍 Open Food Facts, 🤖 KI-Schätzung, ✏️ manuell eingetragen, kein Icon = noch keine Werte. Tooltip nennt die genaue Quelle (z. B. „Open Food Facts (Followfish)").
+- **Nährwerte pro Portion auf der Rezept-Detailseite** — alle sieben Makros, sauber pro Portion umgerechnet. Wird auf Schätzungen aufgebaut, prefixiert die Zahlen mit „~"; bei Teildaten erklärt ein dezenter Hinweis „Werte basieren auf X von Y Zutaten — fehlende ergänzen?".
+- **„Werte aktualisieren"-Knopf** — refresht die OFF-Daten für alle Zutaten, die noch keine eigene Quelle haben oder schon auf OFF basieren. Manuelle und KI-Schätzungen bleiben erhalten — die gehören dem Nutzer.
+
+### Datenmodell (alembic 0020)
+
+- Drei neue per-100g-Spalten auf `recipe_ingredients`: `fiber_per_100g`, `sugar_per_100g`, `salt_per_100g`. v1.2.0 trug nur kcal / Eiweiß / KH / Fett.
+- Neues Postgres-Enum `nutrition_source` mit Werten `off` / `ai` / `manual`. Nullable — `NULL` = „noch keine Werte gepflegt", abzugrenzen von `manual` = „manuell eingetragen".
+- Neue Spalte `off_product_code` (varchar 32) für den OFF-Barcode bei OFF-Treffern — ermöglicht spätere Re-Fetches über „Werte aktualisieren".
+- Bestandsrezepte sind nicht betroffen — alle neuen Spalten sind nullable und ohne Default, alte Zutaten behalten ihren bisherigen Zustand.
+
+### Backend
+
+- `services/nutrition_lookup_service`:
+  - `search_off(query)` mit 4 s Timeout, 7-Tage In-Process-Cache, ~1 req/sec Rate-Gate, dediziertem `User-Agent: Lyst/1.3` (OFF-Fair-Use-Policy), `lc=de`-Hint für deutsche Labels.
+  - `search_off_for_each(queries, concurrency=3)` als Batch-Variante für den AI-Importer.
+  - `estimate_with_ollama(name, hint?)` reuse-t den vorhandenen `call_text_json`-Helper, deutsche System-Prompt, gibt bei Modellfehlern eine leere Antwort + Hinweis statt 500.
+- `routers/recipes`:
+  - `GET /recipes/ingredients/nutrition-search?q=…` → bis zu 5 Kandidaten, `unavailable=true` bei abgeschaltetem Flag oder Netzwerk-Fehler.
+  - `POST /recipes/ingredients/nutrition-estimate` → KI-Schätzung mit `note`-Feld.
+- `services/import_service`:
+  - Nach der LLM-Extraktion läuft `_enrich_ingredients_with_off` über alle Zutaten und füllt OFF-Treffer mit `nutrition_source="off"` + Barcode. Misses bleiben leer.
+- `services/recipe_service.duplicate_recipe`:
+  - Übernimmt jetzt alle sieben Nährwert-Felder + Quelle + Barcode aufs Duplikat — vorher gingen sie verloren.
+- Neue Setting `NUTRITION_LOOKUP_ENABLED` (Default `true`). Bei `false` werden OFF-Aufrufe übersprungen — siehe [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md#nutrition-lookup--open-food-facts-optional-recommended).
+
+### Frontend
+
+- `components/recipes/NutritionSheet` — Bottom-Sheet auf Mobile, zentrierter Modal auf Desktop. Drei Views in einer Fläche: OFF-Kandidaten / KI-Schätzung / manuelle Eingabe (sieben Felder). Eigene Empty-State-Texte für „lädt", „nichts gefunden" und „OFF nicht erreichbar".
+- `components/recipes/NutritionBadge` — kleines Icon plus exakter Tooltip-Text pro Quelle.
+- **Rezept-Editor**: alter Inline-Aufklapp-Bereich für Nährwerte ersetzt durch einen einzelnen Apple-Button pro Zutat, der die Sheet öffnet. Quelle-Badge neben dem Namen, Menge/Einheit bleiben inline editierbar.
+- **Rezept-Detail**: NutritionCard zeigt jetzt alle sieben Makros, „~"-Prefix bei Schätzungsanteil, partielle-Daten-Hinweis, Refresh-Button für „Werte aktualisieren".
+
+### Privacy
+
+- Open Food Facts ist ein externer Dienst — wer alle Rezeptdaten lokal halten will, setzt `NUTRITION_LOOKUP_ENABLED=false`. Die Sheet bietet dann nur KI-Schätzung + manuell.
+
 ## v1.2.1 — 2026-05-19
 
 Patch-Release mit zwei Regressionen aus v1.2.0.

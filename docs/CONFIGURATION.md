@@ -91,6 +91,34 @@ Pay-per-token. Leave the API key empty to keep Claude disabled.
 
 ---
 
+## Nutrition lookup — Open Food Facts (optional, recommended)
+
+When a user adds or imports a recipe ingredient, Lyst can look it up
+in [Open Food Facts](https://world.openfoodfacts.org) to auto-fill the
+per-100 g nutrition fields (calories, protein, carbs, fat, fiber,
+sugar, salt). OFF is free, anonymous, requires no API key, and is
+one of the few high-quality food databases that's safe to hit
+without a contract — so it's enabled by default.
+
+What the backend does on your behalf when this is on:
+
+- Sends `GET https://world.openfoodfacts.org/cgi/search.pl?…` for each
+  ingredient name on the **AI recipe importer** (URL / photo / HTML /
+  PDF / free-text) and on every **manual "Nährwerte" sheet** click.
+- Identifies itself with `User-Agent: Lyst/1.3 (https://github.com/laarsv/Lyst)`
+  as OFF's fair-use policy asks.
+- Caches each query for 7 days in the backend process and rate-limits
+  outgoing calls to ~1/second so the upstream service isn't hammered.
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `NUTRITION_LOOKUP_ENABLED` | no | `true` | Set to `false` to skip every OFF call. The "Nährwerte" sheet then only offers the local Ollama estimate + manual entry. Already-stored nutrition values are unaffected — this only governs new lookups. |
+
+Set `NUTRITION_LOOKUP_ENABLED=false` if you want to keep all recipe
+data local (no external HTTP requests during recipe edits/imports).
+
+---
+
 ## Common scenarios
 
 ### Plain self-hosted, single host
