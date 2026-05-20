@@ -367,8 +367,24 @@ function NutritionCard({
         if (!ing.name.trim()) continue;
         try {
           const resp = await RecipesApi.searchNutrition(ing.name.trim());
-          const group = resp.groups[0];
-          const hit = group?.results[0];
+          // Defensive: a stale service-worker payload from v1.3 may
+          // still surface here with `{results: [...]}` and no
+          // `groups` — coerce both shapes into one local list.
+          const raw = resp as unknown as {
+            groups?: Array<{
+              source: 'usda' | 'off';
+              results?: typeof resp.groups[number]['results'];
+            }>;
+            results?: typeof resp.groups[number]['results'];
+          };
+          const groupsList = Array.isArray(raw.groups)
+            ? raw.groups
+            : Array.isArray(raw.results) && raw.results.length > 0
+              ? [{ source: 'off' as const, results: raw.results }]
+              : [];
+          const group = groupsList[0];
+          const groupResults = Array.isArray(group?.results) ? group!.results : [];
+          const hit = groupResults[0];
           if (!group || !hit) continue;
           await RecipesApi.updateIngredient(recipe.id, ing.id, {
             calories_per_100g: hit.nutrition.calories_per_100g,

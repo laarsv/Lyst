@@ -136,10 +136,33 @@ export function NutritionSheet({
       try {
         const resp = await RecipesApi.searchNutrition(ingredientName.trim());
         if (cancelled) return;
-        setGroups(resp.groups);
-        setUnavailable(resp.unavailable);
+        // Defensive: a service-worker entry from v1.3 may still carry
+        // the pre-grouping shape `{results: [...]}`, and a backend
+        // running before alembic 0021 could in theory respond with
+        // either shape too. Normalise the legacy shape into an OFF
+        // group so the UI doesn't trip over a missing `groups` array.
+        const raw = resp as unknown as {
+          groups?: NutritionSearchGroup[];
+          results?: NutritionSearchHit[];
+          unavailable?: boolean;
+        };
+        const incomingGroups: NutritionSearchGroup[] = Array.isArray(raw.groups)
+          ? raw.groups
+          : Array.isArray(raw.results) && raw.results.length > 0
+            ? [{ source: 'off', label: 'Markenprodukte', results: raw.results }]
+            : [];
+        // Each group's `results` may also be undefined in a malformed
+        // payload — coerce to [] per group so downstream maps stay safe.
+        const safeGroups = incomingGroups
+          .map((g) => ({ ...g, results: Array.isArray(g.results) ? g.results : [] }))
+          .filter((g) => g.results.length > 0);
+        setGroups(safeGroups);
+        setUnavailable(Boolean(raw.unavailable));
       } catch {
-        if (!cancelled) setUnavailable(true);
+        if (!cancelled) {
+          setGroups([]);
+          setUnavailable(true);
+        }
       } finally {
         if (!cancelled) setSearching(false);
       }
@@ -208,7 +231,20 @@ export function NutritionSheet({
 
   // ---------- Body ----------
 
-  const totalResults = groups.reduce((n, g) => n + g.results.length, 0);
+  // `safeGroups` covers two failure modes at once:
+  //   1. an old service-worker cached response landed in state without
+  //      a `groups` array (legacy v1.3 shape) — possible because the
+  //      same URL was served by an older bundle on this device.
+  //   2. a freshly-rendered group lacks `results` (defensive — backend
+  //      should never do this, but the crash before the fix went here).
+  // We pay one Array.isArray per render which is cheap and means a
+  // sudden upstream shape change can't blank-screen the whole app.
+  const safeGroups = Array.isArray(groups)
+    ? groups
+        .map((g) => ({ ...g, results: Array.isArray(g?.results) ? g.results : [] }))
+        .filter((g) => g.results.length > 0)
+    : [];
+  const totalResults = safeGroups.reduce((n, g) => n + g.results.length, 0);
 
   const body = (
     <div className="flex flex-col gap-3">
@@ -246,7 +282,7 @@ export function NutritionSheet({
             </p>
           ) : (
             <div className="max-h-72 overflow-y-auto pr-1 space-y-4">
-              {groups.map((group) => (
+              {safeGroups.map((group) => (
                 <section key={group.source} className="space-y-2">
                   <div className="text-xs uppercase tracking-wider text-muted flex items-center gap-1.5">
                     {group.source === 'usda' ? (

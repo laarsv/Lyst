@@ -2,6 +2,22 @@
 
 Alle nennenswerten Änderungen pro Release. Datumsangaben sind ISO 8601.
 
+## v1.4.1 — 2026-05-20
+
+Hotfix für einen White-Screen-Crash, der direkt nach v1.4.0 auftauchte.
+
+### Fixes
+
+- **Nährwerte-Sheet stürzte ab (`Cannot read properties of undefined (reading 'reduce')`)** — wenn die Nährwert-Suche eine Response ohne `groups`-Array zurückgab (typischerweise ein vom Service Worker gecachter Eintrag aus v1.3 mit der alten `{results: [...]}`-Form, oder ein vereinzelter Upstream-Glitch), lief `groups.reduce(...)` ins Leere und blank-screened die ganze App. Fix in zwei Schichten:
+  - Beim Empfangen der Response (`NutritionSheet`, `RecipeDetail.refreshAll`) wird die Payload defensiv normalisiert: alte `{results: [...]}`-Form wird in eine einzelne OFF-Gruppe konvertiert; fehlende `groups`/`results` werden auf `[]` gekappt.
+  - Im Render-Pfad verwendet die Sheet ein `safeGroups`, das Arrays vor jedem `.reduce`/`.map` validiert — selbst wenn der State je in einen pathologischen Zustand kommt, kann er die App nicht mehr legen.
+- **`refreshAll` (Werte aktualisieren)** liest jetzt ebenfalls beide Response-Shapes und beendet einzelne Zutat-Fehler still, statt durchzucrashen.
+- Empty-State-Verzweigungen bestätigt:
+  - OFF down (aktuell 503) + USDA-Treffer → nur „Lebensmittel" sichtbar, kein Crash.
+  - Beide Quellen liefern nichts → „Nichts gefunden" + KI / Manuell.
+  - `unavailable=true` → „Aktuell nicht erreichbar" + KI / Manuell.
+  - Rezept ohne Nährwert-Daten → `NutritionCard` blendet sich still aus (Verhalten aus v1.3 beibehalten).
+
 ## v1.4.0 — 2026-05-20
 
 USDA FoodData Central kommt als primäre Quelle für Rohzutaten neben
