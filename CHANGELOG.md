@@ -2,6 +2,66 @@
 
 Alle nennenswerten Änderungen pro Release. Datumsangaben sind ISO 8601.
 
+## v1.4.2 — 2026-05-20
+
+OFF-Nährwertsuche auf die neue Search-a-licious-API umgezogen, Rate-Gate
+auf das veröffentlichte Limit korrigiert und Compound/Brand-Suchterme
+deutlich treffsicherer.
+
+### Hintergrund
+
+- `world.openfoodfacts.org/cgi/search.pl` ist deprecated und liefert seit
+  Mai 2026 global `503` — alle OFF-Suchen brachen lautlos ab. Nachfolger
+  ist Search-a-licious (`search.openfoodfacts.org`, Elasticsearch).
+- OFF's veröffentlichtes Limit ist 10 Requests/Minute/IP für jede Suche.
+  Unser ~1/Sekunde-Gate (60/min) hätte uns langfristig einen IP-Block
+  eingehandelt.
+- Compound-Begriffe wie „Express-Reis" trafen weder in USDA (kennt nur
+  „rice") noch in OFF — der Bindestrich war der eigentliche Killer.
+
+### Fixes
+
+- **OFF → Search-a-licious** — neue Basis-URL und Query-Parameter
+  (`q`, `langs=de,en`, `page_size`, `fields`, `sort_by=-popularity_key`).
+  Response-Mapping angepasst: `brands` ist jetzt ein Array statt einer
+  komma-separierten Zeichenkette; `nutriments.*_100g` heißen weiterhin
+  identisch. Hits ohne `product_name` (kommen vor, wenn nur die
+  per-Sprache-Felder gefüllt sind) werden übersprungen. User-Agent
+  trägt jetzt einen Contact-Link gemäß OFF-Policy.
+- **Korrekter Rate-Gate** — OFF läuft jetzt durch ein Rolling-Window
+  Token-Bucket mit 10 Slots / 58 s (Sicherheitsmarge zur 60-s-Grenze).
+  USDA bleibt auf 1 req/s, ihr 1000 / h passt locker.
+- **USDA-first im Importer** — `search_for_each` fanst zuerst USDA für
+  ALLE Zutaten parallel an (USDA-Quota deckt 15-Zutaten-Rezepte locker).
+  OFF wird nur noch sequentiell für USDA-Misses angefragt und nur
+  solange der 10/min-Budget noch Slots hat — passt damit auch für
+  größere Batch-Importe. Übrige Misses bleiben leer, der Nutzer kann
+  später via Sheet KI/manuell ergänzen.
+- **Smartere Query-Normalisierung** — Brand-/Format-Präfixe (Bio-,
+  TK-, Express-, Frisch-, Vollkorn-, Bio, Öko, …) werden gestrippt,
+  und Compound-Wörter mit Bindestrich kollabieren auf den letzten
+  (head-final) Bestandteil. So findet „Express-Reis" → „Reis" → USDA
+  rice, „Bio-Hähnchenbrust" → „Hähnchenbrust" → chicken breast.
+- **„Unavailable" nur noch bei echten Ausfällen** — Backend setzt das
+  Flag jetzt strikt nur, wenn jede konfigurierte Quelle wirklich
+  errort (HTTP/Timeout/Netz). Eine 0-Treffer-Antwort auf gesunder
+  Verbindung ist KEIN „nicht erreichbar" mehr — die Sheet zeigt jetzt
+  „Keine Treffer gefunden — KI-Schätzung oder manuell" statt der
+  Service-Down-Meldung.
+
+### Verifizierte Fälle
+
+- `Avocado` → USDA-Avocado oben, OFF-„Avocados (Lidl)" darunter.
+- `Express-Reis` → USDA `rice` über die Normalisierung; OFF-Treffer
+  auf das Roh-Wort „Reis".
+- `Bio-Hähnchenbrust` → USDA `chicken breast raw`.
+- 7-Tage-Cache deckt Wiederholungs-Suchen ohne neue Netz-Calls (keine
+  Logik verändert, nur die Bedeutung — bei dem 10/min Budget jetzt
+  doppelt wichtig).
+- 15-Zutaten-Importe halten das OFF-Budget ein: USDA bedient die
+  Mehrheit, OFF wird nur für die letzten ein bis zwei Misses
+  konsultiert.
+
 ## v1.4.1 — 2026-05-20
 
 Hotfix für einen White-Screen-Crash, der direkt nach v1.4.0 auftauchte.

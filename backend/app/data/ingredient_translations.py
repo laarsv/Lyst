@@ -30,6 +30,32 @@ import re
 _ARTICLES = {"der", "die", "das", "ein", "eine", "einer", "eines"}
 
 
+# Brand/format prefixes German cookbooks and supermarket sites love to
+# bolt onto the actual ingredient ("Express-Reis", "Bio-Hähnchenbrust",
+# "TK-Erbsen", "Frisch-Spinat"). USDA only knows "rice"/"chicken
+# breast"/"peas" — and even OFF has more luck on the bare noun. We
+# strip these as a *prefix* (with or without a trailing hyphen/space)
+# before the table lookup so the translation hits.
+#
+# Order matters: longer prefixes first so "vollkorn" beats a stray "voll".
+_QUALIFIER_PREFIXES: tuple[str, ...] = (
+    "express",
+    "ungeschwefelt",
+    "gefrier",
+    "feinst",
+    "halbfett",
+    "low fat",
+    "lowfat",
+    "fettarm",
+    "vollkorn",
+    "vollfett",
+    "frisch",
+    "tk",
+    "bio",
+    "öko",
+)
+
+
 # Common German plural endings we try to strip — longest first so
 # "tomaten" → "tomate" (strip "n") wins over an incorrect "en"-strip
 # that would yield "tomat". Applied ONLY as a second-pass fallback in
@@ -344,12 +370,59 @@ INGREDIENT_TRANSLATIONS: dict[str, str] = {
 }
 
 
+def _strip_qualifier_prefix(token: str) -> str:
+    """Drop a leading qualifier when followed by a hyphen or whitespace
+    inside the token. Examples:
+      "express-reis" -> "reis"
+      "bio-hähnchenbrust" -> "hähnchenbrust"
+      "tk-erbsen" -> "erbsen"
+      "vollkornnudeln" -> "vollkornnudeln" (no separator, stays whole —
+        compound nouns without a hyphen keep their canonical form, the
+        table already keys them that way)
+    Hyphens in the middle of a real compound ("rote-bete") aren't a
+    qualifier — the prefix list is curated to known marketing words.
+    """
+    for pre in _QUALIFIER_PREFIXES:
+        if token.startswith(pre + "-") and len(token) > len(pre) + 1:
+            return token[len(pre) + 1 :]
+        if token.startswith(pre + " ") and len(token) > len(pre) + 1:
+            return token[len(pre) + 1 :]
+    return token
+
+
+def _hyphen_core(token: str) -> str:
+    """If a token contains a hyphen and the LAST segment is non-trivial,
+    return the last segment as the most likely core noun.
+
+    German compound nouns like "Express-Reis" / "Hartweizen-Spaghetti"
+    follow head-final order: the rightmost segment is the head noun.
+    Stripping after the last hyphen gives us the cooking term ("Reis",
+    "Spaghetti") that USDA and OFF actually index.
+
+    Returns the original token unchanged when there's no hyphen.
+    """
+    if "-" not in token:
+        return token
+    last = token.rsplit("-", 1)[-1]
+    # Guard against trailing-hyphen junk and 1-char tails ("Bio-A").
+    if len(last) >= 3:
+        return last
+    return token
+
+
 def normalize(term: str) -> str:
-    """Lowercase, strip articles, collapse spaces — does NOT touch the
-    word stem. The table is keyed in canonical German singular form
-    ("möhre", "tomate"), so plural-to-singular collapsing happens
-    lazily inside translate() as a fallback (longest ending first to
-    avoid mangling stems).
+    """Lowercase, strip articles, drop qualifier prefixes, collapse
+    hyphenated compound brand terms to their core noun, collapse
+    whitespace. Does NOT mangle the stem — plural-to-singular collapsing
+    happens lazily inside translate() as a fallback (longest ending
+    first to avoid mangling stems).
+
+    Examples (all -> their canonical singular):
+      "die Möhre"           -> "möhre"
+      "Bio-Hähnchenbrust"   -> "hähnchenbrust"
+      "Express-Reis"        -> "reis"
+      "TK-Erbsen"           -> "erbsen"
+      "Frische Tomaten"     -> "frische tomaten"  (translate() handles "tomaten")
     """
     if not term:
         return ""
@@ -358,7 +431,18 @@ def normalize(term: str) -> str:
     s = re.sub(r"\s+", " ", s).strip()
     if not s:
         return ""
-    tokens = [t for t in s.split(" ") if t and t not in _ARTICLES]
+    tokens: list[str] = []
+    for tok in s.split(" "):
+        if not tok or tok in _ARTICLES:
+            continue
+        # Qualifier strip first ("bio-hähnchenbrust" -> "hähnchenbrust"),
+        # then hyphen-collapse for anything left ("hartweizen-spaghetti"
+        # -> "spaghetti"). Run them in this order so the qualifier
+        # rules fire on the original token, not the hyphen-stripped
+        # remainder (which could start with a non-qualifier).
+        tok = _strip_qualifier_prefix(tok)
+        tok = _hyphen_core(tok)
+        tokens.append(tok)
     return " ".join(tokens)
 
 
@@ -379,6 +463,33 @@ def _depluralise_candidates(token: str) -> list[str]:
             if cand and cand not in seen:
                 seen.add(cand)
                 out.append(cand)
+    return out
+
+
+def search_variants(term: str) -> list[str]:
+    """Yield up to two German search forms for a user-typed term:
+
+      1. The fully normalised form (qualifier + hyphen-collapsed + plural-
+         friendly). What we *prefer* to send to OFF — the bare noun
+         hits OFF's product index more reliably.
+      2. The original lowercased term, only if it differs from (1).
+         Kept as a secondary form so a brand-fixated query like
+         "Milram Frischkäse" still has a chance of returning the
+         specific Milram product, not just generic Frischkäse.
+
+    The lookup service runs both, merges, dedups by `code`, and
+    re-ranks. Returning a list (rather than a single string) keeps the
+    caller honest about the fan-out.
+    """
+    if not term or not term.strip():
+        return []
+    lower = " ".join(term.strip().lower().split())
+    normalised = normalize(term)
+    out: list[str] = []
+    if normalised:
+        out.append(normalised)
+    if lower and lower != normalised:
+        out.append(lower)
     return out
 
 

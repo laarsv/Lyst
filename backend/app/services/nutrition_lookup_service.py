@@ -12,26 +12,31 @@ Three entry points:
     long marketing titles ("Avocado" beats "100% Pure Avocado Oil Spray").
 
   search_for_each(queries)
-    Batch helper used by the AI recipe importer. Per ingredient, tries
-    USDA first; falls back to OFF on a miss. Returns one
-    NutritionSearchHit (or None) per name with `source` flagged so the
-    importer can stamp the right enum on the ingredient row.
+    Batch helper used by the AI recipe importer. USDA-first for every
+    ingredient (USDA's quota is generous — 1000/h with a key); OFF
+    only fills the USDA misses, and only as long as the 10/min OFF
+    budget hasn't been blown. Returns one NutritionSearchHit (or None)
+    per name with `source` flagged.
 
   estimate_with_ollama(name, hint=None)
     Local Ollama estimate — unchanged from v1.3.
 
-Fair-use:
-  - OFF asks for a real User-Agent and ~1 req/sec — we honor both.
-  - USDA asks for an API key (free) but has no public req/sec gate
-    other than the daily quota; we still serialise through our own
-    per-second gate to stay polite and avoid bursting during recipe
-    import.
-Each upstream has its own rate gate + the search-level cache covers
-the merged result, so a re-search inside 7d hits memory regardless.
+OFF migration (v1.4.2)
+  The legacy /cgi/search.pl endpoint is being decommissioned (global
+  503s as of 2026-05). Lyst now hits Search-a-licious at
+  search.openfoodfacts.org. Per-hit shape:
+    - `brands` changed from comma-separated string to array of strings
+    - `nutriments.*_100g` field names stayed the same
+    - `product_name` may be null on entries that only have
+      per-language fields populated
+  We respect OFF's published per-IP search limit of 10/min via a
+  rolling-window token bucket, and identify ourselves with a contact-
+  bearing User-Agent per OFF policy.
 """
 from __future__ import annotations
 
 import asyncio
+import collections
 import logging
 import time
 from typing import Any
@@ -39,7 +44,11 @@ from typing import Any
 import httpx
 
 from app.core.config import settings
-from app.data.ingredient_translations import normalize, translate
+from app.data.ingredient_translations import (
+    normalize,
+    search_variants,
+    translate,
+)
 from app.schemas.recipe import (
     NutritionEstimateResponse,
     NutritionSearchGroup,
@@ -52,13 +61,23 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Open Food Facts
+# Open Food Facts — Search-a-licious
 # ---------------------------------------------------------------------------
-OFF_SEARCH_URL = "https://world.openfoodfacts.org/cgi/search.pl"
+OFF_SEARCH_URL = "https://search.openfoodfacts.org/search"
+# Per OFF policy: AppName/Version (contact). Lyst is self-hosted so the
+# contact is the project URL — that's still actionable for OFF ops if
+# they need to reach us about traffic.
 OFF_USER_AGENT = "Lyst/1.4 (https://github.com/laarsv/Lyst)"
 OFF_TIMEOUT_SECONDS = 4.0
 OFF_PAGE_SIZE = 5
-OFF_FIELDS = "product_name,brands,nutriments,code,image_small_url"
+# Field allowlist. Cheap traffic-wise and saves us downstream guards
+# against unexpected fields. `nutriments` returns the whole sub-object;
+# we pluck the seven we care about in _hit_from_off_product.
+OFF_FIELDS = "product_name,brands,code,image_small_url,nutriments"
+# `langs=de,en`: bias to German per-language product_name fields while
+# falling back to English. Search-a-licious uses Elasticsearch under
+# the hood and ranks language-matched hits higher.
+OFF_LANGS = "de,en"
 
 
 # ---------------------------------------------------------------------------
@@ -67,21 +86,12 @@ OFF_FIELDS = "product_name,brands,nutriments,code,image_small_url"
 USDA_SEARCH_URL = "https://api.nal.usda.gov/fdc/v1/foods/search"
 USDA_TIMEOUT_SECONDS = 4.0
 USDA_PAGE_SIZE = 5
-# Foundation = the curated, lab-analyzed dataset; SR Legacy = the older
-# USDA Standard Reference set. Both are raw-ingredient focused and
-# nutrient-complete. Excluded on purpose:
-#   - "Branded": USDA's own barcode set — duplicates OFF, noisier.
-#   - "Survey (FNDDS)": mixed dishes ("chicken stir-fry, with rice"),
-#     not what cookbook authors mean by "Chicken breast".
 USDA_DATA_TYPES = "Foundation,SR Legacy"
 
 
 # ---------------------------------------------------------------------------
-# Cache
+# Cache (groups + unavailable flag, keyed on normalised query)
 # ---------------------------------------------------------------------------
-#
-# Caches the merged (USDA + OFF) result. Single-process so a dict is
-# enough; if we ever multi-process, Redis is the next step.
 _CACHE_TTL_SECONDS = 7 * 24 * 3600
 _cache: dict[str, tuple[float, list[NutritionSearchGroup], bool]] = {}
 
@@ -113,30 +123,78 @@ def _cache_put(
 
 
 # ---------------------------------------------------------------------------
-# Per-upstream rate gates
+# Rate gates — per upstream, with the right shape for each.
 # ---------------------------------------------------------------------------
 #
-# Separate gates so an OFF call doesn't starve USDA (and vice versa).
-# 1 req/sec each. The lock + last-call timestamp pair serialises
-# outgoing requests across concurrent FastAPI handlers per service.
-_MIN_INTERVAL_SECONDS = 1.0
+# OFF: 10 req/min/IP (OFF's documented policy for any /search endpoint).
+# We implement this as a rolling-window token bucket — keep timestamps
+# of the last 10 outgoing requests; when we'd issue an 11th, wait until
+# the oldest falls outside the 60s window.
+#
+# USDA: published quota is 1000/h with an API key. ~1/sec is well
+# inside that and matches the polite serialisation we already had.
+class _RollingWindowGate:
+    """Allow at most `limit` requests per `window_seconds` per process.
+
+    Designed for OFF's 10/min cap. The deque holds monotonic timestamps
+    of *granted* requests; on each request we evict any older than the
+    window, then either pass through (if room) or sleep until the oldest
+    entry expires. Single-process so a deque is enough — Redis is the
+    upgrade if we ever fan out to multiple workers."""
+
+    def __init__(self, *, limit: int, window_seconds: float) -> None:
+        self._limit = limit
+        self._window = window_seconds
+        self._lock = asyncio.Lock()
+        self._stamps: collections.deque[float] = collections.deque(maxlen=limit)
+
+    async def wait(self) -> None:
+        async with self._lock:
+            now = time.monotonic()
+            # Drop entries outside the window
+            while self._stamps and (now - self._stamps[0]) >= self._window:
+                self._stamps.popleft()
+            if len(self._stamps) >= self._limit:
+                sleep_for = self._window - (now - self._stamps[0])
+                if sleep_for > 0:
+                    await asyncio.sleep(sleep_for)
+                now = time.monotonic()
+                while self._stamps and (now - self._stamps[0]) >= self._window:
+                    self._stamps.popleft()
+            self._stamps.append(now)
+
+    def available(self) -> int:
+        """Best-effort, lock-free read of remaining budget in the
+        current window. Used by the importer batch path to decide
+        whether to even try OFF for a USDA-miss."""
+        now = time.monotonic()
+        # Count entries still inside the window.
+        recent = sum(1 for t in self._stamps if (now - t) < self._window)
+        return max(0, self._limit - recent)
 
 
-class _RateGate:
-    def __init__(self) -> None:
+class _IntervalGate:
+    """Serialised "no more than 1 call per `interval` seconds" gate.
+    Used for USDA — we don't need a rolling window there, just polite
+    pacing."""
+
+    def __init__(self, *, interval: float) -> None:
+        self._interval = interval
         self._lock = asyncio.Lock()
         self._last = 0.0
 
     async def wait(self) -> None:
         async with self._lock:
             delta = time.monotonic() - self._last
-            if delta < _MIN_INTERVAL_SECONDS:
-                await asyncio.sleep(_MIN_INTERVAL_SECONDS - delta)
+            if delta < self._interval:
+                await asyncio.sleep(self._interval - delta)
             self._last = time.monotonic()
 
 
-_off_gate = _RateGate()
-_usda_gate = _RateGate()
+# OFF: 10 / 60s, with a tiny safety margin (use 58s window so we never
+# accidentally race the upstream's reset boundary).
+_off_gate = _RollingWindowGate(limit=10, window_seconds=58.0)
+_usda_gate = _IntervalGate(interval=1.0)
 
 
 # ---------------------------------------------------------------------------
@@ -162,17 +220,8 @@ def _has_any_nutrition(values: NutritionValues) -> bool:
 
 
 def _rerank(hits: list[NutritionSearchHit], query: str) -> list[NutritionSearchHit]:
-    """Re-rank a group so short / close name matches bubble up.
-
-    OFF's default sort surfaces verbose marketing titles ("100% Pure
-    Avocado Oil Spray" before plain "Avocado"). USDA tends to do the
-    right thing already but a re-rank costs nothing and keeps both
-    groups consistent. Sort key:
-      1. exact normalised match of the query first
-      2. then by whether the query is a whole-word prefix
-      3. then by ascending length of the product name
-    Within ties we preserve upstream order (Python's sort is stable).
-    """
+    """Re-rank a group so short / close name matches bubble up. Stable
+    sort preserves upstream order within score ties."""
     q = " ".join(query.lower().split())
     if not q:
         return hits
@@ -190,20 +239,50 @@ def _rerank(hits: list[NutritionSearchHit], query: str) -> list[NutritionSearchH
     return sorted(hits, key=score)
 
 
+def _dedup_by_code(hits: list[NutritionSearchHit]) -> list[NutritionSearchHit]:
+    """Drop duplicate hits when we ran two query variants. Dedup key:
+    OFF barcode for OFF rows, fdc_id for USDA rows. Both can't collide
+    because they only ever appear in their own group."""
+    seen: set[str] = set()
+    out: list[NutritionSearchHit] = []
+    for h in hits:
+        key = h.code or h.fdc_id or ""
+        if key and key in seen:
+            continue
+        if key:
+            seen.add(key)
+        out.append(h)
+    return out
+
+
 # ---------------------------------------------------------------------------
-# OFF parsing
+# OFF parsing — Search-a-licious response shape
 # ---------------------------------------------------------------------------
 
 def _hit_from_off_product(product: dict[str, Any]) -> NutritionSearchHit | None:
-    name = (product.get("product_name") or "").strip()
+    """Parse one Search-a-licious hit.
+
+    Differences from the legacy /cgi/search.pl shape:
+      - `brands` is now an array of strings (was comma-separated str)
+      - `product_name` may be null when only per-language fields are
+        populated; we skip such rows since the UI needs a name.
+    """
+    name = product.get("product_name")
+    if not isinstance(name, str):
+        name = ""
+    name = name.strip()
     code = (product.get("code") or "").strip()
     if not name or not code:
         return None
 
     nutriments = product.get("nutriments") or {}
+    # `energy-kcal_100g` is the canonical kcal field. `energy_100g` /
+    # `energy-kj_100g` carry kJ; fall back if kcal is missing.
     calories = _coerce_float(nutriments.get("energy-kcal_100g"))
     if calories is None:
-        kj = _coerce_float(nutriments.get("energy_100g"))
+        kj = _coerce_float(nutriments.get("energy-kj_100g"))
+        if kj is None:
+            kj = _coerce_float(nutriments.get("energy_100g"))
         if kj is not None:
             calories = round(kj / 4.184, 1)
 
@@ -219,7 +298,16 @@ def _hit_from_off_product(product: dict[str, Any]) -> NutritionSearchHit | None:
     if not _has_any_nutrition(values):
         return None
 
-    brand = (product.get("brands") or "").split(",")[0].strip() or None
+    brands_raw = product.get("brands")
+    brand: str | None = None
+    if isinstance(brands_raw, list) and brands_raw:
+        first = brands_raw[0]
+        if isinstance(first, str):
+            brand = first.strip() or None
+    elif isinstance(brands_raw, str) and brands_raw.strip():
+        # Defensive: in case a future schema flips back to a string.
+        brand = brands_raw.split(",")[0].strip() or None
+
     image_url = product.get("image_small_url") or None
 
     return NutritionSearchHit(
@@ -233,36 +321,17 @@ def _hit_from_off_product(product: dict[str, Any]) -> NutritionSearchHit | None:
 
 
 # ---------------------------------------------------------------------------
-# USDA parsing
+# USDA parsing (unchanged from v1.4.0)
 # ---------------------------------------------------------------------------
-#
-# USDA's foodNutrients array carries nutrients by both `nutrientId`
-# (integer, stable across releases) and `nutrientName` (string, more
-# human-readable but capitalisation drifts). We key on nutrientId
-# primarily, with a name-based fallback for older entries.
-#
-# IDs:
-#   1008 — Energy (kcal)            → calories_per_100g
-#   1003 — Protein                  → protein_per_100g
-#   1004 — Total lipid (fat)        → fat_per_100g
-#   1005 — Carbohydrate, by diff    → carbs_per_100g
-#   1079 — Fiber, total dietary     → fiber_per_100g
-#   2000 — Sugars, total            → sugar_per_100g
-#   1093 — Sodium                   → salt_per_100g (after conversion)
-#
-# The legacy (Foundation pre-2019) "number" attribute also matches:
-#   208 / 203 / 204 / 205 / 291 / 269 / 307 respectively. Handled in
-# the fallback table below.
 
 _USDA_NUTRIENT_FIELDS = {
-    1008: "calories_per_100g",  # Energy (kcal)
+    1008: "calories_per_100g",
     1003: "protein_per_100g",
     1004: "fat_per_100g",
     1005: "carbs_per_100g",
     1079: "fiber_per_100g",
     2000: "sugar_per_100g",
-    1093: "sodium_mg",            # converted to salt below
-    # Legacy "number"-style IDs used by some SR Legacy rows.
+    1093: "sodium_mg",
     208: "calories_per_100g",
     203: "protein_per_100g",
     204: "fat_per_100g",
@@ -274,12 +343,6 @@ _USDA_NUTRIENT_FIELDS = {
 
 
 def _hit_from_usda_food(food: dict[str, Any]) -> NutritionSearchHit | None:
-    """Parse one USDA /foods/search result row.
-
-    Foundation + SR Legacy rows are nutrient-dense per 100 g of the food
-    "as packed" — no per-serving adjustment needed. We verify that by
-    sticking to those two dataTypes in the request.
-    """
     name = (food.get("description") or "").strip()
     fdc_id = food.get("fdcId")
     if not name or fdc_id is None:
@@ -295,10 +358,6 @@ def _hit_from_usda_food(food: dict[str, Any]) -> NutritionSearchHit | None:
         "sodium_mg": None,
     }
     for nut in food.get("foodNutrients") or []:
-        # USDA's search response uses two shapes:
-        #   - {"nutrientId": int, "value": float, ...}  (modern)
-        #   - {"nutrient": {"id": int, "number": "208"}, "amount": float}
-        #     (Foundation v2)
         nid = nut.get("nutrientId")
         value = nut.get("value")
         if nid is None:
@@ -318,20 +377,13 @@ def _hit_from_usda_food(food: dict[str, Any]) -> NutritionSearchHit | None:
         v = _coerce_float(value)
         if v is None:
             continue
-        # First non-null wins — duplicates exist for some Foundation rows
-        # (one canonical, one calculated). The first usually IS the
-        # canonical one in USDA's ordering.
         if collected[field] is None:
             collected[field] = v
 
-    # Sodium → salt. USDA sodium is in mg per 100 g; salt (NaCl) in g
-    # is sodium(mg) * 2.5 / 1000. The 2.5 factor is the molar-mass
-    # ratio of NaCl to Na (58.44 / 22.99 ≈ 2.542); rounded to 2.5 is
-    # the standard food-labelling convention used by EU regulation
-    # 1169/2011 and by Open Food Facts itself.
     sodium_mg = collected.pop("sodium_mg")
     salt_g: float | None = None
     if sodium_mg is not None:
+        # NaCl/Na molar-mass ratio rounded to 2.5 — EU 1169/2011 + OFF.
         salt_g = round(sodium_mg * 2.5 / 1000.0, 3)
 
     values = NutritionValues(
@@ -349,7 +401,7 @@ def _hit_from_usda_food(food: dict[str, Any]) -> NutritionSearchHit | None:
     return NutritionSearchHit(
         name=name,
         brand=None,
-        code="",  # USDA rows aren't barcoded; persisted to usda_fdc_id below
+        code="",
         image_url=None,
         nutrition=values,
         fdc_id=str(fdc_id),
@@ -360,23 +412,20 @@ def _hit_from_usda_food(food: dict[str, Any]) -> NutritionSearchHit | None:
 # Upstream fetchers
 # ---------------------------------------------------------------------------
 
-async def _fetch_off(query: str) -> tuple[list[NutritionSearchHit], bool]:
-    """Returns (hits, unavailable). unavailable=True means the call
-    failed; an empty list with unavailable=False is "OFF said no
-    products matched"."""
+async def _fetch_off_one(query: str) -> tuple[list[NutritionSearchHit], bool]:
+    """Single Search-a-licious call. Returns (hits, error).
+    `error=True` means transport / HTTP failure — zero hits with
+    `error=False` is a genuine 'no products matched'."""
     await _off_gate.wait()
-    # sort_by=popularity_key puts widely-scanned (and therefore well-
-    # known) products at the top. The legacy default mixes obscure
-    # niche items in early which is exactly what we want to push DOWN.
     params = {
-        "search_terms": query,
-        "search_simple": "1",
-        "action": "process",
-        "json": "1",
+        "q": query,
         "page_size": str(OFF_PAGE_SIZE),
         "fields": OFF_FIELDS,
-        "lc": "de",
-        "sort_by": "popularity_key",
+        "langs": OFF_LANGS,
+        # `-` prefix = descending order. popularity_key surfaces
+        # widely-scanned products before niche ones, which is what we
+        # want as a default for a cooking-app picker.
+        "sort_by": "-popularity_key",
     }
     try:
         async with httpx.AsyncClient(
@@ -394,8 +443,8 @@ async def _fetch_off(query: str) -> tuple[list[NutritionSearchHit], bool]:
         return [], True
 
     hits: list[NutritionSearchHit] = []
-    for p in data.get("products") or []:
-        hit = _hit_from_off_product(p)
+    for h in data.get("hits") or []:
+        hit = _hit_from_off_product(h)
         if hit is not None:
             hits.append(hit)
         if len(hits) >= OFF_PAGE_SIZE:
@@ -403,10 +452,36 @@ async def _fetch_off(query: str) -> tuple[list[NutritionSearchHit], bool]:
     return hits, False
 
 
+async def _fetch_off_with_variants(
+    variants: list[str],
+) -> tuple[list[NutritionSearchHit], bool]:
+    """Run OFF against up to two query variants (normalised core +
+    original) and merge. Returns (hits, error). error=True iff EVERY
+    variant errored. Skips additional variants once the OFF budget is
+    exhausted — better to return one variant's hits than burn the
+    remaining 10/min budget on duplicates."""
+    if not variants:
+        return [], False
+    merged: list[NutritionSearchHit] = []
+    any_success = False
+    any_error = False
+    for i, v in enumerate(variants):
+        if i > 0 and _off_gate.available() <= 1:
+            # Reserve the last slot in the window for an unrelated
+            # follow-up search. Single-variant results are still good.
+            break
+        hits, err = await _fetch_off_one(v)
+        if err:
+            any_error = True
+            continue
+        any_success = True
+        merged.extend(hits)
+    if not any_success and any_error:
+        return [], True
+    return _dedup_by_code(merged), False
+
+
 async def _fetch_usda(query: str) -> tuple[list[NutritionSearchHit], bool]:
-    """Returns (hits, unavailable). Without an API key USDA is skipped
-    silently — empty list, unavailable=False — so the rest of the
-    lookup pipeline keeps working in a key-less dev setup."""
     if not settings.FDC_API_KEY:
         return [], False
     await _usda_gate.wait()
@@ -442,7 +517,7 @@ async def _fetch_usda(query: str) -> tuple[list[NutritionSearchHit], bool]:
 
 
 # ---------------------------------------------------------------------------
-# Optional Ollama translation fallback
+# Optional Ollama translation fallback (unchanged from v1.4.0)
 # ---------------------------------------------------------------------------
 
 _TRANSLATE_SYSTEM = (
@@ -456,9 +531,6 @@ _TRANSLATE_SYSTEM = (
 
 
 async def _translate_via_ollama(german_term: str) -> str | None:
-    """One-shot LLM translation of a German ingredient name. Returns
-    None on any error — caller should fall back to the normalised
-    German term or skip USDA entirely."""
     try:
         raw = await call_text_json(
             f"Zutat: {german_term}",
@@ -487,15 +559,13 @@ async def search_combined(
     """Search both USDA and OFF concurrently and return (groups, unavailable).
 
     groups: USDA first (label 'Lebensmittel'), OFF second
-    ('Markenprodukte'). Empty groups are omitted entirely so the
-    frontend can iterate without length checks.
+    ('Markenprodukte'). Empty groups are omitted.
 
-    unavailable: True iff NUTRITION_LOOKUP_ENABLED is False OR every
-    *configured* upstream failed. "No key for USDA" doesn't count as
-    a failure — it counts as "USDA not configured". If at least one
-    upstream came back with an empty result list (no error), this is
-    False — meaning "the search ran, nothing matched" which gets a
-    different empty-state message in the sheet.
+    unavailable: True ONLY when every *configured* upstream actually
+    errored (network/timeout/HTTP). A successful call with zero hits
+    leaves this False — that's a "no match" message in the UI, not a
+    "service down" message. USDA without an API key counts as "not
+    configured" rather than "failed".
     """
     query = query.strip()
     if not query:
@@ -507,45 +577,43 @@ async def search_combined(
     if cached is not None:
         return cached
 
-    # USDA needs the English term; OFF gets the user's German term
-    # untouched (OFF handles German labels fine via lc=de).
+    # German→English for USDA; original + normalised variants for OFF.
     english, mapped = translate(query)
+    off_variants = search_variants(query)
 
     async def usda_task() -> tuple[list[NutritionSearchHit], bool]:
         if not english:
             return [], False
-        hits, unavailable = await _fetch_usda(english)
-        # Optional Ollama translation fallback: only when the static
-        # table missed AND USDA returned 0 hits (not when it errored —
-        # an error is unrelated to the translation).
+        hits, error = await _fetch_usda(english)
         if (
             not mapped
             and not hits
-            and not unavailable
+            and not error
             and settings.NUTRITION_TRANSLATE_FALLBACK
         ):
             translated = await _translate_via_ollama(query)
             if translated and translated.lower() != english.lower():
-                hits, unavailable = await _fetch_usda(translated)
-        return hits, unavailable
+                hits, error = await _fetch_usda(translated)
+        return hits, error
 
-    usda_hits, usda_unavail = [], False
-    off_hits, off_unavail = [], False
+    async def off_task() -> tuple[list[NutritionSearchHit], bool]:
+        return await _fetch_off_with_variants(off_variants)
+
+    usda_hits, usda_error = [], False
+    off_hits, off_error = [], False
     usda_res, off_res = await asyncio.gather(
-        usda_task(),
-        _fetch_off(query),
-        return_exceptions=True,
+        usda_task(), off_task(), return_exceptions=True
     )
     if isinstance(usda_res, Exception):
         logger.warning("USDA task crashed: %s", usda_res)
-        usda_unavail = True
+        usda_error = True
     else:
-        usda_hits, usda_unavail = usda_res
+        usda_hits, usda_error = usda_res
     if isinstance(off_res, Exception):
         logger.warning("OFF task crashed: %s", off_res)
-        off_unavail = True
+        off_error = True
     else:
-        off_hits, off_unavail = off_res
+        off_hits, off_error = off_res
 
     usda_hits = _rerank(usda_hits, english or query)
     off_hits = _rerank(off_hits, query)
@@ -560,15 +628,17 @@ async def search_combined(
             source="off", label="Markenprodukte", results=off_hits,
         ))
 
-    # "Unavailable" iff every CONFIGURED upstream failed. USDA without
-    # a key counts as "not configured" — OFF carrying the result alone
-    # is still a healthy state.
+    # "Unavailable" semantics: at least one upstream is configured AND
+    # every configured upstream erred AND nothing made it into the
+    # groups. A 0-hit response on a healthy connection is NOT
+    # unavailable — that's "we looked, the term has no match", which
+    # the UI surfaces with a different empty-state message.
     usda_configured = bool(settings.FDC_API_KEY)
-    sources_failed: list[bool] = []
+    errors: list[bool] = []
     if usda_configured:
-        sources_failed.append(usda_unavail and not usda_hits)
-    sources_failed.append(off_unavail and not off_hits)
-    unavailable = bool(sources_failed) and all(sources_failed) and not groups
+        errors.append(usda_error)
+    errors.append(off_error)
+    unavailable = bool(errors) and all(errors) and not groups
 
     _cache_put(query, groups, unavailable)
     return groups, unavailable
@@ -578,80 +648,107 @@ async def search_combined(
 # Public API — per-ingredient batch helper for the importer
 # ---------------------------------------------------------------------------
 
-
 class _ImporterHit:
-    """Small carrier for `search_for_each`. Not a Pydantic model —
-    purely internal."""
     __slots__ = ("hit", "source")
 
     def __init__(self, hit: NutritionSearchHit, source: str) -> None:
-        self.hit = hit  # NutritionSearchHit
-        self.source = source  # "usda" | "off"
+        self.hit = hit
+        self.source = source
 
 
 async def search_for_each(
-    queries: list[str], *, concurrency: int = 3
+    queries: list[str], *, usda_concurrency: int = 3
 ) -> dict[str, _ImporterHit | None]:
-    """Per-ingredient top-hit lookup used by the AI recipe importer.
+    """USDA-first batch lookup for the recipe importer.
 
-    For each query: USDA first (via the translation table), OFF as
-    fallback. The returned value carries the source so the importer
-    can stamp the right nutrition_source enum. Misses are None.
+    Strategy designed around OFF's 10/min cap:
+      1. Fan out a USDA lookup for every ingredient in parallel
+         (bounded by `usda_concurrency` so we don't overshoot USDA's
+         polite 1/sec pacing). USDA's 1000/h quota easily covers a
+         15-ingredient recipe.
+      2. For ingredients USDA missed, fall back to OFF *serially*
+         and only while the OFF rate-gate has slots free. The gate
+         itself blocks when we approach 10/min; here we additionally
+         short-circuit to avoid pinning the gate's lock for ages.
+      3. Anything still unmatched after that returns None — the user
+         can KI/manual-enter from the row's sheet.
 
-    Bounded concurrency keeps total throughput under the combined
-    rate-gate ceiling without blocking the entire import behind serial
-    calls."""
-    sem = asyncio.Semaphore(concurrency)
+    Returns one entry per input query keyed on the raw query string.
+    """
+    sem = asyncio.Semaphore(usda_concurrency)
 
-    async def one(q: str) -> tuple[str, _ImporterHit | None]:
+    async def usda_one(q: str) -> tuple[str, _ImporterHit | None]:
         async with sem:
             if not settings.NUTRITION_LOOKUP_ENABLED or not q.strip():
                 return q, None
-            # USDA first
-            usda_hit: NutritionSearchHit | None = None
-            if settings.FDC_API_KEY:
-                english, mapped = translate(q)
-                if english:
-                    hits, unavail = await _fetch_usda(english)
-                    if not hits and not unavail and not mapped \
-                            and settings.NUTRITION_TRANSLATE_FALLBACK:
-                        translated = await _translate_via_ollama(q)
-                        if translated and translated.lower() != english.lower():
-                            hits, _ = await _fetch_usda(translated)
-                    if hits:
-                        usda_hit = _rerank(hits, english)[0]
-            if usda_hit is not None:
-                return q, _ImporterHit(usda_hit, "usda")
-            # OFF fallback
-            off_hits, _ = await _fetch_off(q)
-            if off_hits:
-                top = _rerank(off_hits, q)[0]
-                return q, _ImporterHit(top, "off")
-            return q, None
+            if not settings.FDC_API_KEY:
+                return q, None
+            english, mapped = translate(q)
+            if not english:
+                return q, None
+            hits, error = await _fetch_usda(english)
+            if (
+                not hits
+                and not error
+                and not mapped
+                and settings.NUTRITION_TRANSLATE_FALLBACK
+            ):
+                translated = await _translate_via_ollama(q)
+                if translated and translated.lower() != english.lower():
+                    hits, _ = await _fetch_usda(translated)
+            if not hits:
+                return q, None
+            return q, _ImporterHit(_rerank(hits, english)[0], "usda")
 
-    results = await asyncio.gather(*(one(q) for q in queries))
-    return dict(results)
+    # Phase 1: USDA fan-out
+    results: dict[str, _ImporterHit | None] = dict(
+        await asyncio.gather(*(usda_one(q) for q in queries))
+    )
+
+    # Phase 2: OFF fallback for misses, budget-aware and serial. We
+    # also bail early if NUTRITION_LOOKUP_ENABLED is off (covered above
+    # via the per-query early return). Note: each OFF call still goes
+    # through the rate gate — `available()` is a *hint* to avoid even
+    # entering the gate when we already know we'd be parked.
+    for q in queries:
+        if results.get(q) is not None:
+            continue
+        if not settings.NUTRITION_LOOKUP_ENABLED or not q.strip():
+            continue
+        variants = search_variants(q)
+        if not variants:
+            continue
+        if _off_gate.available() <= 0:
+            # OFF budget already empty — don't pin the gate's lock for
+            # a full minute on a best-effort batch path. The user can
+            # still pull values via the manual sheet later.
+            logger.info("OFF budget empty in importer; skipping %r", q)
+            continue
+        hits, _ = await _fetch_off_with_variants(variants[:1])
+        if hits:
+            results[q] = _ImporterHit(_rerank(hits, q)[0], "off")
+
+    return results
 
 
 # ---------------------------------------------------------------------------
 # Backwards-compat shim
 # ---------------------------------------------------------------------------
-#
-# v1.3 callers used `search_off(query)` directly. We keep a thin shim
-# returning the same shape so any external integrations still work.
-# New code should use `search_combined`.
 
 async def search_off(query: str) -> tuple[list[NutritionSearchHit], bool]:
+    """Returns OFF-only hits for the query. Kept so any external
+    integrations from v1.3 keep working — internally everything now
+    goes through `search_combined`."""
     if not query.strip():
         return [], False
     if not settings.NUTRITION_LOOKUP_ENABLED:
         return [], True
-    hits, unavailable = await _fetch_off(query.strip())
-    return _rerank(hits, query.strip()), unavailable
+    hits, error = await _fetch_off_with_variants(search_variants(query.strip()))
+    return _rerank(hits, query.strip()), error
 
 
 # ---------------------------------------------------------------------------
-# Ollama fallback — unchanged from v1.3
+# Ollama estimate fallback — unchanged from v1.3
 # ---------------------------------------------------------------------------
 
 _ESTIMATE_SYSTEM = """Du bist eine Nährwert-Datenbank. Der Nutzer nennt eine Zutat. Schätze plausibel die Nährwerte pro 100 g.
@@ -713,16 +810,11 @@ async def estimate_with_ollama(
     return NutritionEstimateResponse(nutrition=values, note=note)
 
 
-# ---------------------------------------------------------------------------
-# Cache reset for tests / admin tools
-# ---------------------------------------------------------------------------
-
+# Hook for tests / admin tools.
 def clear_cache() -> None:
     _cache.clear()
 
 
-# Public re-export name used by `recipes.py` so existing imports keep
-# working. The function does identical work under both names.
 __all__ = [
     "search_combined",
     "search_for_each",
@@ -730,3 +822,9 @@ __all__ = [
     "estimate_with_ollama",
     "clear_cache",
 ]
+
+
+# Suppress an unused-import warning — `normalize` is re-exported via
+# the translations module but we also touch it indirectly above. Tag
+# it here so static analysers see the dependency.
+_ = normalize

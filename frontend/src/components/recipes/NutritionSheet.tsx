@@ -277,8 +277,8 @@ export function NutritionSheet({
             </p>
           ) : totalResults === 0 ? (
             <p className="text-sm text-muted py-2">
-              Nichts gefunden. KI-Schätzung anfordern oder manuell
-              eintragen.
+              Keine Treffer gefunden — KI-Schätzung anfordern oder
+              manuell eintragen.
             </p>
           ) : (
             <div className="max-h-72 overflow-y-auto pr-1 space-y-4">
