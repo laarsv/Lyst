@@ -1,7 +1,10 @@
 /** Small source-of-nutrition badge rendered next to an ingredient's
- *  name. Three states + an explicit "none":
+ *  name. Four states + an explicit "none":
  *
+ *    'usda'   → 🥑 Leaf — values came from USDA FoodData Central
+ *               (raw cooking ingredients — Foundation + SR Legacy)
  *    'off'    → 🌍 Globe — values came from Open Food Facts
+ *               (branded packaged product)
  *    'ai'     → 🤖 Sparkles — local Ollama estimate
  *    'manual' → ✏️ Pencil — user typed them by hand
  *    null     → no badge (no nutrition values yet)
@@ -10,9 +13,10 @@
  *  what the icon means without clicking. `extra` is appended for the
  *  OFF case ("Quelle: Open Food Facts (Followfish)") — the recipe-
  *  edit row passes the brand from off_product_code's resolved row,
- *  detail rows fall back to just "Open Food Facts". */
+ *  detail rows fall back to just "Open Food Facts". USDA badges
+ *  ignore `extra` since Foundation/SR Legacy rows aren't branded. */
 import clsx from 'clsx';
-import { Globe, Pencil, Sparkles } from 'lucide-react';
+import { Globe, Leaf, Pencil, Sparkles } from 'lucide-react';
 import type { NutritionSource } from '@/types';
 
 interface Props {
@@ -27,13 +31,19 @@ export function NutritionBadge({ source, extra, className }: Props) {
 
   const meta = (() => {
     switch (source) {
+      case 'usda':
+        return {
+          Icon: Leaf,
+          tooltip: 'Quelle: USDA FoodData Central',
+          color: 'text-emerald-700',
+        };
       case 'off':
         return {
           Icon: Globe,
           tooltip: extra
             ? `Quelle: Open Food Facts (${extra})`
             : 'Quelle: Open Food Facts',
-          color: 'text-emerald-600',
+          color: 'text-sky-600',
         };
       case 'ai':
         return {

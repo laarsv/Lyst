@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.services.nutrition_lookup_service import search_off_for_each
+from app.services.nutrition_lookup_service import search_for_each
 from app.services.ollama import (
     OllamaError,
     call_text_json,
@@ -83,10 +83,13 @@ class ImportedIngredient(BaseModel):
     fiber_per_100g: float | None = None
     sugar_per_100g: float | None = None
     salt_per_100g: float | None = None
-    # Same enum values as the DB column: "off" / "ai" / "manual" / null.
-    # The importer only ever sets "off" (when OFF returns a hit) or null.
+    # Same enum values as the DB column: "usda" / "off" / "ai" /
+    # "manual" / null. The importer only ever sets "usda" or "off"
+    # (depending on which upstream produced the top hit) or leaves it
+    # null on a complete miss.
     nutrition_source: str | None = None
     off_product_code: str | None = None
+    usda_fdc_id: str | None = None
 
 
 class ImportedStep(BaseModel):
@@ -281,27 +284,32 @@ async def _call_anthropic(text: str, model: str) -> dict[str, Any]:
 # ---------- Nutrition enrichment ----------
 
 async def _enrich_ingredients_with_off(recipe: ImportedRecipe) -> ImportedRecipe:
-    """Look each extracted ingredient up in Open Food Facts and pre-fill
-    per-100g nutrition + source on direct hits. Misses stay None — the
-    user can request a KI-Schätzung from the ingredient row later.
+    """Look each extracted ingredient up in USDA (raw ingredients) then
+    OFF (branded products as fallback) and pre-fill per-100g nutrition
+    + source on direct hits. Misses stay None — the user can request a
+    KI-Schätzung from the ingredient row later.
 
-    Best-effort: OFF disabled/unreachable yields no enrichment, no
-    error — the import preview still renders, just without 🌍 badges.
-    `search_off` already swallows transport errors and respects the
-    rate gate + 7-day cache, so this is a thin attach-and-go pass."""
+    Best-effort: both upstreams disabled/unreachable yields no
+    enrichment, no error — the import preview still renders, just
+    without source badges. The underlying `search_for_each` swallows
+    transport errors and respects per-upstream rate gates + the 7-day
+    cache, so this is a thin attach-and-go pass.
+
+    Function name kept as `_enrich_ingredients_with_off` for diff
+    minimality; the implementation now covers USDA first."""
     if not recipe.ingredients:
         return recipe
     names = [ing.name for ing in recipe.ingredients]
     try:
-        hits = await search_off_for_each(names)
-    except Exception as e:  # pragma: no cover — search_off already eats its own errors
-        logger.debug("OFF enrichment skipped: %s", e)
+        hits = await search_for_each(names)
+    except Exception as e:  # pragma: no cover — search_for_each eats its own errors
+        logger.debug("Nutrition enrichment skipped: %s", e)
         return recipe
     for ing in recipe.ingredients:
-        hit = hits.get(ing.name)
-        if hit is None:
+        entry = hits.get(ing.name)
+        if entry is None:
             continue
-        nut = hit.nutrition
+        nut = entry.hit.nutrition
         ing.calories_per_100g = nut.calories_per_100g
         ing.protein_per_100g = nut.protein_per_100g
         ing.carbs_per_100g = nut.carbs_per_100g
@@ -309,8 +317,13 @@ async def _enrich_ingredients_with_off(recipe: ImportedRecipe) -> ImportedRecipe
         ing.fiber_per_100g = nut.fiber_per_100g
         ing.sugar_per_100g = nut.sugar_per_100g
         ing.salt_per_100g = nut.salt_per_100g
-        ing.nutrition_source = "off"
-        ing.off_product_code = hit.code
+        ing.nutrition_source = entry.source  # "usda" or "off"
+        if entry.source == "usda":
+            ing.usda_fdc_id = entry.hit.fdc_id
+            ing.off_product_code = None
+        else:
+            ing.off_product_code = entry.hit.code
+            ing.usda_fdc_id = None
     return recipe
 
 

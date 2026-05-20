@@ -2,6 +2,111 @@
 
 Alle nennenswerten Änderungen pro Release. Datumsangaben sind ISO 8601.
 
+## v1.4.0 — 2026-05-20
+
+USDA FoodData Central kommt als primäre Quelle für Rohzutaten neben
+Open Food Facts dazu. Damit landet bei „Avocado" endlich die rohe
+Avocado (~160 kcal/100 g) statt „Avocado-Öl-Spray" oben, und der
+Rezept-Importer füllt deutlich mehr Zutaten automatisch.
+
+### Highlights
+
+- **USDA FoodData Central integriert** — Foundation + SR Legacy als
+  zweite Nährwert-Quelle. Liefert pro Suche bis zu 5 Roh-Zutaten direkt
+  aus dem USDA-Datensatz. Sodium → Salz wird mit dem Standardfaktor
+  2,5 (NaCl / Na, EU 1169/2011) umgerechnet.
+- **Gruppierte Ergebnisanzeige** — die Nährwerte-Sheet zeigt jetzt zwei
+  Sektionen: 🥑 *Lebensmittel* (USDA, Roh-Zutaten zuerst) und 🌍
+  *Markenprodukte* (OFF). Innerhalb jeder Gruppe werden kürzere /
+  passendere Namen nach oben sortiert, damit „Avocado" über „100 % Pure
+  Avocado Oil Spray" landet.
+- **Deutsch → Englisch Übersetzungstabelle** — ~200 der häufigsten
+  deutschen Kochzutaten werden statisch auf USDA-freundliche englische
+  Suchbegriffe gemappt (`hähnchenbrust` → `chicken breast raw`,
+  `magerquark` → `quark low fat`, `räucherlachs` → `salmon smoked`,
+  …). Inklusive einfacher Plural-/Artikel-Normalisierung — „die roten
+  Möhren" trifft genauso wie „Möhre".
+- **AI-Recipe-Importer nutzt USDA zuerst** — pro extrahierter Zutat
+  wird erst USDA befragt (via Übersetzungstabelle), dann als Fallback
+  OFF. Quelle wird entsprechend gestempelt; in der Import-Vorschau
+  erscheinen die neuen 🥑-Badges.
+- **USDA Badge** — neue Quelle erkennt man am Blatt-Icon mit Tooltip
+  „Quelle: USDA FoodData Central". OFF-Badge wechselt zu Sky-Blue, damit
+  beide Quellen visuell klar trennbar sind.
+- **Optionaler LLM-Übersetzungs-Fallback** — wenn die statische Tabelle
+  ein Lebensmittel nicht kennt UND USDA mit dem Rohbegriff nichts
+  findet, kann optional eine einmalige Ollama-Übersetzung ins Englische
+  ausgeführt werden (`NUTRITION_TRANSLATE_FALLBACK=true`). Default aus,
+  da die Tabelle den Großteil abdeckt — Tabelle erweitern ist der
+  bevorzugte Weg.
+- **OFF-Tuning** — OFF-Anfragen sortieren jetzt nach `popularity_key`,
+  damit bekannte Produkte vor Nischenprodukten landen. Eigenes
+  Re-Ranking innerhalb der OFF-Gruppe nach Namens-Nähe bleibt.
+
+### Datenmodell (alembic 0021)
+
+- `nutrition_source`-Enum bekommt den Wert `usda` (jetzt
+  `usda` / `off` / `ai` / `manual`).
+- Neue Spalte `usda_fdc_id` (varchar 32) auf `recipe_ingredients` —
+  parallel zu `off_product_code`, hält die USDA Food-ID für spätere
+  „Werte aktualisieren"-Refetches.
+- Alle Spalten weiterhin nullable, Bestandsrezepte unverändert.
+
+### Backend
+
+- `services/nutrition_lookup_service` komplett überarbeitet:
+  - `search_combined(query)` — parallel-fan-out an USDA + OFF, gruppiert
+    zurück (`Lebensmittel` zuerst, `Markenprodukte` zweitens), eigene
+    Rate-Gates (1 req/s pro Upstream), 7-Tage Cache am Ergebnis.
+  - `search_for_each(queries)` — Batch-Helper für den Importer, USDA
+    zuerst, OFF als Fallback.
+  - `search_off(query)` als Backwards-Compat-Shim erhalten.
+- `data/ingredient_translations` — neue, gepflegte Map deutsch→englisch
+  plus `normalize()` und `translate()` Helper.
+- `routers/recipes` — `GET /recipes/ingredients/nutrition-search`
+  antwortet jetzt mit `{ groups: [...], unavailable }`. Leere Gruppen
+  werden weggelassen, `unavailable` bleibt False solange mindestens
+  eine *konfigurierte* Quelle erfolgreich war (USDA ohne Key gilt
+  nicht als Ausfall).
+- `services/import_service` — Auto-Prefill versucht USDA zuerst,
+  setzt `nutrition_source='usda'` + `usda_fdc_id`, fällt sonst auf
+  OFF zurück.
+- `services/recipe_service.duplicate_recipe` + `add_ingredient` —
+  übernehmen `usda_fdc_id` zusätzlich zu `off_product_code`.
+
+### Frontend
+
+- `NutritionSheet` zeigt die Treffer jetzt gruppiert mit Sektions-
+  Headern. Beide Gruppen scrollen innerhalb des Sheets, der „KI /
+  Manuell"-Footer bleibt fest.
+- `NutritionBadge` kennt die neue Quelle `usda` mit Blatt-Icon und
+  Emerald-Akzent; OFF wechselt zu Sky.
+- `RecipeDetail` „Werte aktualisieren" zieht jetzt die erste Gruppe
+  (USDA bevorzugt) und übernimmt die Quelle entsprechend.
+- `RecipeEdit` führt `usda_fdc_id` durch alle Persistenz-Pfade.
+
+### Config
+
+- `FDC_API_KEY` — kostenloser USDA-Key,
+  <https://fdc.nal.usda.gov/api-key-signup.html>. Leer = USDA-Gruppe
+  wird stillschweigend übersprungen.
+- `NUTRITION_TRANSLATE_FALLBACK` — optionaler LLM-Übersetzungs-Fallback.
+- `NUTRITION_LOOKUP_ENABLED` bleibt der Master-Switch und gilt jetzt
+  für beide Quellen.
+- Volle Doku in [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md#nutrition-lookup--usda--open-food-facts-optional-recommended).
+
+### Bekannte Lücken in der Übersetzungstabelle (zur späteren Pflege)
+
+Die statische Tabelle deckt die häufigsten ~200 Kochzutaten ab; selten
+auftauchende Zutaten landen über den Plural-/Artikel-Stripper noch oft
+direkt im Englischen, sonst auf dem Rohbegriff oder im LLM-Fallback.
+Beobachtet & noch nicht in der Tabelle: Quark-Varianten jenseits
+„magerquark", regionale Wurstsorten („Mettwurst", „Leberwurst"),
+spezielle Brotsorten („Pumpernickel", „Bauernbrot"), seltene Kräuter
+(„Liebstöckel", „Bohnenkraut"), Spirituosen / Liköre, exotische
+Früchte („Drachenfrucht", „Sternfrucht"). Erweiterungen gehören
+in `backend/app/data/ingredient_translations.py`.
+
 ## v1.3.1 — 2026-05-20
 
 Hotfix für eine Regression aus v1.3.0.

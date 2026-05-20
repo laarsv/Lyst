@@ -91,31 +91,59 @@ Pay-per-token. Leave the API key empty to keep Claude disabled.
 
 ---
 
-## Nutrition lookup — Open Food Facts (optional, recommended)
+## Nutrition lookup — USDA + Open Food Facts (optional, recommended)
 
-When a user adds or imports a recipe ingredient, Lyst can look it up
-in [Open Food Facts](https://world.openfoodfacts.org) to auto-fill the
-per-100 g nutrition fields (calories, protein, carbs, fat, fiber,
-sugar, salt). OFF is free, anonymous, requires no API key, and is
-one of the few high-quality food databases that's safe to hit
-without a contract — so it's enabled by default.
+When a user adds or imports a recipe ingredient, Lyst hits two
+upstream databases in parallel and surfaces both as grouped results:
 
-What the backend does on your behalf when this is on:
+- **USDA FoodData Central** ([fdc.nal.usda.gov](https://fdc.nal.usda.gov))
+  — Foundation + SR Legacy datasets. The clean source for *raw cooking
+  ingredients*: searching "Avocado" returns the raw fruit (~160 kcal /
+  100 g), not "100% Pure Avocado Oil Spray". Requires a free API key
+  (per request, not per call). Rendered under the **"Lebensmittel"**
+  heading in the Nährwerte sheet. USDA is English-only; Lyst ships a
+  curated German → English mapping (~200 common ingredients) plus a
+  lightweight normaliser so users keep typing German.
+- **Open Food Facts** ([world.openfoodfacts.org](https://world.openfoodfacts.org))
+  — barcode/product database. Best for the case where the user *does*
+  want a specific packaged product ("Milram Frischkäse", "Lidl
+  Avocados"). No API key, free, German-native. Rendered under the
+  **"Markenprodukte"** heading.
 
-- Sends `GET https://world.openfoodfacts.org/cgi/search.pl?…` for each
-  ingredient name on the **AI recipe importer** (URL / photo / HTML /
-  PDF / free-text) and on every **manual "Nährwerte" sheet** click.
-- Identifies itself with `User-Agent: Lyst/1.3 (https://github.com/laarsv/Lyst)`
-  as OFF's fair-use policy asks.
-- Caches each query for 7 days in the backend process and rate-limits
-  outgoing calls to ~1/second so the upstream service isn't hammered.
+What the backend does on your behalf when lookup is on:
+
+- Sends parallel `GET` to USDA `/fdc/v1/foods/search` and OFF
+  `/cgi/search.pl` for each ingredient name on the **AI recipe
+  importer** (URL / photo / HTML / PDF / free-text) and on every
+  **manual "Nährwerte" sheet** click.
+- Identifies itself with `User-Agent: Lyst/1.4 (https://github.com/laarsv/Lyst)`
+  on OFF as the fair-use policy asks; USDA only requires the key.
+- Caches each merged result for 7 days in the backend process and
+  serialises outgoing calls (~1 req/sec per upstream) so neither
+  service gets hammered.
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `NUTRITION_LOOKUP_ENABLED` | no | `true` | Set to `false` to skip every OFF call. The "Nährwerte" sheet then only offers the local Ollama estimate + manual entry. Already-stored nutrition values are unaffected — this only governs new lookups. |
+| `NUTRITION_LOOKUP_ENABLED` | no | `true` | Master switch. Set to `false` to skip both USDA and OFF; the "Nährwerte" sheet then only offers the local Ollama estimate + manual entry. Already-stored values are unaffected — this only governs new lookups. |
+| `FDC_API_KEY` | no | empty (USDA disabled) | Free API key from <https://fdc.nal.usda.gov/api-key-signup.html>. Without it the USDA group is silently skipped; OFF + KI + manual still work. With it, USDA results appear above OFF results. |
+| `NUTRITION_TRANSLATE_FALLBACK` | no | `false` | When the German term isn't in the static translation table AND USDA returned nothing, optionally do a single Ollama call to translate the ingredient and retry USDA. Off by default because it adds noticeable latency per miss — expanding `backend/app/data/ingredient_translations.py` is the preferred path. |
+
+### Recommended setup
+
+1. Grab a free API key at <https://fdc.nal.usda.gov/api-key-signup.html>
+   (email + name + intended use — instant issuance, no rate-limit tiers
+   below 1000 req/h).
+2. Add `FDC_API_KEY=...` to `.env`.
+3. Restart the backend container.
+4. Search "Avocado" in any recipe ingredient — the first result under
+   "Lebensmittel" should now be raw avocado around 160 kcal / 100 g.
+
+### Privacy / air-gapped
 
 Set `NUTRITION_LOOKUP_ENABLED=false` if you want to keep all recipe
 data local (no external HTTP requests during recipe edits/imports).
+Both USDA and OFF are external services — the master switch covers
+both.
 
 ---
 

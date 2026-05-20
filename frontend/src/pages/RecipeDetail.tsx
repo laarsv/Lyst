@@ -347,26 +347,29 @@ function NutritionCard({
     { label: 'Salz', value: n.salt, unit: 'g' },
   ];
 
-  /** Re-pull OFF values for every ingredient that has a stored
-   *  off_product_code, *or* has no source yet but a name we can
+  /** Re-pull nutrition values for every ingredient that has a stored
+   *  USDA / OFF source, *or* has no source yet but a name we can
    *  search by. We deliberately don't override 'ai'/'manual' rows —
-   *  the user owns those choices. PATCH happens one ingredient at a
-   *  time; the OFF rate gate on the backend serializes the search
-   *  side so client-side concurrency is fine. */
+   *  the user owns those choices. The grouped search response gives
+   *  us USDA first, OFF as fallback — we take the first hit of the
+   *  first group so the raw-ingredient match wins over a branded
+   *  product when both exist. PATCH happens one ingredient at a
+   *  time; the per-upstream rate gates on the backend serialise
+   *  outgoing calls so client-side concurrency is fine. */
   const refreshAll = async () => {
     setRefreshing(true);
     try {
       let touched = 0;
       for (const ing of recipe.ingredients) {
-        // Skip rows the user owns or that have no name to search by.
         if (ing.nutrition_source === 'ai' || ing.nutrition_source === 'manual') {
           continue;
         }
         if (!ing.name.trim()) continue;
         try {
           const resp = await RecipesApi.searchNutrition(ing.name.trim());
-          const hit = resp.results[0];
-          if (!hit) continue;
+          const group = resp.groups[0];
+          const hit = group?.results[0];
+          if (!group || !hit) continue;
           await RecipesApi.updateIngredient(recipe.id, ing.id, {
             calories_per_100g: hit.nutrition.calories_per_100g,
             protein_per_100g: hit.nutrition.protein_per_100g,
@@ -375,8 +378,9 @@ function NutritionCard({
             fiber_per_100g: hit.nutrition.fiber_per_100g,
             sugar_per_100g: hit.nutrition.sugar_per_100g,
             salt_per_100g: hit.nutrition.salt_per_100g,
-            nutrition_source: 'off',
-            off_product_code: hit.code,
+            nutrition_source: group.source,
+            off_product_code: group.source === 'off' ? hit.code : null,
+            usda_fdc_id: group.source === 'usda' ? hit.fdc_id : null,
           });
           touched += 1;
         } catch {
@@ -388,7 +392,7 @@ function NutritionCard({
         toast.success(`${touched} Zutat${touched === 1 ? '' : 'en'} aktualisiert`);
         onChanged();
       } else {
-        toast.info('Keine neuen OFF-Treffer gefunden.');
+        toast.info('Keine neuen Treffer gefunden.');
       }
     } finally {
       setRefreshing(false);

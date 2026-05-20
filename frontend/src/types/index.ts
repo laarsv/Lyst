@@ -255,7 +255,7 @@ export interface ApiEnvelope<T> {
 // (RecipeCategory was the old enum type; kept removed here so call sites
 // either use string-based tag filters or break loudly at compile time.)
 
-export type NutritionSource = 'off' | 'ai' | 'manual';
+export type NutritionSource = 'usda' | 'off' | 'ai' | 'manual';
 
 export interface RecipeIngredient {
   id: number;
@@ -279,6 +279,10 @@ export interface RecipeIngredient {
    *  nutrition_source === "off". Used by "Werte aktualisieren" to
    *  re-fetch the same product. */
   off_product_code: string | null;
+  /** USDA FoodData Central food id. Only set when
+   *  nutrition_source === "usda". Parallel role to off_product_code
+   *  but for the raw-ingredient source. */
+  usda_fdc_id: string | null;
 }
 
 export interface NutritionTotals {
@@ -312,15 +316,31 @@ export interface NutritionValues {
 export interface NutritionSearchHit {
   name: string;
   brand: string | null;
+  /** OFF barcode for OFF hits; empty string on USDA hits (USDA rows
+   *  aren't barcoded — `fdc_id` is the identifier instead). */
   code: string;
   image_url: string | null;
   nutrition: NutritionValues;
+  /** USDA FoodData Central food id — set only on USDA hits. */
+  fdc_id: string | null;
+}
+
+export interface NutritionSearchGroup {
+  /** 'usda' (Lebensmittel) or 'off' (Markenprodukte). Drives the
+   *  per-row badge icon in the picker. */
+  source: 'usda' | 'off';
+  /** German display heading, ready to render as a section title. */
+  label: string;
+  results: NutritionSearchHit[];
 }
 
 export interface NutritionSearchResponse {
-  results: NutritionSearchHit[];
-  /** True iff OFF lookup is disabled by env flag OR the call
-   *  failed/timed out — distinct from "found nothing". UI shows
+  /** Grouped results — USDA first (raw ingredients), OFF second
+   *  (branded products). Empty groups are omitted entirely so the
+   *  UI can iterate without length checks. */
+  groups: NutritionSearchGroup[];
+  /** True iff lookup is disabled by env flag OR every configured
+   *  upstream failed — distinct from "found nothing". UI shows
    *  "Aktuell nicht erreichbar, KI oder manuell verwenden". */
   unavailable: boolean;
 }
@@ -460,6 +480,7 @@ export interface ImportedIngredient {
   salt_per_100g?: number | null;
   nutrition_source?: NutritionSource | null;
   off_product_code?: string | null;
+  usda_fdc_id?: string | null;
 }
 
 export interface ImportedStep {

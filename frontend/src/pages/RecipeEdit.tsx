@@ -52,6 +52,7 @@ interface DraftIngredient {
    *  rendered next to the name input. */
   nutrition_source: NutritionSource | null;
   off_product_code: string | null;
+  usda_fdc_id: string | null;
   /** Cached brand name from the OFF pick, used only for the badge
    *  tooltip ("Quelle: Open Food Facts (Followfish)"). Not persisted
    *  — the API doesn't carry it back, but persistence isn't needed
@@ -82,6 +83,7 @@ const emptyNutrition = () => ({
   salt_per_100g: null,
   nutrition_source: null as NutritionSource | null,
   off_product_code: null as string | null,
+  usda_fdc_id: null as string | null,
   off_brand: null as string | null,
 });
 
@@ -168,6 +170,7 @@ export function RecipeEditPage() {
           salt_per_100g: i.salt_per_100g ?? null,
           nutrition_source: i.nutrition_source ?? null,
           off_product_code: i.off_product_code ?? null,
+          usda_fdc_id: i.usda_fdc_id ?? null,
           off_brand: null,
         }))
       : [],
@@ -215,6 +218,7 @@ export function RecipeEditPage() {
             salt_per_100g: i.salt_per_100g,
             nutrition_source: i.nutrition_source,
             off_product_code: i.off_product_code,
+            usda_fdc_id: i.usda_fdc_id,
             off_brand: null,
           })),
         );
@@ -265,6 +269,7 @@ export function RecipeEditPage() {
       salt_per_100g: pick.values.salt_per_100g,
       nutrition_source: pick.source,
       off_product_code: pick.off_product_code,
+      usda_fdc_id: pick.usda_fdc_id,
       off_brand: pick.off_brand,
     });
   const updateIngredient = (id: number | string, patch: Partial<DraftIngredient>) =>
@@ -340,6 +345,7 @@ export function RecipeEditPage() {
             salt_per_100g: i.salt_per_100g,
             nutrition_source: i.nutrition_source,
             off_product_code: i.off_product_code,
+            usda_fdc_id: i.usda_fdc_id,
           })),
           steps: steps.map((s) => ({ description: s.description.trim() })),
         });
@@ -416,7 +422,8 @@ export function RecipeEditPage() {
           (orig.sugar_per_100g ?? null) !== (draft.sugar_per_100g ?? null) ||
           (orig.salt_per_100g ?? null) !== (draft.salt_per_100g ?? null) ||
           (orig.nutrition_source ?? null) !== (draft.nutrition_source ?? null) ||
-          (orig.off_product_code ?? null) !== (draft.off_product_code ?? null)
+          (orig.off_product_code ?? null) !== (draft.off_product_code ?? null) ||
+          (orig.usda_fdc_id ?? null) !== (draft.usda_fdc_id ?? null)
         );
         if (changed) {
           await RecipesApi.updateIngredient(rid, id, {
@@ -432,6 +439,7 @@ export function RecipeEditPage() {
             salt_per_100g: draft.salt_per_100g,
             nutrition_source: draft.nutrition_source,
             off_product_code: draft.off_product_code,
+            usda_fdc_id: draft.usda_fdc_id,
           });
         }
         reorderIng.push({ id, position: i });
@@ -449,6 +457,7 @@ export function RecipeEditPage() {
           salt_per_100g: draft.salt_per_100g,
           nutrition_source: draft.nutrition_source,
           off_product_code: draft.off_product_code,
+          usda_fdc_id: draft.usda_fdc_id,
         });
         reorderIng.push({ id: created.id, position: i });
       }

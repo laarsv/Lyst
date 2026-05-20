@@ -435,6 +435,7 @@ export const RecipesApi = {
       salt_per_100g?: number | null;
       nutrition_source?: NutritionSource | null;
       off_product_code?: string | null;
+      usda_fdc_id?: string | null;
     }>;
     steps?: Array<{ description: string }>;
   }) => api.post<{ data: Recipe }>('/recipes', payload).then(unwrap),
@@ -553,6 +554,7 @@ export const RecipesApi = {
       salt_per_100g?: number | null;
       nutrition_source?: NutritionSource | null;
       off_product_code?: string | null;
+      usda_fdc_id?: string | null;
     },
   ) =>
     api.post<{ data: RecipeIngredient }>(`/recipes/${recipeId}/ingredients`, payload).then(unwrap),
@@ -572,6 +574,7 @@ export const RecipesApi = {
       salt_per_100g: number | null;
       nutrition_source: NutritionSource | null;
       off_product_code: string | null;
+      usda_fdc_id: string | null;
     }>,
   ) =>
     api

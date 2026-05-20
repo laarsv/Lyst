@@ -43,7 +43,7 @@ from app.services.import_service import (
 )
 from app.services.nutrition_lookup_service import (
     estimate_with_ollama,
-    search_off,
+    search_combined,
 )
 from app.services.notification_service import notify_share_created
 from app.services.realtime_events import (
@@ -585,14 +585,19 @@ async def get_nutrition_search(
     q: str = Query(..., min_length=1, max_length=255),
     user: User = Depends(require_user),
 ):
-    """Top 5 Open Food Facts candidates for the query. Returns
-    `unavailable=True` (with empty `results`) when the OFF lookup is
-    disabled by config OR the call failed/timed out — the frontend
-    shows the "Aktuell nicht erreichbar" hint and offers the KI /
-    manuell paths instead."""
-    hits, unavailable = await search_off(q)
+    """Grouped USDA + Open Food Facts candidates for the query.
+
+    Two groups in the response when both upstreams have hits: USDA
+    raw ingredients first ("Lebensmittel"), OFF branded products
+    second ("Markenprodukte"). Empty groups are omitted entirely.
+
+    Returns `unavailable=True` (with empty `groups`) when the lookup
+    is disabled by config OR every configured upstream failed — the
+    frontend shows the "Aktuell nicht erreichbar" hint and offers
+    the KI / manuell paths instead."""
+    groups, unavailable = await search_combined(q)
     return ok(
-        NutritionSearchResponse(results=hits, unavailable=unavailable).model_dump(
+        NutritionSearchResponse(groups=groups, unavailable=unavailable).model_dump(
             mode="json"
         )
     )

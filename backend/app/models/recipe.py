@@ -14,7 +14,12 @@ class NutritionSource(str, enum.Enum):
     NULL on the column (no enum value) means "no nutrition data yet" —
     kept distinct from `manual` so the auto-lookup pipeline can tell
     apart "never tried" from "user supplied these by hand".
+
+    USDA was added in alembic 0021 as the primary source for raw
+    cooking ingredients (Foundation + SR Legacy datasets); OFF stays
+    around for branded packaged products.
     """
+    USDA = "usda"
     OFF = "off"
     AI = "ai"
     MANUAL = "manual"
@@ -103,6 +108,10 @@ class RecipeIngredient(Base, TimestampMixin):
     )
     # OFF barcode the row was filled from; only set when nutrition_source == OFF.
     off_product_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # USDA FoodData Central food ID; only set when nutrition_source == USDA.
+    # Same intent as off_product_code — lets "Werte aktualisieren" re-hit
+    # the same food row and link back to the source.
+    usda_fdc_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     recipe: Mapped["Recipe"] = relationship(back_populates="ingredients")
 

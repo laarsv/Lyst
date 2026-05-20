@@ -104,8 +104,9 @@ async def duplicate_recipe(db: AsyncSession, src: Recipe, owner_id: int, title: 
         # Carry nutrition fields + provenance forward — the common case
         # for "Rezept duplizieren" is "alles wie das Original, ich passe
         # nur ein paar Schritte an", not "Nährwerte fang ich neu an".
-        # off_product_code stays attached so a later "Werte aktualisieren"
-        # on the copy can re-pull the exact same OFF product.
+        # off_product_code / usda_fdc_id stay attached so a later
+        # "Werte aktualisieren" on the copy can re-pull the exact same
+        # OFF or USDA food row.
         db.add(RecipeIngredient(
             recipe_id=new.id, name=ing.name, quantity=ing.quantity,
             unit=ing.unit, position=ing.position,
@@ -118,6 +119,7 @@ async def duplicate_recipe(db: AsyncSession, src: Recipe, owner_id: int, title: 
             salt_per_100g=ing.salt_per_100g,
             nutrition_source=ing.nutrition_source,
             off_product_code=ing.off_product_code,
+            usda_fdc_id=ing.usda_fdc_id,
         ))
     for step in src.steps:
         db.add(RecipeStep(
@@ -152,6 +154,7 @@ async def add_ingredient(
     salt_per_100g: float | None = None,
     nutrition_source: NutritionSource | None = None,
     off_product_code: str | None = None,
+    usda_fdc_id: str | None = None,
 ) -> RecipeIngredient:
     pos = await _next_pos(db, RecipeIngredient, RecipeIngredient.recipe_id, recipe_id)
     ing = RecipeIngredient(
@@ -169,6 +172,7 @@ async def add_ingredient(
         salt_per_100g=salt_per_100g,
         nutrition_source=nutrition_source,
         off_product_code=off_product_code,
+        usda_fdc_id=usda_fdc_id,
     )
     db.add(ing)
     await db.commit()

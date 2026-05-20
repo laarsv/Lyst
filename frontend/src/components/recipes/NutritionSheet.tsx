@@ -1,32 +1,39 @@
 /** Nährwerte sheet — pick or enter the seven per-100g values for one
  *  ingredient. Three paths in the same surface:
  *
- *    1. OFF candidates (auto-loaded on open) — pick one to fill.
+ *    1. Lookup candidates (auto-loaded on open) — pick one to fill.
+ *       Results are GROUPED into two sections:
+ *         · 🥑 Lebensmittel — USDA FoodData Central (raw ingredients)
+ *         · 🌍 Markenprodukte — Open Food Facts (branded products)
+ *       USDA first because for "Avocado" you want the raw fruit, not
+ *       "100% Pure Avocado Oil Spray". Empty groups are dropped by
+ *       the backend so the UI just iterates whatever it gets.
  *    2. "KI-Schätzung anfordern" — falls back to local Ollama for
- *       ingredients OFF doesn't know about ("Tante Käthes …").
+ *       ingredients neither database knows about ("Tante Käthes …").
  *    3. "Manuell eintragen" — reveals a 7-field inline form prefilled
  *       with whatever's currently on the ingredient.
  *
  *  Mobile (<768px) renders as a BottomSheet — full-width slide-up,
  *  same layout the notes filter / actions menu use. Desktop renders
- *  as a centered Modal. The list of OFF candidates scrolls; the
- *  action footer (KI / Manuell) stays pinned so it's always reachable.
+ *  as a centered Modal. The list of candidates scrolls; the action
+ *  footer (KI / Manuell) stays pinned so it's always reachable.
  *
  *  Empty state copy is split:
- *    - `unavailable` (lookup off OR network failure) →
- *      "OFF aktuell nicht erreichbar — KI oder manuell verwenden"
- *    - `!unavailable && results.length === 0` →
+ *    - `unavailable` (lookup off OR both upstreams failed) →
+ *      "Aktuell nicht erreichbar — KI oder manuell verwenden"
+ *    - `!unavailable && groups.length === 0` →
  *      "Nichts gefunden. KI-Schätzung anfordern oder manuell …"
  *
- *  onApply receives the seven values + the source enum + the OFF
- *  product code (only set for source='off'). Parent decides whether
- *  to persist immediately or stage the change. */
+ *  onApply receives the seven values + the source enum + the row
+ *  identifier (OFF barcode or USDA fdc_id, depending on the source).
+ *  Parent decides whether to persist immediately or stage the change. */
 import { useEffect, useState } from 'react';
-import { Apple, Loader2, Sparkles, X } from 'lucide-react';
+import { Apple, Globe, Leaf, Loader2, Sparkles, X } from 'lucide-react';
 import { RecipesApi } from '@/api/endpoints';
 import { BottomSheet } from '@/components/BottomSheet';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import type {
+  NutritionSearchGroup,
   NutritionSearchHit,
   NutritionSource,
   NutritionValues,
@@ -36,6 +43,7 @@ export interface NutritionPick {
   values: NutritionValues;
   source: NutritionSource;
   off_product_code: string | null;
+  usda_fdc_id: string | null;
   /** Brand we surface in the next badge tooltip — only set for OFF picks. */
   off_brand: string | null;
 }
@@ -102,7 +110,7 @@ export function NutritionSheet({
   const isMobile = useMediaQuery('(max-width: 767.98px)');
   const [view, setView] = useState<View>('pick');
   const [searching, setSearching] = useState(false);
-  const [results, setResults] = useState<NutritionSearchHit[]>([]);
+  const [groups, setGroups] = useState<NutritionSearchGroup[]>([]);
   const [unavailable, setUnavailable] = useState(false);
 
   const [estimating, setEstimating] = useState(false);
@@ -117,7 +125,7 @@ export function NutritionSheet({
   useEffect(() => {
     if (!open) return;
     setView('pick');
-    setResults([]);
+    setGroups([]);
     setUnavailable(false);
     setEstimate(null);
     setManual({ ...current });
@@ -128,7 +136,7 @@ export function NutritionSheet({
       try {
         const resp = await RecipesApi.searchNutrition(ingredientName.trim());
         if (cancelled) return;
-        setResults(resp.results);
+        setGroups(resp.groups);
         setUnavailable(resp.unavailable);
       } catch {
         if (!cancelled) setUnavailable(true);
@@ -158,12 +166,13 @@ export function NutritionSheet({
     }
   };
 
-  const applyOff = (hit: NutritionSearchHit) => {
+  const applyHit = (hit: NutritionSearchHit, source: 'usda' | 'off') => {
     onApply({
       values: hit.nutrition,
-      source: 'off',
-      off_product_code: hit.code,
-      off_brand: hit.brand,
+      source,
+      off_product_code: source === 'off' ? hit.code : null,
+      usda_fdc_id: source === 'usda' ? hit.fdc_id : null,
+      off_brand: source === 'off' ? hit.brand : null,
     });
     onClose();
   };
@@ -174,6 +183,7 @@ export function NutritionSheet({
       values: estimate.values,
       source: 'ai',
       off_product_code: null,
+      usda_fdc_id: null,
       off_brand: null,
     });
     onClose();
@@ -184,6 +194,7 @@ export function NutritionSheet({
       values: manual,
       source: 'manual',
       off_product_code: null,
+      usda_fdc_id: null,
       off_brand: null,
     });
     onClose();
@@ -196,6 +207,8 @@ export function NutritionSheet({
     }));
 
   // ---------- Body ----------
+
+  const totalResults = groups.reduce((n, g) => n + g.results.length, 0);
 
   const body = (
     <div className="flex flex-col gap-3">
@@ -216,63 +229,87 @@ export function NutritionSheet({
 
       {view === 'pick' && (
         <>
-          <div className="text-xs uppercase tracking-wider text-muted flex items-center gap-1">
-            🌍 Aus Open Food Facts
-          </div>
-
           {searching ? (
             <div className="flex items-center gap-2 text-sm text-muted py-4">
               <Loader2 size={16} className="animate-spin" />
-              Suche bei Open Food Facts …
+              Suche Nährwerte …
             </div>
           ) : unavailable ? (
             <p className="text-sm text-muted py-2">
-              OFF aktuell nicht erreichbar — versuche eine KI-Schätzung
-              oder gib die Werte manuell ein.
+              Nährwert-Datenbanken aktuell nicht erreichbar — versuche
+              eine KI-Schätzung oder gib die Werte manuell ein.
             </p>
-          ) : results.length === 0 ? (
+          ) : totalResults === 0 ? (
             <p className="text-sm text-muted py-2">
               Nichts gefunden. KI-Schätzung anfordern oder manuell
               eintragen.
             </p>
           ) : (
-            <ul className="space-y-2 max-h-64 overflow-y-auto pr-1">
-              {results.map((hit) => (
-                <li
-                  key={hit.code}
-                  className="card p-3 flex items-start gap-3 border border-muted/15"
-                >
-                  {hit.image_url ? (
-                    <img
-                      src={hit.image_url}
-                      alt=""
-                      className="size-12 rounded-ctl object-cover bg-page shrink-0"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <div className="size-12 rounded-ctl bg-page shrink-0" />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium truncate">{hit.name}</div>
-                    {hit.brand && (
-                      <div className="text-xs text-muted truncate">
-                        {hit.brand}
-                      </div>
+            <div className="max-h-72 overflow-y-auto pr-1 space-y-4">
+              {groups.map((group) => (
+                <section key={group.source} className="space-y-2">
+                  <div className="text-xs uppercase tracking-wider text-muted flex items-center gap-1.5">
+                    {group.source === 'usda' ? (
+                      <Leaf size={13} className="text-emerald-700" aria-hidden />
+                    ) : (
+                      <Globe size={13} className="text-sky-600" aria-hidden />
                     )}
-                    <div className="text-xs text-muted mt-0.5">
-                      {formatSummary(hit.nutrition) || 'Keine Nährwerte'}
-                    </div>
+                    {group.label}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => applyOff(hit)}
-                    className="btn-secondary text-xs py-1 px-2 shrink-0 self-center"
-                  >
-                    Übernehmen
-                  </button>
-                </li>
+                  <ul className="space-y-2">
+                    {group.results.map((hit) => {
+                      const rowKey =
+                        group.source === 'usda'
+                          ? `usda-${hit.fdc_id}`
+                          : `off-${hit.code}`;
+                      return (
+                        <li
+                          key={rowKey}
+                          className="card p-3 flex items-start gap-3 border border-muted/15"
+                        >
+                          {hit.image_url ? (
+                            <img
+                              src={hit.image_url}
+                              alt=""
+                              className="size-12 rounded-ctl object-cover bg-page shrink-0"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div className="size-12 rounded-ctl bg-page shrink-0 inline-flex items-center justify-center text-muted">
+                              {group.source === 'usda' ? (
+                                <Leaf size={18} aria-hidden />
+                              ) : (
+                                <Globe size={18} aria-hidden />
+                              )}
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium truncate">
+                              {hit.name}
+                            </div>
+                            {hit.brand && (
+                              <div className="text-xs text-muted truncate">
+                                {hit.brand}
+                              </div>
+                            )}
+                            <div className="text-xs text-muted mt-0.5">
+                              {formatSummary(hit.nutrition) || 'Keine Nährwerte'}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => applyHit(hit, group.source)}
+                            className="btn-secondary text-xs py-1 px-2 shrink-0 self-center"
+                          >
+                            Übernehmen
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
               ))}
-            </ul>
+            </div>
           )}
 
           <div className="mt-1 pt-3 border-t border-muted/15 flex flex-col gap-2">

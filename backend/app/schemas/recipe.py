@@ -21,6 +21,7 @@ class IngredientBase(BaseModel):
     salt_per_100g: float | None = Field(default=None, ge=0)
     nutrition_source: NutritionSource | None = None
     off_product_code: str | None = Field(default=None, max_length=32)
+    usda_fdc_id: str | None = Field(default=None, max_length=32)
 
 
 class IngredientCreate(IngredientBase):
@@ -40,6 +41,7 @@ class IngredientUpdate(BaseModel):
     salt_per_100g: float | None = Field(default=None, ge=0)
     nutrition_source: NutritionSource | None = None
     off_product_code: str | None = Field(default=None, max_length=32)
+    usda_fdc_id: str | None = Field(default=None, max_length=32)
 
 
 class IngredientOut(IngredientBase):
@@ -297,19 +299,47 @@ class NutritionValues(BaseModel):
 
 
 class NutritionSearchHit(BaseModel):
-    """One candidate from Open Food Facts."""
+    """One candidate from USDA or Open Food Facts. Which fields are set
+    depends on the source: USDA hits carry `fdc_id` and have `brand`/
+    `image_url`/`code` left null (FDC Foundation/SR Legacy entries
+    aren't branded products); OFF hits carry `code` (barcode) and
+    optional `brand` + `image_url` and leave `fdc_id` null."""
     name: str
     brand: str | None = None
-    code: str  # OFF barcode → off_product_code on save
+    # OFF barcode for OFF hits — persisted to off_product_code. Empty
+    # string ("") on USDA hits since OFF needs *some* code on save but
+    # USDA hits write to usda_fdc_id instead.
+    code: str = ""
     image_url: str | None = None
     nutrition: NutritionValues
+    # USDA FoodData Central food ID — set only on USDA hits, persisted
+    # to usda_fdc_id when the user picks this row.
+    fdc_id: str | None = None
+
+
+class NutritionSearchGroup(BaseModel):
+    """One result group in the grouped search response. The frontend
+    renders the `label` as a section heading and each group's rows
+    in order. Empty groups are dropped before serialisation."""
+    # Stable machine id — 'usda' or 'off'. Drives the badge icon
+    # the picker shows next to each row.
+    source: str
+    # German display heading: 'Lebensmittel' for USDA (raw ingredients)
+    # vs 'Markenprodukte' for OFF (branded packaged products).
+    label: str
+    results: list[NutritionSearchHit] = Field(default_factory=list)
 
 
 class NutritionSearchResponse(BaseModel):
-    results: list[NutritionSearchHit] = Field(default_factory=list)
-    # True when OFF lookup was disabled or unreachable — the frontend
-    # uses this to show "Aktuell nicht erreichbar, KI oder manuell
-    # verwenden" instead of an empty state.
+    # Grouped results — USDA first (raw ingredients), OFF below
+    # (branded products). Empty groups are omitted entirely so the UI
+    # can iterate without checking lengths.
+    groups: list[NutritionSearchGroup] = Field(default_factory=list)
+    # True when NUTRITION_LOOKUP_ENABLED is false OR every configured
+    # upstream failed/timed out — the frontend shows "Aktuell nicht
+    # erreichbar, KI oder manuell verwenden" instead of an empty
+    # state. When at least one upstream succeeded with zero hits we
+    # leave this False — that's "found nothing", a different message.
     unavailable: bool = False
 
 

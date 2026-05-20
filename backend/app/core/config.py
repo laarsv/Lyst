@@ -62,6 +62,20 @@ class Settings(BaseSettings):
     # nutrition datasets we can hit without an API key.
     NUTRITION_LOOKUP_ENABLED: bool = True
 
+    # USDA FoodData Central — primary source for raw cooking ingredients
+    # (Foundation + SR Legacy datasets). OFF is brand/barcode-centric and
+    # misses the "raw avocado" cases entirely; USDA fills that gap. Free
+    # API key from https://fdc.nal.usda.gov/api-key-signup.html. Empty
+    # string = USDA group silently skipped, OFF + KI + manual still work.
+    FDC_API_KEY: str = ""
+
+    # When the German term isn't in our static translation table AND USDA
+    # found nothing with the raw term, optionally do a single Ollama call
+    # to translate the German ingredient to English and retry USDA. OFF by
+    # default because it adds real latency per miss; expanding the static
+    # table in app/data/ingredient_translations.py is the preferred path.
+    NUTRITION_TRANSLATE_FALLBACK: bool = False
+
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.BACKEND_CORS_ORIGINS.split(",") if o.strip()]
