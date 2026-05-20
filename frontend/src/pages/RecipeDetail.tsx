@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ChefHat, Copy, Loader2, LogOut, Pencil, Share2, ShoppingCart, Sparkles, Trash2, Users } from 'lucide-react';
+import { ChefHat, Copy, Loader2, LogOut, Pencil, RefreshCw, Share2, ShoppingCart, Sparkles, Trash2, Users } from 'lucide-react';
 import { SharedChip } from '@/components/SharedChip';
 import { Modal } from '@/components/Modal';
 import { ShareRecipePanel } from '@/components/recipes/ShareRecipePanel';
+import { NutritionBadge } from '@/components/recipes/NutritionBadge';
 import { RecipesApi } from '@/api/endpoints';
 import type { ImportedRecipe, Recipe } from '@/types';
 import { toast } from '@/components/Toast';
@@ -264,7 +265,7 @@ export function RecipeDetailPage() {
         </div>
       </div>
 
-      <NutritionCard recipe={recipe} />
+      <NutritionCard recipe={recipe} onChanged={fetchRecipe} />
 
       <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4">
         <section className="card p-5">
@@ -278,7 +279,8 @@ export function RecipeDetailPage() {
                   <span className="text-sm text-muted tabular-nums w-20 shrink-0">
                     {fmtQty(ing.quantity)} {ing.unit ?? ''}
                   </span>
-                  <span className="text-sm">{ing.name}</span>
+                  <span className="text-sm flex-1">{ing.name}</span>
+                  <NutritionBadge source={ing.nutrition_source} />
                 </li>
               ))}
             </ul>
@@ -312,35 +314,131 @@ export function RecipeDetailPage() {
   );
 }
 
-function NutritionCard({ recipe }: { recipe: Recipe }) {
+function NutritionCard({
+  recipe,
+  onChanged,
+}: {
+  recipe: Recipe;
+  onChanged: () => void;
+}) {
   const n = recipe.nutrition_per_serving;
-  // Hide silently if there's no data at all
-  if (n.calories == null && n.protein == null && n.carbs == null && n.fat == null) return null;
+  const [refreshing, setRefreshing] = useState(false);
+  // Hide silently if no ingredient carries any nutrition data — the
+  // user hasn't engaged with the feature yet, so an empty card adds
+  // noise. The "Werte aktualisieren" affordance lives inside the
+  // card; missing ingredients can be re-looked-up from the row sheets.
+  const hasAny =
+    n.calories != null ||
+    n.protein != null ||
+    n.carbs != null ||
+    n.fat != null ||
+    n.fiber != null ||
+    n.sugar != null ||
+    n.salt != null;
+  if (!hasAny) return null;
+
   const cells: { label: string; value: number | null; unit: string }[] = [
     { label: 'Kalorien', value: n.calories, unit: 'kcal' },
     { label: 'Eiweiß', value: n.protein, unit: 'g' },
     { label: 'Kohlenhydrate', value: n.carbs, unit: 'g' },
     { label: 'Fett', value: n.fat, unit: 'g' },
+    { label: 'Ballaststoffe', value: n.fiber, unit: 'g' },
+    { label: 'Zucker', value: n.sugar, unit: 'g' },
+    { label: 'Salz', value: n.salt, unit: 'g' },
   ];
+
+  /** Re-pull OFF values for every ingredient that has a stored
+   *  off_product_code, *or* has no source yet but a name we can
+   *  search by. We deliberately don't override 'ai'/'manual' rows —
+   *  the user owns those choices. PATCH happens one ingredient at a
+   *  time; the OFF rate gate on the backend serializes the search
+   *  side so client-side concurrency is fine. */
+  const refreshAll = async () => {
+    setRefreshing(true);
+    try {
+      let touched = 0;
+      for (const ing of recipe.ingredients) {
+        // Skip rows the user owns or that have no name to search by.
+        if (ing.nutrition_source === 'ai' || ing.nutrition_source === 'manual') {
+          continue;
+        }
+        if (!ing.name.trim()) continue;
+        try {
+          const resp = await RecipesApi.searchNutrition(ing.name.trim());
+          const hit = resp.results[0];
+          if (!hit) continue;
+          await RecipesApi.updateIngredient(recipe.id, ing.id, {
+            calories_per_100g: hit.nutrition.calories_per_100g,
+            protein_per_100g: hit.nutrition.protein_per_100g,
+            carbs_per_100g: hit.nutrition.carbs_per_100g,
+            fat_per_100g: hit.nutrition.fat_per_100g,
+            fiber_per_100g: hit.nutrition.fiber_per_100g,
+            sugar_per_100g: hit.nutrition.sugar_per_100g,
+            salt_per_100g: hit.nutrition.salt_per_100g,
+            nutrition_source: 'off',
+            off_product_code: hit.code,
+          });
+          touched += 1;
+        } catch {
+          // single-ingredient failures don't abort the whole pass —
+          // the rest of the recipe may still pick up fresh values.
+        }
+      }
+      if (touched > 0) {
+        toast.success(`${touched} Zutat${touched === 1 ? '' : 'en'} aktualisiert`);
+        onChanged();
+      } else {
+        toast.info('Keine neuen OFF-Treffer gefunden.');
+      }
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  // "~" prefix on the whole card iff any contributing ingredient is
+  // AI-sourced — spec calls for one global uncertainty marker, not
+  // per-cell, to keep the card scan-friendly.
+  const prefix = n.is_estimate ? '~ ' : '';
+
   return (
     <section className="card p-5">
       <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
-        <h2 className="font-semibold">Nährwerte pro Portion</h2>
-        <span className="text-xs text-muted">
-          basiert auf erfassten Zutaten (g/kg)
-        </span>
+        <h2 className="font-semibold">
+          {prefix}Nährwerte pro Portion
+        </h2>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted">
+            basiert auf erfassten Zutaten (g/kg)
+          </span>
+          <button
+            type="button"
+            onClick={refreshAll}
+            disabled={refreshing}
+            title="Werte aus Open Food Facts neu abrufen"
+            className="size-7 inline-flex items-center justify-center rounded-ctl text-muted hover:text-brand-700 hover:bg-page transition disabled:opacity-50"
+            aria-label="Werte aktualisieren"
+          >
+            <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+          </button>
+        </div>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {cells.map((c) => (
           <div key={c.label} className="rounded-card border border-line p-3">
             <div className="text-xs text-muted">{c.label}</div>
             <div className="text-lg font-semibold tabular-nums">
-              {c.value != null ? `${c.value}` : '—'}
+              {c.value != null ? `${prefix}${c.value}` : '—'}
               <span className="text-xs font-normal text-muted ml-1">{c.unit}</span>
             </div>
           </div>
         ))}
       </div>
+      {n.ingredients_with_data < n.ingredients_total && (
+        <p className="text-xs text-muted mt-3">
+          Werte basieren auf {n.ingredients_with_data} von {n.ingredients_total}{' '}
+          Zutaten — fehlende ergänzen?
+        </p>
+      )}
     </section>
   );
 }

@@ -10,14 +10,21 @@ import {
 } from '@dnd-kit/core';
 import { SortableContext, arrayMove, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { RecipesApi } from '@/api/endpoints';
-import type { ImportedRecipe, RecipeIngredient, RecipeStep } from '@/types';
+import type {
+  ImportedRecipe,
+  NutritionSource,
+  RecipeIngredient,
+  RecipeStep,
+} from '@/types';
 import { SortableEditRow } from '@/components/recipes/SortableEditRow';
 import { UnitSelect } from '@/components/UnitSelect';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
 import { invalidateOverview } from '@/hooks/useOverviewQuery';
-import { ImagePlus, Loader2, Sparkles, Trash2, Upload } from 'lucide-react';
+import { Apple, ImagePlus, Loader2, Sparkles, Trash2, Upload } from 'lucide-react';
 import { AiSuggestionModal } from '@/components/AiSuggestionModal';
+import { NutritionBadge } from '@/components/recipes/NutritionBadge';
+import { NutritionSheet, type NutritionPick } from '@/components/recipes/NutritionSheet';
 import {
   ALL_SUGGESTED_RECIPE_TAGS,
   SUGGESTED_RECIPE_TAGS,
@@ -37,8 +44,19 @@ interface DraftIngredient {
   protein_per_100g: number | null;
   carbs_per_100g: number | null;
   fat_per_100g: number | null;
-  /** Local-only: whether the optional nutrition row is expanded in the UI */
-  nutritionOpen?: boolean;
+  fiber_per_100g: number | null;
+  sugar_per_100g: number | null;
+  salt_per_100g: number | null;
+  /** Provenance — set by the NutritionSheet onApply. Null = no
+   *  values yet (distinct from "manual"). Drives the source badge
+   *  rendered next to the name input. */
+  nutrition_source: NutritionSource | null;
+  off_product_code: string | null;
+  /** Cached brand name from the OFF pick, used only for the badge
+   *  tooltip ("Quelle: Open Food Facts (Followfish)"). Not persisted
+   *  — the API doesn't carry it back, but persistence isn't needed
+   *  since the tooltip falls back to "Open Food Facts" without it. */
+  off_brand: string | null;
 }
 
 interface DraftStep {
@@ -49,6 +67,23 @@ interface DraftStep {
 
 let tempCounter = 0;
 const tempId = () => `tmp-${++tempCounter}`;
+
+/** Empty nutrition + provenance block — used as the starting point
+ *  for fresh ingredients, AI-suggested rows, and the API/prefill
+ *  fallbacks. Keeps the four "{ id, persisted, name, …, all-nulls }"
+ *  blocks from drifting apart silently. */
+const emptyNutrition = () => ({
+  calories_per_100g: null,
+  protein_per_100g: null,
+  carbs_per_100g: null,
+  fat_per_100g: null,
+  fiber_per_100g: null,
+  sugar_per_100g: null,
+  salt_per_100g: null,
+  nutrition_source: null as NutritionSource | null,
+  off_product_code: null as string | null,
+  off_brand: null as string | null,
+});
 
 export function RecipeEditPage() {
   const { id } = useParams();
@@ -119,13 +154,29 @@ export function RecipeEditPage() {
           name: i.name,
           quantity: i.quantity,
           unit: i.unit,
-          calories_per_100g: null,
-          protein_per_100g: null,
-          carbs_per_100g: null,
-          fat_per_100g: null,
+          // The backend importer ran OFF on every ingredient and
+          // populated these on direct hits — carry them straight into
+          // the draft so the user sees the 🌍 badges + filled values
+          // on the prefill screen. Misses come through as null and the
+          // user can request a KI-Schätzung from the row's sheet.
+          calories_per_100g: i.calories_per_100g ?? null,
+          protein_per_100g: i.protein_per_100g ?? null,
+          carbs_per_100g: i.carbs_per_100g ?? null,
+          fat_per_100g: i.fat_per_100g ?? null,
+          fiber_per_100g: i.fiber_per_100g ?? null,
+          sugar_per_100g: i.sugar_per_100g ?? null,
+          salt_per_100g: i.salt_per_100g ?? null,
+          nutrition_source: i.nutrition_source ?? null,
+          off_product_code: i.off_product_code ?? null,
+          off_brand: null,
         }))
       : [],
   );
+
+  /** Currently open Nährwerte sheet's ingredient id (null = closed). */
+  const [nutritionSheetFor, setNutritionSheetFor] = useState<
+    number | string | null
+  >(null);
   const [steps, setSteps] = useState<DraftStep[]>(
     prefill
       ? [...prefill.steps]
@@ -159,6 +210,12 @@ export function RecipeEditPage() {
             protein_per_100g: i.protein_per_100g,
             carbs_per_100g: i.carbs_per_100g,
             fat_per_100g: i.fat_per_100g,
+            fiber_per_100g: i.fiber_per_100g,
+            sugar_per_100g: i.sugar_per_100g,
+            salt_per_100g: i.salt_per_100g,
+            nutrition_source: i.nutrition_source,
+            off_product_code: i.off_product_code,
+            off_brand: null,
           })),
         );
         setSteps(r.steps.map((s) => ({ id: s.id, persisted: true, description: s.description })));
@@ -188,12 +245,28 @@ export function RecipeEditPage() {
         name: '',
         quantity: null,
         unit: null,
-        calories_per_100g: null,
-        protein_per_100g: null,
-        carbs_per_100g: null,
-        fat_per_100g: null,
+        ...emptyNutrition(),
       },
     ]);
+
+  /** Apply a NutritionSheet pick to a specific ingredient: copy the
+   *  seven values + source + barcode (+ brand for the badge tooltip).
+   *  Source is set by the sheet itself (off/ai/manual) so the badge
+   *  flips correctly even when the user just manually tweaks a value
+   *  that came from OFF. */
+  const applyNutritionPick = (id: number | string, pick: NutritionPick) =>
+    updateIngredient(id, {
+      calories_per_100g: pick.values.calories_per_100g,
+      protein_per_100g: pick.values.protein_per_100g,
+      carbs_per_100g: pick.values.carbs_per_100g,
+      fat_per_100g: pick.values.fat_per_100g,
+      fiber_per_100g: pick.values.fiber_per_100g,
+      sugar_per_100g: pick.values.sugar_per_100g,
+      salt_per_100g: pick.values.salt_per_100g,
+      nutrition_source: pick.source,
+      off_product_code: pick.off_product_code,
+      off_brand: pick.off_brand,
+    });
   const updateIngredient = (id: number | string, patch: Partial<DraftIngredient>) =>
     setIngredients((cur) => cur.map((i) => (i.id === id ? { ...i, ...patch } : i)));
   const removeIngredient = (id: number | string) =>
@@ -262,6 +335,11 @@ export function RecipeEditPage() {
             protein_per_100g: i.protein_per_100g,
             carbs_per_100g: i.carbs_per_100g,
             fat_per_100g: i.fat_per_100g,
+            fiber_per_100g: i.fiber_per_100g,
+            sugar_per_100g: i.sugar_per_100g,
+            salt_per_100g: i.salt_per_100g,
+            nutrition_source: i.nutrition_source,
+            off_product_code: i.off_product_code,
           })),
           steps: steps.map((s) => ({ description: s.description.trim() })),
         });
@@ -333,7 +411,12 @@ export function RecipeEditPage() {
           (orig.calories_per_100g ?? null) !== (draft.calories_per_100g ?? null) ||
           (orig.protein_per_100g ?? null) !== (draft.protein_per_100g ?? null) ||
           (orig.carbs_per_100g ?? null) !== (draft.carbs_per_100g ?? null) ||
-          (orig.fat_per_100g ?? null) !== (draft.fat_per_100g ?? null)
+          (orig.fat_per_100g ?? null) !== (draft.fat_per_100g ?? null) ||
+          (orig.fiber_per_100g ?? null) !== (draft.fiber_per_100g ?? null) ||
+          (orig.sugar_per_100g ?? null) !== (draft.sugar_per_100g ?? null) ||
+          (orig.salt_per_100g ?? null) !== (draft.salt_per_100g ?? null) ||
+          (orig.nutrition_source ?? null) !== (draft.nutrition_source ?? null) ||
+          (orig.off_product_code ?? null) !== (draft.off_product_code ?? null)
         );
         if (changed) {
           await RecipesApi.updateIngredient(rid, id, {
@@ -344,6 +427,11 @@ export function RecipeEditPage() {
             protein_per_100g: draft.protein_per_100g,
             carbs_per_100g: draft.carbs_per_100g,
             fat_per_100g: draft.fat_per_100g,
+            fiber_per_100g: draft.fiber_per_100g,
+            sugar_per_100g: draft.sugar_per_100g,
+            salt_per_100g: draft.salt_per_100g,
+            nutrition_source: draft.nutrition_source,
+            off_product_code: draft.off_product_code,
           });
         }
         reorderIng.push({ id, position: i });
@@ -356,6 +444,11 @@ export function RecipeEditPage() {
           protein_per_100g: draft.protein_per_100g,
           carbs_per_100g: draft.carbs_per_100g,
           fat_per_100g: draft.fat_per_100g,
+          fiber_per_100g: draft.fiber_per_100g,
+          sugar_per_100g: draft.sugar_per_100g,
+          salt_per_100g: draft.salt_per_100g,
+          nutrition_source: draft.nutrition_source,
+          off_product_code: draft.off_product_code,
         });
         reorderIng.push({ id: created.id, position: i });
       }
@@ -644,73 +737,50 @@ export function RecipeEditPage() {
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd(setIngredients)}>
             <SortableContext items={ingredientItems} strategy={verticalListSortingStrategy}>
               <div className="space-y-2">
-                {ingredients.map((ing) => {
-                  const hasNutrition =
-                    ing.calories_per_100g != null ||
-                    ing.protein_per_100g != null ||
-                    ing.carbs_per_100g != null ||
-                    ing.fat_per_100g != null;
-                  const open = ing.nutritionOpen ?? hasNutrition;
-                  return (
-                    <SortableEditRow key={ing.id} id={ing.id} onDelete={() => removeIngredient(ing.id)}>
-                      <div className="flex flex-wrap gap-2 items-start">
+                {ingredients.map((ing) => (
+                  <SortableEditRow key={ing.id} id={ing.id} onDelete={() => removeIngredient(ing.id)}>
+                    <div className="flex flex-wrap gap-2 items-center">
+                      <div className="flex-1 min-w-[160px] flex items-center gap-1.5">
                         <input
-                          className="input flex-1 min-w-[160px] py-1.5"
+                          className="input flex-1 py-1.5"
                           placeholder="z.B. Mehl"
                           value={ing.name}
                           onChange={(e) => updateIngredient(ing.id, { name: e.target.value })}
                         />
-                        <input
-                          className="input w-20 py-1.5"
-                          placeholder="Menge"
-                          inputMode="decimal"
-                          value={ing.quantity ?? ''}
-                          onChange={(e) =>
-                            updateIngredient(ing.id, {
-                              quantity: e.target.value === '' ? null : Number(e.target.value),
-                            })
-                          }
+                        <NutritionBadge
+                          source={ing.nutrition_source}
+                          extra={ing.off_brand}
                         />
-                        <UnitSelect
-                          className="w-32"
-                          value={ing.unit}
-                          onChange={(v) => updateIngredient(ing.id, { unit: v })}
-                        />
-                        <button
-                          type="button"
-                          className="text-xs text-muted hover:text-brand-700 px-1 py-1.5"
-                          onClick={() => updateIngredient(ing.id, { nutritionOpen: !open })}
-                          title="Nährwerte erfassen"
-                        >
-                          {open ? '▾ Nährwerte' : '▸ Nährwerte'}
-                        </button>
                       </div>
-                      {open && (
-                        <div className="mt-2 pl-1 grid grid-cols-2 sm:grid-cols-4 gap-2">
-                          {([
-                            ['calories_per_100g', 'kcal/100g'],
-                            ['protein_per_100g', 'Eiweiß g/100g'],
-                            ['carbs_per_100g', 'KH g/100g'],
-                            ['fat_per_100g', 'Fett g/100g'],
-                          ] as const).map(([key, label]) => (
-                            <input
-                              key={key}
-                              className="input py-1.5 text-sm"
-                              placeholder={label}
-                              inputMode="decimal"
-                              value={(ing[key] ?? '') as number | ''}
-                              onChange={(e) =>
-                                updateIngredient(ing.id, {
-                                  [key]: e.target.value === '' ? null : Number(e.target.value),
-                                } as Partial<DraftIngredient>)
-                              }
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </SortableEditRow>
-                  );
-                })}
+                      <input
+                        className="input w-20 py-1.5"
+                        placeholder="Menge"
+                        inputMode="decimal"
+                        value={ing.quantity ?? ''}
+                        onChange={(e) =>
+                          updateIngredient(ing.id, {
+                            quantity: e.target.value === '' ? null : Number(e.target.value),
+                          })
+                        }
+                      />
+                      <UnitSelect
+                        className="w-32"
+                        value={ing.unit}
+                        onChange={(v) => updateIngredient(ing.id, { unit: v })}
+                      />
+                      <button
+                        type="button"
+                        className="size-9 inline-flex items-center justify-center rounded-ctl text-muted hover:text-brand-700 hover:bg-page transition"
+                        onClick={() => setNutritionSheetFor(ing.id)}
+                        disabled={!ing.name.trim()}
+                        title="Nährwerte"
+                        aria-label="Nährwerte"
+                      >
+                        <Apple size={16} />
+                      </button>
+                    </div>
+                  </SortableEditRow>
+                ))}
               </div>
             </SortableContext>
           </DndContext>
@@ -809,10 +879,7 @@ export function RecipeEditPage() {
                   name: p.name,
                   quantity: p.quantity ?? null,
                   unit: p.unit ?? null,
-                  calories_per_100g: null,
-                  protein_per_100g: null,
-                  carbs_per_100g: null,
-                  fat_per_100g: null,
+                  ...emptyNutrition(),
                 })),
               ]);
               setAiIngrOpen(false);
@@ -866,6 +933,32 @@ export function RecipeEditPage() {
           />
         </>
       )}
+
+      {/* Nährwerte sheet — opens against whichever ingredient row's
+          apple button was clicked. Mounted unconditionally so the
+          BottomSheet's mount/unmount transition fires correctly. */}
+      <NutritionSheet
+        open={nutritionSheetFor !== null}
+        onClose={() => setNutritionSheetFor(null)}
+        ingredientName={
+          ingredients.find((i) => i.id === nutritionSheetFor)?.name ?? ''
+        }
+        current={(() => {
+          const ing = ingredients.find((i) => i.id === nutritionSheetFor);
+          return {
+            calories_per_100g: ing?.calories_per_100g ?? null,
+            protein_per_100g: ing?.protein_per_100g ?? null,
+            carbs_per_100g: ing?.carbs_per_100g ?? null,
+            fat_per_100g: ing?.fat_per_100g ?? null,
+            fiber_per_100g: ing?.fiber_per_100g ?? null,
+            sugar_per_100g: ing?.sugar_per_100g ?? null,
+            salt_per_100g: ing?.salt_per_100g ?? null,
+          };
+        })()}
+        onApply={(pick) => {
+          if (nutritionSheetFor !== null) applyNutritionPick(nutritionSheetFor, pick);
+        }}
+      />
     </form>
   );
 }

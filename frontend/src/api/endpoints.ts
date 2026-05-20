@@ -28,6 +28,9 @@ import type {
   NoteTask,
   NoteVersionFull,
   NoteVersionListItem,
+  NutritionEstimateResponse,
+  NutritionSearchResponse,
+  NutritionSource,
   PublicListData,
   PublicNoteData,
   InternalShare,
@@ -427,6 +430,11 @@ export const RecipesApi = {
       protein_per_100g?: number | null;
       carbs_per_100g?: number | null;
       fat_per_100g?: number | null;
+      fiber_per_100g?: number | null;
+      sugar_per_100g?: number | null;
+      salt_per_100g?: number | null;
+      nutrition_source?: NutritionSource | null;
+      off_product_code?: string | null;
     }>;
     steps?: Array<{ description: string }>;
   }) => api.post<{ data: Recipe }>('/recipes', payload).then(unwrap),
@@ -540,6 +548,11 @@ export const RecipesApi = {
       protein_per_100g?: number | null;
       carbs_per_100g?: number | null;
       fat_per_100g?: number | null;
+      fiber_per_100g?: number | null;
+      sugar_per_100g?: number | null;
+      salt_per_100g?: number | null;
+      nutrition_source?: NutritionSource | null;
+      off_product_code?: string | null;
     },
   ) =>
     api.post<{ data: RecipeIngredient }>(`/recipes/${recipeId}/ingredients`, payload).then(unwrap),
@@ -554,6 +567,11 @@ export const RecipesApi = {
       protein_per_100g: number | null;
       carbs_per_100g: number | null;
       fat_per_100g: number | null;
+      fiber_per_100g: number | null;
+      sugar_per_100g: number | null;
+      salt_per_100g: number | null;
+      nutrition_source: NutritionSource | null;
+      off_product_code: string | null;
     }>,
   ) =>
     api
@@ -626,6 +644,29 @@ export const RecipesApi = {
   ) =>
     api
       .post<{ data: CopyToListResponse }>(`/recipes/${recipeId}/copy-to-list`, payload)
+      .then(unwrap),
+
+  // ----- Nutrition lookup (v1.3.0) -----
+  /** Top 5 Open Food Facts candidates for the query. `unavailable=true`
+   *  means OFF is disabled by env flag OR unreachable — distinct from
+   *  "found nothing". The Nährwerte sheet shows the right empty-state
+   *  copy based on this flag. */
+  searchNutrition: (q: string) =>
+    api
+      .get<{ data: NutritionSearchResponse }>('/recipes/ingredients/nutrition-search', {
+        params: { q },
+      })
+      .then(unwrap),
+  /** Local Ollama estimate. Always resolves with a payload — the
+   *  model surfaces a German note in `note` when it can't make a
+   *  confident guess, so the sheet has something to show before
+   *  falling back to manual entry. */
+  estimateNutrition: (name: string, hint?: string) =>
+    api
+      .post<{ data: NutritionEstimateResponse }>('/recipes/ingredients/nutrition-estimate', {
+        name,
+        ...(hint ? { hint } : {}),
+      })
       .then(unwrap),
 };
 

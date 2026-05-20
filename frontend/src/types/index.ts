@@ -255,6 +255,8 @@ export interface ApiEnvelope<T> {
 // (RecipeCategory was the old enum type; kept removed here so call sites
 // either use string-based tag filters or break loudly at compile time.)
 
+export type NutritionSource = 'off' | 'ai' | 'manual';
+
 export interface RecipeIngredient {
   id: number;
   recipe_id: number;
@@ -266,6 +268,17 @@ export interface RecipeIngredient {
   protein_per_100g: number | null;
   carbs_per_100g: number | null;
   fat_per_100g: number | null;
+  fiber_per_100g: number | null;
+  sugar_per_100g: number | null;
+  salt_per_100g: number | null;
+  /** Provenance of the seven per-100g fields. null = no values yet
+   *  (distinct from "manual" = user filled by hand). The source badge
+   *  on each ingredient row reads this. */
+  nutrition_source: NutritionSource | null;
+  /** OFF barcode the row was filled from. Only set when
+   *  nutrition_source === "off". Used by "Werte aktualisieren" to
+   *  re-fetch the same product. */
+  off_product_code: string | null;
 }
 
 export interface NutritionTotals {
@@ -273,6 +286,50 @@ export interface NutritionTotals {
   protein: number | null;
   carbs: number | null;
   fat: number | null;
+  fiber: number | null;
+  sugar: number | null;
+  salt: number | null;
+  /** True iff any contributing ingredient uses source="ai". The
+   *  recipe-detail card prefixes the totals with "~" when set. */
+  is_estimate: boolean;
+  /** "Werte basieren auf X von Y Zutaten — fehlende ergänzen?" */
+  ingredients_with_data: number;
+  ingredients_total: number;
+}
+
+// ---------- Nutrition lookup (v1.3.0) ----------
+
+export interface NutritionValues {
+  calories_per_100g: number | null;
+  protein_per_100g: number | null;
+  carbs_per_100g: number | null;
+  fat_per_100g: number | null;
+  fiber_per_100g: number | null;
+  sugar_per_100g: number | null;
+  salt_per_100g: number | null;
+}
+
+export interface NutritionSearchHit {
+  name: string;
+  brand: string | null;
+  code: string;
+  image_url: string | null;
+  nutrition: NutritionValues;
+}
+
+export interface NutritionSearchResponse {
+  results: NutritionSearchHit[];
+  /** True iff OFF lookup is disabled by env flag OR the call
+   *  failed/timed out — distinct from "found nothing". UI shows
+   *  "Aktuell nicht erreichbar, KI oder manuell verwenden". */
+  unavailable: boolean;
+}
+
+export interface NutritionEstimateResponse {
+  nutrition: NutritionValues;
+  /** Short German note from the model — surfaced as italic helper
+   *  text in the Nährwerte sheet. */
+  note: string | null;
 }
 
 export interface RecipeStep {
@@ -391,6 +448,18 @@ export interface ImportedIngredient {
   name: string;
   quantity: number | null;
   unit: string | null;
+  /** Pre-filled by the backend's post-extraction OFF lookup. Null on
+   *  ingredients OFF doesn't know about — user can request a
+   *  KI-Schätzung from the ingredient row after the import lands. */
+  calories_per_100g?: number | null;
+  protein_per_100g?: number | null;
+  carbs_per_100g?: number | null;
+  fat_per_100g?: number | null;
+  fiber_per_100g?: number | null;
+  sugar_per_100g?: number | null;
+  salt_per_100g?: number | null;
+  nutrition_source?: NutritionSource | null;
+  off_product_code?: string | null;
 }
 
 export interface ImportedStep {
