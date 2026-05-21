@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeftRight, ChefHat, Copy, Loader2, LogOut, Pencil, RefreshCw, Share2, ShoppingCart, Sparkles, Trash2, Users } from 'lucide-react';
+import { ArrowLeftRight, ChefHat, ChevronDown, Copy, Loader2, LogOut, Pencil, RefreshCw, Share2, ShoppingCart, Sparkles, Trash2, Users } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { BulkNutritionFill } from '@/components/recipes/BulkNutritionFill';
+import { fmtDe } from '@/lib/format';
 import { SharedChip } from '@/components/SharedChip';
 import { Modal } from '@/components/Modal';
 import { ShareRecipePanel } from '@/components/recipes/ShareRecipePanel';
@@ -178,6 +180,7 @@ export function RecipeDetailPage() {
                   Quelle: {recipe.source_url}
                 </a>
               )}
+              <NutritionCard recipe={recipe} onChanged={fetchRecipe} />
             </div>
             {/* Action row — icon-only. Three permission tiers:
                   - owner (no share_source): everything
@@ -266,8 +269,6 @@ export function RecipeDetailPage() {
         </div>
       </div>
 
-      <NutritionCard recipe={recipe} onChanged={fetchRecipe} />
-
       <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4">
         <section className="card p-5">
           <h2 className="font-semibold mb-3">Zutaten</h2>
@@ -315,6 +316,20 @@ export function RecipeDetailPage() {
   );
 }
 
+/** Compact, metadata-weight nutrition info — sits below the meta row
+ *  next to the tags. Same visual weight as "Vorbereitung: 15 Min".
+ *
+ *  Collapsed (default):  ≈ 260 kcal · 4,3 g Eiweiß · 13 g KH · 20 g Fett   pro Portion   ⌄
+ *  Expanded:              full 7 macros + per-portion/total toggle + coverage line + refresh
+ *
+ *  Empty state (no ingredient contributed):
+ *    A muted single-line hint with an edit link — no card, no border.
+ *
+ *  Expanded state is persisted to localStorage so a user who always
+ *  wants the detail open keeps it that way across navigations.
+ */
+const NUTRITION_EXPANDED_KEY = 'lyst:nutrition-expanded';
+
 function NutritionCard({
   recipe,
   onChanged,
@@ -322,56 +337,58 @@ function NutritionCard({
   recipe: Recipe;
   onChanged: () => void;
 }) {
-  // v1.5 aggregate carries per-serving, total, and coverage in one
-  // block. The toggle below switches the rendered numbers without a
-  // re-fetch — same data, two views.
   const n = recipe.nutrition;
   const [refreshing, setRefreshing] = useState(false);
   const [mode, setMode] = useState<'per_serving' | 'total'>('per_serving');
+  // bulkOpen drives the inline "Nährwerte ergänzen" panel below the
+  // coverage line — triggered when the user clicks "ergänzen". The
+  // panel auto-starts the fill on mount and shows the result summary.
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [expanded, setExpanded] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(NUTRITION_EXPANDED_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
 
-  // If no ingredient contributed AT ALL (no data OR no convertible
-  // unit), show an actionable empty hint instead of hiding. The link
-  // jumps to edit mode where the user can fill quantities/units.
+  const toggleExpanded = useCallback(() => {
+    setExpanded((cur) => {
+      const next = !cur;
+      try {
+        localStorage.setItem(NUTRITION_EXPANDED_KEY, next ? '1' : '0');
+      } catch {
+        // localStorage can be disabled (private mode, quota); just
+        // skip persistence — the in-memory state still works.
+      }
+      return next;
+    });
+  }, []);
+
+  // Empty state: no ingredient contributed AT ALL (no data OR no
+  // convertible unit). A one-liner with an edit link, no card.
   if (n.coverage.counted === 0) {
     return (
-      <section className="card p-4 text-sm text-muted flex items-start gap-3">
-        <div className="flex-1">
-          <p>
-            Nährwerte noch nicht verfügbar — Zutaten mit Nährwerten und
-            Mengenangaben ergänzen, damit Lyst die Werte pro Portion
-            berechnen kann.
-          </p>
-        </div>
+      <p className="text-sm text-muted mt-3">
+        Nährwerte noch nicht verfügbar —{' '}
         <Link
           to={`/recipes/${recipe.id}/edit`}
-          className="btn-secondary text-xs whitespace-nowrap"
+          className="underline hover:text-brand-700"
         >
-          Zutaten bearbeiten
+          Zutaten ergänzen
         </Link>
-      </section>
+        .
+      </p>
     );
   }
 
   const values = mode === 'per_serving' ? n.per_serving : n.total;
-  const cells: { label: string; value: number | null; unit: string }[] = [
-    { label: 'Kalorien', value: values.calories, unit: 'kcal' },
-    { label: 'Eiweiß', value: values.protein, unit: 'g' },
-    { label: 'Kohlenhydrate', value: values.carbs, unit: 'g' },
-    { label: 'Fett', value: values.fat, unit: 'g' },
-    { label: 'Ballaststoffe', value: values.fiber, unit: 'g' },
-    { label: 'Zucker', value: values.sugar, unit: 'g' },
-    { label: 'Salz', value: values.salt, unit: 'g' },
-  ];
+  const mark = n.is_estimate ? '≈ ' : '';
+  const partial = n.coverage.counted < n.coverage.total;
 
   /** Re-pull nutrition values for every ingredient that has a stored
    *  USDA / OFF source, *or* has no source yet but a name we can
-   *  search by. We deliberately don't override 'ai'/'manual' rows —
-   *  the user owns those choices. The grouped search response gives
-   *  us USDA first, OFF as fallback — we take the first hit of the
-   *  first group so the raw-ingredient match wins over a branded
-   *  product when both exist. PATCH happens one ingredient at a
-   *  time; the per-upstream rate gates on the backend serialise
-   *  outgoing calls so client-side concurrency is fine. */
+   *  search by. Skips 'ai'/'manual' rows — those belong to the user. */
   const refreshAll = async () => {
     setRefreshing(true);
     try {
@@ -383,9 +400,6 @@ function NutritionCard({
         if (!ing.name.trim()) continue;
         try {
           const resp = await RecipesApi.searchNutrition(ing.name.trim());
-          // Defensive: a stale service-worker payload from v1.3 may
-          // still surface here with `{results: [...]}` and no
-          // `groups` — coerce both shapes into one local list.
           const raw = resp as unknown as {
             groups?: Array<{
               source: 'usda' | 'off';
@@ -416,8 +430,7 @@ function NutritionCard({
           });
           touched += 1;
         } catch {
-          // single-ingredient failures don't abort the whole pass —
-          // the rest of the recipe may still pick up fresh values.
+          /* single-ingredient failure shouldn't abort the pass */
         }
       }
       if (touched > 0) {
@@ -431,83 +444,153 @@ function NutritionCard({
     }
   };
 
-  // "~" prefix per cell + "(geschätzt)" suffix on the heading when any
-  // contributing ingredient is AI-sourced. Keeping both signals makes
-  // the uncertainty obvious whether the user scans the heading first
-  // or the numbers first.
-  const prefix = n.is_estimate ? '~ ' : '';
-  const headingLabel =
-    mode === 'per_serving'
-      ? `Nährwerte pro Portion${n.is_estimate ? ' (geschätzt)' : ''}`
-      : `Nährwerte gesamtes Rezept${n.is_estimate ? ' (geschätzt)' : ''}`;
-  const partial = n.coverage.counted < n.coverage.total;
+  // ------- Collapsed line --------
+  // Round to whole grams to keep it tidy; protein gets 1 decimal
+  // because the difference between 4 and 4.3 g matters more there
+  // than on a 12 → 13 g rounding for fat.
+  const summary = (
+    <>
+      {mark}
+      <span className="tabular-nums font-medium text-ink">
+        {fmtDe(values.calories, 0)}
+      </span>{' '}
+      kcal
+      <span className="text-muted/60"> · </span>
+      <span className="tabular-nums">{fmtDe(values.protein, 1)}</span> g Eiweiß
+      <span className="text-muted/60"> · </span>
+      <span className="tabular-nums">{fmtDe(values.carbs, 0)}</span> g KH
+      <span className="text-muted/60"> · </span>
+      <span className="tabular-nums">{fmtDe(values.fat, 0)}</span> g Fett
+    </>
+  );
+
+  if (!expanded) {
+    return (
+      <button
+        type="button"
+        onClick={toggleExpanded}
+        className="mt-3 inline-flex items-center gap-2 text-sm text-muted hover:text-ink transition group max-w-full text-left"
+        aria-expanded="false"
+      >
+        <span className="truncate">
+          {summary}
+          <span className="ml-2 text-muted/70">
+            {mode === 'per_serving' ? 'pro Portion' : 'gesamt'}
+          </span>
+        </span>
+        <ChevronDown
+          size={14}
+          className="shrink-0 text-muted/70 group-hover:text-ink transition-transform"
+          aria-hidden
+        />
+      </button>
+    );
+  }
+
+  // ------- Expanded view --------
+  const rows: { label: string; value: number | null; unit: string; decimals: number }[] = [
+    { label: 'Kalorien', value: values.calories, unit: 'kcal', decimals: 0 },
+    { label: 'Eiweiß', value: values.protein, unit: 'g', decimals: 1 },
+    { label: 'Kohlenhydrate', value: values.carbs, unit: 'g', decimals: 0 },
+    { label: 'Fett', value: values.fat, unit: 'g', decimals: 0 },
+    { label: 'Ballaststoffe', value: values.fiber, unit: 'g', decimals: 1 },
+    { label: 'Zucker', value: values.sugar, unit: 'g', decimals: 0 },
+    { label: 'Salz', value: values.salt, unit: 'g', decimals: 1 },
+  ];
 
   return (
-    <section className="card p-5">
-      <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
-        <h2 className="font-semibold">{headingLabel}</h2>
-        <div className="flex items-center gap-1.5">
+    <div className="mt-3 text-sm text-muted">
+      <div className="flex items-baseline justify-between gap-2 flex-wrap">
+        <button
+          type="button"
+          onClick={toggleExpanded}
+          className="inline-flex items-center gap-2 hover:text-ink transition"
+          aria-expanded="true"
+        >
+          <span className="font-medium text-ink">
+            Nährwerte{n.is_estimate ? ' (geschätzt)' : ''}
+          </span>
+          <ChevronDown
+            size={14}
+            className="text-muted/70 rotate-180 transition-transform"
+            aria-hidden
+          />
+        </button>
+        <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={() =>
               setMode((m) => (m === 'per_serving' ? 'total' : 'per_serving'))
             }
-            className="text-xs text-muted hover:text-brand-700 inline-flex items-center gap-1 px-2 py-1 rounded-ctl hover:bg-page transition"
+            className="text-xs text-muted hover:text-ink inline-flex items-center gap-1 px-1.5 py-0.5 rounded-ctl hover:bg-page transition"
             title={
               mode === 'per_serving'
                 ? 'Gesamtes Rezept anzeigen'
                 : 'Pro Portion anzeigen'
             }
-            aria-label="Pro Portion / gesamt umschalten"
           >
-            <ArrowLeftRight size={12} aria-hidden />
-            {mode === 'per_serving' ? 'Gesamt anzeigen' : 'Pro Portion'}
+            <ArrowLeftRight size={11} aria-hidden />
+            {mode === 'per_serving' ? 'gesamt' : 'pro Portion'}
           </button>
           <button
             type="button"
             onClick={refreshAll}
             disabled={refreshing}
             title="Werte aus USDA / Open Food Facts neu abrufen"
-            className="size-7 inline-flex items-center justify-center rounded-ctl text-muted hover:text-brand-700 hover:bg-page transition disabled:opacity-50"
+            className="size-6 inline-flex items-center justify-center rounded-ctl text-muted hover:text-ink hover:bg-page transition disabled:opacity-50"
             aria-label="Werte aktualisieren"
           >
-            <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+            <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
           </button>
         </div>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {cells.map((c) => (
-          <div key={c.label} className="rounded-card border border-line p-3">
-            <div className="text-xs text-muted">{c.label}</div>
-            <div className="text-lg font-semibold tabular-nums">
-              {c.value != null ? `${prefix}${c.value}` : '—'}
-              <span className="text-xs font-normal text-muted ml-1">{c.unit}</span>
-            </div>
-          </div>
+      {/* Compact wrap-row grid — no tiles, no border. Just label+value
+          pairs separated by a soft middot. */}
+      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5">
+        {rows.map((r) => (
+          <span key={r.label} className="inline-flex items-baseline gap-1">
+            <span className="text-muted">{r.label}</span>
+            <span className="tabular-nums text-ink">
+              {mark}
+              {fmtDe(r.value, r.decimals)}
+            </span>
+            <span className="text-muted">{r.unit}</span>
+          </span>
         ))}
       </div>
-      <p className="text-xs text-muted mt-3">
+      <p className="mt-1.5 text-xs text-muted">
         {mode === 'per_serving' ? (
           <>
-            Pro Portion ({n.servings} Portion{n.servings === 1 ? '' : 'en'})
+            Pro Portion · {n.servings} Portion{n.servings === 1 ? '' : 'en'}
           </>
         ) : (
-          <>Gesamtes Rezept ({n.servings} Portion{n.servings === 1 ? '' : 'en'})</>
+          <>Gesamtes Rezept · {n.servings} Portion{n.servings === 1 ? '' : 'en'}</>
         )}
         {partial && (
           <>
             {' · '}
             Basiert auf {n.coverage.counted} von {n.coverage.total} Zutaten —{' '}
-            <Link
-              to={`/recipes/${recipe.id}/edit`}
-              className="underline hover:text-brand-700"
+            <button
+              type="button"
+              onClick={() => setBulkOpen(true)}
+              className="underline hover:text-ink"
             >
               ergänzen
-            </Link>
+            </button>
           </>
         )}
       </p>
-    </section>
+      {bulkOpen && (
+        <div className="mt-2">
+          <BulkNutritionFill
+            recipeId={recipe.id}
+            variant="compact"
+            autoStart
+            onComplete={onChanged}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 

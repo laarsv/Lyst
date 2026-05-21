@@ -365,6 +365,27 @@ export interface NutritionEstimateResponse {
   note: string | null;
 }
 
+// ---------- Bulk nutrition fill (v1.5.1) ----------
+
+export interface NutritionFillAllItem {
+  ingredient_id: number;
+  name: string;
+  /** 'filled' / 'not_found' / 'skipped' / 'deferred'. */
+  status: 'filled' | 'not_found' | 'skipped' | 'deferred';
+  /** Source on a filled row: 'usda' / 'off' / 'ai'. Null otherwise. */
+  source: 'usda' | 'off' | 'ai' | null;
+}
+
+export interface NutritionFillAllResponse {
+  results: NutritionFillAllItem[];
+  filled: number;
+  not_found: number;
+  skipped: number;
+  /** Rows that hit the OFF rate-budget — retry shortly. */
+  deferred: number;
+  total: number;
+}
+
 export interface RecipeStep {
   id: number;
   recipe_id: number;

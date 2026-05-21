@@ -16,6 +16,7 @@ import type {
   RecipeIngredient,
   RecipeStep,
 } from '@/types';
+import { BulkNutritionFill } from '@/components/recipes/BulkNutritionFill';
 import { SortableEditRow } from '@/components/recipes/SortableEditRow';
 import { UnitSelect } from '@/components/UnitSelect';
 import { toast } from '@/components/Toast';
@@ -231,6 +232,45 @@ export function RecipeEditPage() {
       }
     })();
   }, [isNew, recipeId, nav]);
+
+  /** Re-pull ingredient nutrition fields after a backend-side write
+   *  (currently used by the bulk nutrition fill). Updates only the
+   *  per-100g fields + source/code/fdc_id by ingredient id — leaves
+   *  the user's in-progress edits (name, quantity, unit, position)
+   *  untouched so a fill mid-edit doesn't clobber typed values. */
+  const reloadIngredientNutrition = async () => {
+    if (!recipeId) return;
+    try {
+      const fresh = await RecipesApi.get(recipeId);
+      const byId = new Map(fresh.ingredients.map((i) => [i.id, i] as const));
+      setIngredients((cur) =>
+        cur.map((draft) => {
+          if (!draft.persisted) return draft;
+          const id = draft.id as number;
+          const f = byId.get(id);
+          if (!f) return draft;
+          return {
+            ...draft,
+            calories_per_100g: f.calories_per_100g,
+            protein_per_100g: f.protein_per_100g,
+            carbs_per_100g: f.carbs_per_100g,
+            fat_per_100g: f.fat_per_100g,
+            fiber_per_100g: f.fiber_per_100g,
+            sugar_per_100g: f.sugar_per_100g,
+            salt_per_100g: f.salt_per_100g,
+            nutrition_source: f.nutrition_source,
+            off_product_code: f.off_product_code,
+            usda_fdc_id: f.usda_fdc_id,
+          };
+        }),
+      );
+    } catch (e) {
+      // Non-fatal — the local cache is just stale; user can re-open
+      // the page or hit save to round-trip.
+      // eslint-disable-next-line no-console
+      console.warn('Bulk-fill reload failed', e);
+    }
+  };
 
   // Tags
   const addTag = () => {
@@ -740,6 +780,14 @@ export function RecipeEditPage() {
             </button>
           </div>
         </div>
+        {recipeId && ingredients.length > 0 && (
+          <div className="mb-3">
+            <BulkNutritionFill
+              recipeId={recipeId}
+              onComplete={reloadIngredientNutrition}
+            />
+          </div>
+        )}
         {ingredients.length === 0 ? (
           <p className="text-sm text-muted/70">Noch keine Zutaten.</p>
         ) : (

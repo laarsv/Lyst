@@ -2,6 +2,73 @@
 
 Alle nennenswerten Änderungen pro Release. Datumsangaben sind ISO 8601.
 
+## v1.5.1 — 2026-05-21
+
+Folge-Release auf v1.5.0 mit zwei UX-Schritten: kompakte Nährwert-
+Darstellung und Bulk-Lookup für alle Zutaten eines Rezepts auf einmal.
+
+### Highlights
+
+- **Nährwerte als Metadaten-Zeile, nicht mehr als Dashboard-Karte** —
+  die Detail-Ansicht zeigt jetzt eine schlanke, gedämpfte Zeile direkt
+  unter Portionen / Zeitangaben:
+  „≈ 260 kcal · 4,3 g Eiweiß · 13 g KH · 20 g Fett   pro Portion ⌄".
+  Klick auf den Chevron klappt die vollen 7 Werte + Toggle „pro Portion
+  ⇄ gesamt" + Coverage-Zeile auf. Keine Riesen-Tiles mehr — gleiche
+  visuelle Gewichtung wie „Vorbereitung: 15 Min".
+- **Status persistiert** — `localStorage` merkt sich, ob jemand die
+  Nährwerte immer aufgeklappt sehen möchte (Default: collapsed).
+- **Deutsches Zahlenformat** — Komma-Dezimaltrennung, getrimmte
+  trailing-Null („13", nicht „13,0"; „4,3" bleibt „4,3"). Neuer
+  Helper `fmtDe()` in `lib/format`.
+- **Kompakter Empty-State** — wenn keine Zutat zur Berechnung beiträgt,
+  jetzt nur noch eine einzelne, freundliche Zeile mit Link auf die
+  Edit-Seite, statt einer kompletten Karte.
+- **Bulk-Nährwerte-Befüllung** — neuer Endpoint
+  `POST /recipes/{id}/ingredients/nutrition-fill-all`. Modi:
+  `fill_empty` (nur leere Felder, Default) und `refill_all` (alles neu,
+  Frontend bestätigt vorher). USDA-first im Batch (gegen das großzügige
+  USDA-Quota), OFF nur für Misses und nur solange das 10/min-Budget
+  Slots hat — Rest wird als `deferred` zurückgemeldet, damit der User
+  nach einer Minute erneut klickt. Optional `use_ai_fallback=true` für
+  Ollama-Schätzung der Lücken — opt-in, nie still.
+  - Antwort liefert pro Zutat `{status: filled|not_found|skipped|deferred, source}` +
+    Aggregate (filled/not_found/skipped/deferred/total).
+  - WebSocket-Event `recipe.updated` nach Persistierung — andere
+    Geräte synchronisieren.
+- **„Nährwerte für alle holen"-Button** auf der Edit-Seite über der
+  Zutaten-Liste; „Alle neu abrufen" hinter einem Confirm-Dialog. Result-
+  Panel zeigt „X von Y befüllt", listet Nicht-gefundene Zutaten beim
+  Namen und bietet einen Klick „KI-Schätzung für die fehlenden" — die
+  KI läuft nur auf den ausgewählten IDs, nicht stillschweigend.
+- **Detail-Coverage-Link** „… ergänzen" startet den Bulk-Lookup jetzt
+  inline statt nur zu navigieren — ein Klick, kompakter Status, fertig.
+- **`BulkNutritionFill`-Komponente** in
+  `components/recipes/BulkNutritionFill.tsx` — wiederverwendbar mit
+  `variant="full"` (Edit-Seite) und `variant="compact"` (Detail).
+
+### Verifizierter Sushi-Salat-Lauf (10 Zutaten)
+
+Mit der echten Pipeline (USDA DEMO_KEY + Search-a-licious live) auf
+einem repräsentativen Picnic-Sushi-Salat:
+
+| Zutat               | Quelle | Treffer (Top 1) |
+|---------------------|--------|------------------|
+| Lachsfilet          | OFF    | Saumon ASC |
+| Sushi-Reis          | USDA   | Rice, white, long-grain, parboiled |
+| Reisessig           | —      | (nicht gefunden, AI-Opt-in möglich) |
+| Gurke               | USDA   | Cucumber, peeled, raw |
+| Avocado             | USDA   | Avocado / -Öl (re-rank trifft je nach DB) |
+| Frühlingszwiebel    | OFF    | Frühlingszwiebel |
+| Nori-Blätter        | OFF    | Nori Blätter |
+| Sojasauce           | USDA   | Soy sauce made from soy (tamari) |
+| Sesam               | USDA   | Seeds, sesame seeds, whole, dried |
+| Wasabi              | USDA   | Wasabi |
+
+→ **9 von 10 Zutaten automatisch befüllt** (6 × USDA, 3 × OFF, 1 nicht
+gefunden). Mit einem Klick auf „KI-Schätzung für die fehlenden"
+würde Reisessig per Ollama nachgereicht — sichtbar mit 🤖-Badge.
+
 ## v1.5.0 — 2026-05-21
 
 Nährwerte erscheinen jetzt tatsächlich auf der Rezept-Detailseite. Die

@@ -815,11 +815,19 @@ def clear_cache() -> None:
     _cache.clear()
 
 
+def off_budget_remaining() -> int:
+    """How many OFF requests we could still make in the current
+    10/min window. Used by the bulk-fill endpoint to mark rows as
+    'deferred' rather than burning the whole budget on one recipe."""
+    return _off_gate.available()
+
+
 __all__ = [
     "search_combined",
     "search_for_each",
     "search_off",
     "estimate_with_ollama",
+    "off_budget_remaining",
     "clear_cache",
 ]
 

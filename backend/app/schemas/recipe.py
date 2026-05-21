@@ -366,6 +366,52 @@ class NutritionSearchResponse(BaseModel):
     unavailable: bool = False
 
 
+class NutritionFillAllRequest(BaseModel):
+    """POST /recipes/{id}/ingredients/nutrition-fill-all body.
+
+    Modes:
+      - "fill_empty" (default): only rows without nutrition values get touched.
+      - "refill_all": every row gets re-fetched and overwritten. The
+        frontend confirms before submitting this mode so it's not a
+        destructive surprise.
+
+    `use_ai_fallback=True` runs the Ollama estimate for rows that USDA
+    AND OFF both missed; off by default so AI is always opt-in. The UI
+    re-uses this same endpoint with `ingredient_ids` set when the
+    user clicks "KI-Schätzung für die fehlenden" — restricts the AI
+    fallback to that subset.
+    """
+    mode: str = Field(default="fill_empty", pattern=r"^(fill_empty|refill_all)$")
+    use_ai_fallback: bool = False
+    # Optional subset — when provided, only these ingredient_ids are
+    # processed. Drives the post-result "AI for the misses" button.
+    ingredient_ids: list[int] | None = None
+
+
+class NutritionFillAllItem(BaseModel):
+    """One row in the bulk-fill summary. `status`:
+      - "filled":      values stored, `source` set ('usda' | 'off' | 'ai').
+      - "not_found":   no upstream hit and AI fallback was off.
+      - "skipped":     row was excluded by the mode (e.g. fill_empty +
+                       already has values), so nothing happened.
+      - "deferred":    OFF rate budget was exhausted; user should retry
+                       in a minute or so.
+    """
+    ingredient_id: int
+    name: str
+    status: str
+    source: str | None = None
+
+
+class NutritionFillAllResponse(BaseModel):
+    results: list[NutritionFillAllItem] = Field(default_factory=list)
+    filled: int = 0
+    not_found: int = 0
+    skipped: int = 0
+    deferred: int = 0
+    total: int = 0
+
+
 class NutritionEstimateRequest(BaseModel):
     """User-typed ingredient name + optional context ('Tante Käthes
     Spezialgewürz, etwa wie Curry') to bias the Ollama estimate."""

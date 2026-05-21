@@ -29,6 +29,7 @@ import type {
   NoteVersionFull,
   NoteVersionListItem,
   NutritionEstimateResponse,
+  NutritionFillAllResponse,
   NutritionSearchResponse,
   NutritionSource,
   PublicListData,
@@ -670,6 +671,24 @@ export const RecipesApi = {
         name,
         ...(hint ? { hint } : {}),
       })
+      .then(unwrap),
+  /** Bulk-fill nutrition for every (or only empty / only-listed)
+   *  ingredient of a recipe. USDA-first, OFF-fallback,
+   *  optionally AI for the still-missing. Mirrors the per-ingredient
+   *  sheet's logic in one round-trip. */
+  fillAllNutrition: (
+    recipeId: number,
+    payload: {
+      mode?: 'fill_empty' | 'refill_all';
+      use_ai_fallback?: boolean;
+      ingredient_ids?: number[];
+    } = {},
+  ) =>
+    api
+      .post<{ data: NutritionFillAllResponse }>(
+        `/recipes/${recipeId}/ingredients/nutrition-fill-all`,
+        payload,
+      )
       .then(unwrap),
 };
 
