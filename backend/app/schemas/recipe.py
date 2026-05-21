@@ -51,18 +51,11 @@ class IngredientOut(IngredientBase):
     position: int
 
 
-class NutritionTotals(BaseModel):
-    """Per-serving aggregates derived from ingredient nutrition fields.
-    All fields are None until at least one ingredient has nutrition data
-    for that macro (so partial information still renders sensibly).
-
-    `is_estimate` is true when ANY contributing ingredient was filled
-    from an AI estimate — the recipe-detail card renders a "~" prefix
-    in that case so the user knows the totals carry uncertainty.
-
-    `ingredients_with_data` / `ingredients_total` drive the "Werte
-    basieren auf X von Y Zutaten" hint: lets the UI nudge the user to
-    fill the missing rows without hiding the partial totals."""
+class NutritionTotalsValues(BaseModel):
+    """Absolute (not per-100g) macros for either the whole recipe or
+    a single serving. Each field is None until at least one ingredient
+    contributed a value for that macro — partial coverage still
+    renders sensibly."""
     calories: float | None = None
     protein: float | None = None
     carbs: float | None = None
@@ -70,9 +63,35 @@ class NutritionTotals(BaseModel):
     fiber: float | None = None
     sugar: float | None = None
     salt: float | None = None
+
+
+class NutritionCoverage(BaseModel):
+    """How many ingredients actually contributed to the totals.
+
+    `counted < total` means some rows were excluded — either they have
+    no nutrition values yet, or their quantity/unit couldn't be
+    converted to grams (e.g. "1 Bund Petersilie" without a per-Bund
+    weight in our table). The frontend shows a "Basiert auf X von Y
+    Zutaten" line that links to edit mode."""
+    counted: int = 0
+    total: int = 0
+
+
+class NutritionAggregate(BaseModel):
+    """Recipe-level nutrition summary derived from ingredient rows.
+
+    Returned on RecipeOut so the detail page can render both
+    per-portion and total values plus the coverage hint — the UI
+    toggles between the two without a second request.
+
+    `is_estimate` flips true when any contributing ingredient was
+    filled from an AI estimate — the heading then shows "(geschätzt)"
+    so the user knows the totals carry uncertainty."""
+    per_serving: NutritionTotalsValues = Field(default_factory=NutritionTotalsValues)
+    total: NutritionTotalsValues = Field(default_factory=NutritionTotalsValues)
+    coverage: NutritionCoverage = Field(default_factory=NutritionCoverage)
     is_estimate: bool = False
-    ingredients_with_data: int = 0
-    ingredients_total: int = 0
+    servings: int = 1
 
 
 # --- Steps ---
@@ -161,7 +180,11 @@ class RecipeOut(RecipeBase):
     updated_at: datetime
     ingredients: list[IngredientOut] = Field(default_factory=list)
     steps: list[StepOut] = Field(default_factory=list)
-    nutrition_per_serving: NutritionTotals = Field(default_factory=NutritionTotals)
+    # Renamed from `nutrition_per_serving` in v1.5. The new aggregate
+    # carries both per-portion AND total values plus a coverage block
+    # (how many ingredients contributed) — the detail page renders a
+    # toggle between the two and a "X von Y Zutaten"-hint.
+    nutrition: NutritionAggregate = Field(default_factory=NutritionAggregate)
     share_enabled: bool = False
     share_token: str | None = None
     # Recipient-perspective fields. share_source drives the "is this mine?"

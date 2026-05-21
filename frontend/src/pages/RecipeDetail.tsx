@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ChefHat, Copy, Loader2, LogOut, Pencil, RefreshCw, Share2, ShoppingCart, Sparkles, Trash2, Users } from 'lucide-react';
+import { ArrowLeftRight, ChefHat, Copy, Loader2, LogOut, Pencil, RefreshCw, Share2, ShoppingCart, Sparkles, Trash2, Users } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { SharedChip } from '@/components/SharedChip';
 import { Modal } from '@/components/Modal';
 import { ShareRecipePanel } from '@/components/recipes/ShareRecipePanel';
@@ -321,30 +322,45 @@ function NutritionCard({
   recipe: Recipe;
   onChanged: () => void;
 }) {
-  const n = recipe.nutrition_per_serving;
+  // v1.5 aggregate carries per-serving, total, and coverage in one
+  // block. The toggle below switches the rendered numbers without a
+  // re-fetch — same data, two views.
+  const n = recipe.nutrition;
   const [refreshing, setRefreshing] = useState(false);
-  // Hide silently if no ingredient carries any nutrition data — the
-  // user hasn't engaged with the feature yet, so an empty card adds
-  // noise. The "Werte aktualisieren" affordance lives inside the
-  // card; missing ingredients can be re-looked-up from the row sheets.
-  const hasAny =
-    n.calories != null ||
-    n.protein != null ||
-    n.carbs != null ||
-    n.fat != null ||
-    n.fiber != null ||
-    n.sugar != null ||
-    n.salt != null;
-  if (!hasAny) return null;
+  const [mode, setMode] = useState<'per_serving' | 'total'>('per_serving');
 
+  // If no ingredient contributed AT ALL (no data OR no convertible
+  // unit), show an actionable empty hint instead of hiding. The link
+  // jumps to edit mode where the user can fill quantities/units.
+  if (n.coverage.counted === 0) {
+    return (
+      <section className="card p-4 text-sm text-muted flex items-start gap-3">
+        <div className="flex-1">
+          <p>
+            Nährwerte noch nicht verfügbar — Zutaten mit Nährwerten und
+            Mengenangaben ergänzen, damit Lyst die Werte pro Portion
+            berechnen kann.
+          </p>
+        </div>
+        <Link
+          to={`/recipes/${recipe.id}/edit`}
+          className="btn-secondary text-xs whitespace-nowrap"
+        >
+          Zutaten bearbeiten
+        </Link>
+      </section>
+    );
+  }
+
+  const values = mode === 'per_serving' ? n.per_serving : n.total;
   const cells: { label: string; value: number | null; unit: string }[] = [
-    { label: 'Kalorien', value: n.calories, unit: 'kcal' },
-    { label: 'Eiweiß', value: n.protein, unit: 'g' },
-    { label: 'Kohlenhydrate', value: n.carbs, unit: 'g' },
-    { label: 'Fett', value: n.fat, unit: 'g' },
-    { label: 'Ballaststoffe', value: n.fiber, unit: 'g' },
-    { label: 'Zucker', value: n.sugar, unit: 'g' },
-    { label: 'Salz', value: n.salt, unit: 'g' },
+    { label: 'Kalorien', value: values.calories, unit: 'kcal' },
+    { label: 'Eiweiß', value: values.protein, unit: 'g' },
+    { label: 'Kohlenhydrate', value: values.carbs, unit: 'g' },
+    { label: 'Fett', value: values.fat, unit: 'g' },
+    { label: 'Ballaststoffe', value: values.fiber, unit: 'g' },
+    { label: 'Zucker', value: values.sugar, unit: 'g' },
+    { label: 'Salz', value: values.salt, unit: 'g' },
   ];
 
   /** Re-pull nutrition values for every ingredient that has a stored
@@ -415,26 +431,43 @@ function NutritionCard({
     }
   };
 
-  // "~" prefix on the whole card iff any contributing ingredient is
-  // AI-sourced — spec calls for one global uncertainty marker, not
-  // per-cell, to keep the card scan-friendly.
+  // "~" prefix per cell + "(geschätzt)" suffix on the heading when any
+  // contributing ingredient is AI-sourced. Keeping both signals makes
+  // the uncertainty obvious whether the user scans the heading first
+  // or the numbers first.
   const prefix = n.is_estimate ? '~ ' : '';
+  const headingLabel =
+    mode === 'per_serving'
+      ? `Nährwerte pro Portion${n.is_estimate ? ' (geschätzt)' : ''}`
+      : `Nährwerte gesamtes Rezept${n.is_estimate ? ' (geschätzt)' : ''}`;
+  const partial = n.coverage.counted < n.coverage.total;
 
   return (
     <section className="card p-5">
       <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
-        <h2 className="font-semibold">
-          {prefix}Nährwerte pro Portion
-        </h2>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted">
-            basiert auf erfassten Zutaten (g/kg)
-          </span>
+        <h2 className="font-semibold">{headingLabel}</h2>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() =>
+              setMode((m) => (m === 'per_serving' ? 'total' : 'per_serving'))
+            }
+            className="text-xs text-muted hover:text-brand-700 inline-flex items-center gap-1 px-2 py-1 rounded-ctl hover:bg-page transition"
+            title={
+              mode === 'per_serving'
+                ? 'Gesamtes Rezept anzeigen'
+                : 'Pro Portion anzeigen'
+            }
+            aria-label="Pro Portion / gesamt umschalten"
+          >
+            <ArrowLeftRight size={12} aria-hidden />
+            {mode === 'per_serving' ? 'Gesamt anzeigen' : 'Pro Portion'}
+          </button>
           <button
             type="button"
             onClick={refreshAll}
             disabled={refreshing}
-            title="Werte aus Open Food Facts neu abrufen"
+            title="Werte aus USDA / Open Food Facts neu abrufen"
             className="size-7 inline-flex items-center justify-center rounded-ctl text-muted hover:text-brand-700 hover:bg-page transition disabled:opacity-50"
             aria-label="Werte aktualisieren"
           >
@@ -453,12 +486,27 @@ function NutritionCard({
           </div>
         ))}
       </div>
-      {n.ingredients_with_data < n.ingredients_total && (
-        <p className="text-xs text-muted mt-3">
-          Werte basieren auf {n.ingredients_with_data} von {n.ingredients_total}{' '}
-          Zutaten — fehlende ergänzen?
-        </p>
-      )}
+      <p className="text-xs text-muted mt-3">
+        {mode === 'per_serving' ? (
+          <>
+            Pro Portion ({n.servings} Portion{n.servings === 1 ? '' : 'en'})
+          </>
+        ) : (
+          <>Gesamtes Rezept ({n.servings} Portion{n.servings === 1 ? '' : 'en'})</>
+        )}
+        {partial && (
+          <>
+            {' · '}
+            Basiert auf {n.coverage.counted} von {n.coverage.total} Zutaten —{' '}
+            <Link
+              to={`/recipes/${recipe.id}/edit`}
+              className="underline hover:text-brand-700"
+            >
+              ergänzen
+            </Link>
+          </>
+        )}
+      </p>
     </section>
   );
 }

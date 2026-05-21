@@ -75,9 +75,16 @@ export function CookMode({ recipe, servings, onClose }: Props) {
   const steps = [...recipe.steps].sort((a, b) => a.position - b.position);
   const factor = recipe.servings > 0 ? servings / recipe.servings : 1;
 
+  const kcalPerServing = recipe.nutrition?.per_serving?.calories ?? null;
+
   if (steps.length === 0) {
     return (
-      <FullscreenShell onClose={onClose} title={recipe.title} progress={0}>
+      <FullscreenShell
+        onClose={onClose}
+        title={recipe.title}
+        progress={0}
+        kcalPerServing={kcalPerServing}
+      >
         <div className="text-center text-muted">Dieses Rezept hat keine Schritte.</div>
       </FullscreenShell>
     );
@@ -93,6 +100,7 @@ export function CookMode({ recipe, servings, onClose }: Props) {
       progress={progress}
       onToggleIngredients={() => setShowIngredients((v) => !v)}
       ingredientsOpen={showIngredients}
+      kcalPerServing={kcalPerServing}
     >
       <div
         className="flex-1 flex items-center justify-center p-6 sm:p-12"
@@ -173,6 +181,7 @@ function FullscreenShell({
   children,
   onToggleIngredients,
   ingredientsOpen,
+  kcalPerServing,
 }: {
   title: string;
   onClose: () => void;
@@ -180,6 +189,9 @@ function FullscreenShell({
   children: React.ReactNode;
   onToggleIngredients?: () => void;
   ingredientsOpen?: boolean;
+  /** Per-portion kcal — shown next to the title as a compact hint
+   *  ("≈ 480 kcal / Portion"). Null hides the chip. */
+  kcalPerServing?: number | null;
 }) {
   return (
     <div className="fixed inset-0 z-50 bg-page text-ink flex flex-col" role="dialog" aria-modal="true">
@@ -188,6 +200,14 @@ function FullscreenShell({
           <div className="text-xs text-muted">Kochansicht</div>
           <div className="font-medium truncate">{title}</div>
         </div>
+        {kcalPerServing != null && (
+          <div
+            className="text-xs text-muted hidden sm:flex items-center px-2 py-1 rounded-ctl bg-page/60 border border-line"
+            title="Geschätzte Kalorien pro Portion (siehe Detailseite)"
+          >
+            ≈ {Math.round(kcalPerServing)} kcal / Portion
+          </div>
+        )}
         {onToggleIngredients && (
           <button className="btn-secondary text-sm" onClick={onToggleIngredients} aria-pressed={!!ingredientsOpen}>
             Zutaten

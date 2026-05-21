@@ -19,7 +19,9 @@ from app.schemas.recipe import (
     NutritionEstimateRequest,
     NutritionEstimateResponse,
     NutritionSearchResponse,
-    NutritionTotals,
+    NutritionAggregate,
+    NutritionCoverage,
+    NutritionTotalsValues,
     RecipeCreate,
     RecipeDuplicate,
     RecipeOut,
@@ -148,16 +150,24 @@ def _summary(
     ).model_dump(mode="json")
 
 
-def _nutrition_per_serving(rec) -> NutritionTotals:
-    """Sum each macro = (qty_in_grams / 100) * per100g, then divide by servings.
-    Only ingredients with both `quantity` and a unit that resolves to grams
-    (g, gr, gramm, kg) contribute. ml/EL/Stk are ignored — we'd need a density
-    table to convert them.
+def _nutrition_aggregate(rec) -> NutritionAggregate:
+    """Per-recipe nutrition totals — total, per-serving, and coverage.
 
-    `is_estimate` flips true when any contributing ingredient was filled
-    from an AI estimate (nutrition_source == "ai"). The recipe detail
-    card renders a "~" prefix when this is set."""
-    GRAM_FACTOR = {"g": 1.0, "gr": 1.0, "gramm": 1.0, "kg": 1000.0}
+    For each ingredient with nutrition values AND a quantity/unit we
+    can convert to grams (via app.services.unit_conversion), the
+    contribution is `per_100g * grams / 100`. Ingredients with
+    nutrition values but a non-convertible unit (e.g. "1 Bund
+    Petersilie") are *excluded* from the sum but counted as missing in
+    the coverage block — same with rows that have no nutrition values
+    at all. The frontend uses `coverage.counted < coverage.total` to
+    drive a "Basiert auf X von Y Zutaten" hint with a link to edit
+    mode so the user can fill the gaps.
+
+    `is_estimate` flips true when any *contributing* ingredient was
+    filled from an AI estimate; the heading then shows "(geschätzt)"
+    so the user knows the totals carry uncertainty."""
+    from app.services.unit_conversion import convert_to_grams
+
     fields = (
         ("calories", "calories_per_100g"),
         ("protein", "protein_per_100g"),
@@ -169,39 +179,41 @@ def _nutrition_per_serving(rec) -> NutritionTotals:
     )
     totals: dict[str, float | None] = {k: None for k, _ in fields}
     is_estimate = False
-    ingredients_with_data = 0
+    counted = 0
+    total_ings = len(rec.ingredients)
+
     for ing in rec.ingredients:
-        # "Has nutrition data" = at least one of the seven per-100g
-        # fields is set. Independent of whether the unit converts to
-        # grams — the count drives the "X von Y Zutaten" hint, which
-        # is about the *data* gap, not the unit-conversion gap.
-        if any(getattr(ing, attr) is not None for _, attr in fields):
-            ingredients_with_data += 1
-            if getattr(ing, "nutrition_source", None) and ing.nutrition_source.value == "ai":
-                is_estimate = True
-        if ing.quantity is None:
+        # A row contributes only when (a) at least one per-100g field
+        # is set AND (b) quantity+unit+name resolves to grams. Either
+        # gap leaves the row uncounted but counted-as-missing.
+        has_data = any(getattr(ing, attr) is not None for _, attr in fields)
+        if not has_data:
             continue
-        unit_key = (ing.unit or "").strip().lower()
-        factor = GRAM_FACTOR.get(unit_key)
-        if factor is None:
+        grams = convert_to_grams(ing.quantity, ing.unit, ing.name)
+        if grams is None:
             continue
-        grams = ing.quantity * factor
+        counted += 1
+        if getattr(ing, "nutrition_source", None) and ing.nutrition_source.value == "ai":
+            is_estimate = True
         for key, attr in fields:
             v = getattr(ing, attr)
             if v is None:
                 continue
-            contrib = grams / 100.0 * v
-            totals[key] = (totals[key] or 0.0) + contrib
+            totals[key] = (totals[key] or 0.0) + grams / 100.0 * v
+
     servings = max(rec.servings, 1)
-    per_serving = {
-        k: round(v / servings, 1) if v is not None else None
-        for k, v in totals.items()
-    }
-    return NutritionTotals(
-        **per_serving,
+    total_values = NutritionTotalsValues(
+        **{k: round(v, 1) if v is not None else None for k, v in totals.items()}
+    )
+    per_serving_values = NutritionTotalsValues(
+        **{k: round(v / servings, 1) if v is not None else None for k, v in totals.items()}
+    )
+    return NutritionAggregate(
+        per_serving=per_serving_values,
+        total=total_values,
+        coverage=NutritionCoverage(counted=counted, total=total_ings),
         is_estimate=is_estimate,
-        ingredients_with_data=ingredients_with_data,
-        ingredients_total=len(rec.ingredients),
+        servings=servings,
     )
 
 
@@ -224,7 +236,7 @@ def _full(
         )
     return RecipeOut.model_validate(rec).model_copy(
         update={
-            "nutrition_per_serving": _nutrition_per_serving(rec),
+            "nutrition": _nutrition_aggregate(rec),
             "share_source": share_source,
             "owner_name": owner_name,
             "share_permission": share_permission,

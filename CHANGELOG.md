@@ -2,6 +2,71 @@
 
 Alle nennenswerten Änderungen pro Release. Datumsangaben sind ISO 8601.
 
+## v1.5.0 — 2026-05-21
+
+Nährwerte erscheinen jetzt tatsächlich auf der Rezept-Detailseite. Die
+Aggregation war seit v1.3 da, blieb aber leer, weil die meisten
+Zutaten-Mengen nicht in Gramm angegeben sind — Stk, EL, TL, Tasse,
+Prise. Neue Einheiten-Konvertierung füllt die Lücke, der Detail-View
+zeigt Werte pro Portion mit Toggle auf Gesamt-Rezept.
+
+### Highlights
+
+- **Einheiten → Gramm-Konvertierung** (`app/services/unit_conversion`):
+  - Masse: g, kg, mg, gr, gramm, gramme.
+  - Volumen (Wasserdichte 1 g/ml als Default): ml, cl, dl, l, EL ≈ 15 g,
+    TL ≈ 5 g, Tasse ≈ 240 g, Prise / Msp ≈ 0.5 g, Spritzer ≈ 3 g,
+    Schuss ≈ 10 g.
+  - Stückbasiert mit fester Gramm-Zahl pro Einheit (unabhängig von der
+    Zutat): Zehe = 5 g, Scheibe = 30 g, Blatt = 1 g — damit findet
+    „2 Zehen Knoblauch" nicht zwei ganze Knollen.
+  - Stückbasiert über Zutat-Lookup: 1 Stk Lauch = 200 g, 1 Stk Zwiebel
+    = 110 g, 1 Stk Ei = 60 g, 1 Stk Karotte/Möhre = 70 g, 1 Stk Apfel
+    = 180 g, … ~50 Einträge in `PIECE_WEIGHTS_G`.
+  - Unbekannte Stück-Zutaten (z. B. „1 Bund Petersilie") werden aus
+    der Summe ausgeschlossen UND als „missing" für die Coverage-Zeile
+    gezählt — der Nutzer sieht direkt, was noch zu pflegen ist.
+- **Neue NutritionAggregate-Struktur** auf `RecipeOut`: per_serving +
+  total + coverage {counted, total} + is_estimate + servings in einem
+  Block. Ersetzt das alte `nutrition_per_serving`-Feld; ein Toggle
+  schaltet im UI zwischen Portion und Gesamt-Rezept ohne zweiten
+  Request.
+- **Detail-Karte überarbeitet**:
+  - Heading wechselt: „Nährwerte pro Portion" ⇄ „Nährwerte gesamtes
+    Rezept". Bei AI-Anteil zeigt der Title zusätzlich „(geschätzt)".
+  - Coverage-Hinweis „Basiert auf X von Y Zutaten" mit Link zum Edit,
+    wenn Lücken bestehen — direkte Aktion statt nur Beschwerde.
+  - Wenn null Zutaten beigetragen haben: freundlicher Hinweis statt
+    Ausblenden, mit Edit-Link.
+  - Refresh-Button-Tooltip nennt jetzt USDA / OFF (nicht mehr nur OFF).
+- **Kochansicht**: kleine kcal-Pille im Header (≈ X kcal / Portion),
+  sichtbar ab `sm`-Breakpoint.
+
+### Verifiziertes Beispiel — Picnic „Cremige Spaghetti mit Räucherlachs"
+
+Mengen / Einheiten:
+- 200 g Räucherlachs → 200 g (direkt)
+- 400 g Spaghetti → 400 g (direkt)
+- 2 Stk Lauch → 400 g (Tabelle: 200 g/Stange)
+- 1 EL Kräuterfrischkäse → 15 g (1 Esslöffel ≈ 15 ml × 1 g/ml)
+- 1 Stk Zwiebel → 110 g (Tabelle)
+
+→ **Coverage 5 von 5 Zutaten** umgerechnet.
+
+Mit realistischen per-100g-Werten (Lachs 180 kcal, Spaghetti 370 kcal,
+Lauch 29 kcal, Frischkäse 270 kcal, Zwiebel 40 kcal) und 4 Portionen:
+
+- **Pro Portion** ≈ 510 kcal · 26 g Eiweiß · 84 g KH · 8 g Fett ·
+  5.3 g Ballaststoffe · 2.0 g Salz
+- **Gesamt** ≈ 2040 kcal · 104 g Eiweiß · 334 g KH · 31 g Fett · …
+
+### Breaking change (intern)
+
+- `RecipeOut.nutrition_per_serving` → `RecipeOut.nutrition` mit dem
+  oben beschriebenen Aggregate-Block. Lyst ist eine self-hosted Single-
+  Frontend-App, kein externer Client betroffen; Bestandsdaten bleiben
+  unverändert (Berechnung läuft on-the-fly).
+
 ## v1.4.2 — 2026-05-20
 
 OFF-Nährwertsuche auf die neue Search-a-licious-API umgezogen, Rate-Gate

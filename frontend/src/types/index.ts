@@ -285,7 +285,7 @@ export interface RecipeIngredient {
   usda_fdc_id: string | null;
 }
 
-export interface NutritionTotals {
+export interface NutritionTotalsValues {
   calories: number | null;
   protein: number | null;
   carbs: number | null;
@@ -293,12 +293,25 @@ export interface NutritionTotals {
   fiber: number | null;
   sugar: number | null;
   salt: number | null;
+}
+
+export interface NutritionCoverage {
+  /** Number of ingredients that actually contributed to the totals
+   *  (have nutrition values AND a convertible quantity/unit). */
+  counted: number;
+  /** Total number of ingredients on the recipe. counted < total
+   *  drives the "Basiert auf X von Y Zutaten" hint with edit link. */
+  total: number;
+}
+
+export interface NutritionAggregate {
+  per_serving: NutritionTotalsValues;
+  total: NutritionTotalsValues;
+  coverage: NutritionCoverage;
   /** True iff any contributing ingredient uses source="ai". The
-   *  recipe-detail card prefixes the totals with "~" when set. */
+   *  recipe-detail card appends "(geschätzt)" to the heading. */
   is_estimate: boolean;
-  /** "Werte basieren auf X von Y Zutaten — fehlende ergänzen?" */
-  ingredients_with_data: number;
-  ingredients_total: number;
+  servings: number;
 }
 
 // ---------- Nutrition lookup (v1.3.0) ----------
@@ -392,7 +405,10 @@ export interface Recipe extends RecipeBase {
   updated_at: string;
   ingredients: RecipeIngredient[];
   steps: RecipeStep[];
-  nutrition_per_serving: NutritionTotals;
+  /** Per-portion + total + coverage block. Replaces the old
+   *  `nutrition_per_serving` (v1.5+) so the detail page can toggle
+   *  between per-portion and whole-recipe values. */
+  nutrition: NutritionAggregate;
   share_enabled: boolean;
   share_token: string | null;
   /** Recipient-perspective fields. share_source drives the "is this
