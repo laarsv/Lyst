@@ -29,7 +29,7 @@ from app.core.dependencies import require_user
 from app.core.responses import ok
 from app.models.recipe import Recipe
 from app.models.user import User
-from app.routers.recipes import recipe_with_any_access, require_recipe_edit
+from app.routers.recipes_access import recipe_with_any_access, require_recipe_edit
 from app.schemas.recipe import (
     AiAssistRequest,
     AiSuggestedIngredient,

@@ -213,6 +213,24 @@ async def get_recipe_shares(
     )
 
 
+# Path-order: DELETE /shares/me MUST be registered BEFORE
+# DELETE /shares/{user_id:int}. FastAPI returns 422 on int-conversion
+# failure rather than falling through to the next route, so the literal
+# match has to come first. See the "Permission updates" section comment
+# below for the rationale; placing leave_recipe_share here keeps the
+# routes adjacent and the order self-evident.
+
+@router.delete("/{recipe_id}/shares/me")
+async def leave_recipe_share(
+    recipe_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Recipient-initiated removal of their own RecipeShare row. Idempotent."""
+    await leave_recipe_internal_share(db, recipe_id, user.id)
+    return ok({"message": "Left share"})
+
+
 @router.delete("/{recipe_id}/shares/{user_id}")
 async def del_recipe_share(
     recipe_id: int,
@@ -313,21 +331,10 @@ async def del_book_share(
 #  Permission updates + recipient-initiated leave (alembic 0014)
 # =============================================================================
 #
-# Path-order note: FastAPI returns 422 (not "try the next route") when an
-# int path converter fails, so any literal-path route ("/shares/me") MUST
-# be registered BEFORE "/shares/{user_id:int}". Same goes for the book
-# variant.
-
-@router.delete("/{recipe_id}/shares/me")
-async def leave_recipe_share(
-    recipe_id: int,
-    user: User = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Recipient-initiated removal of their own RecipeShare row. Idempotent."""
-    await leave_recipe_internal_share(db, recipe_id, user.id)
-    return ok({"message": "Left share"})
-
+# leave_recipe_share lives further up the file, RIGHT BEFORE del_recipe_share,
+# because FastAPI returns 422 (not "try the next route") when an int path
+# converter fails. The book leave-variant has a longer path so it doesn't
+# collide and stays here.
 
 @router.patch("/{recipe_id}/shares/{user_id}")
 async def patch_recipe_share(

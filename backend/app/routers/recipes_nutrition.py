@@ -25,7 +25,7 @@ from app.core.dependencies import get_client_id, require_user
 from app.core.responses import ok
 from app.models.recipe import NutritionSource
 from app.models.user import User
-from app.routers.recipes import require_recipe_edit
+from app.routers.recipes_access import require_recipe_edit
 from app.schemas.recipe import (
     NutritionEstimateRequest,
     NutritionEstimateResponse,
