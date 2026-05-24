@@ -381,3 +381,4 @@ async def patch_book_share(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Share not found"
         )
+    return ok({"message": "Permission updated"})
