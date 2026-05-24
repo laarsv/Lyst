@@ -1,6 +1,10 @@
+import logging
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 from app.core.database import AsyncSessionLocal, get_db
 from app.core.dependencies import get_client_id, require_user
@@ -302,7 +306,10 @@ async def patch_item(
         try:
             await notify_task_assigned_list_item(db, item, user, new_assignee)
         except Exception:  # pragma: no cover
-            pass
+            logger.warning(
+                "Assignment notification failed for list_item=%s assignee=%s",
+                item.id, new_assignee.id, exc_info=True,
+            )
     return ok(out)
 
 

@@ -1,7 +1,11 @@
+import logging
+
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+logger = logging.getLogger(__name__)
 
 from app.core.config import settings
 from app.core.database import get_db
@@ -747,6 +751,7 @@ async def post_nutrition_fill_all(
             try:
                 est = await estimate_with_ollama(ing.name)
             except Exception:  # pragma: no cover — defensive
+                logger.warning("AI nutrition estimate failed for %r", ing.name, exc_info=True)
                 est = None
             if est and any(
                 getattr(est.nutrition, f) is not None for f in fields

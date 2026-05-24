@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -10,6 +11,7 @@ from app.core.security import (
     create_refresh_token,
     decode_token,
 )
+from app.models.user import User
 from app.schemas.auth import (
     AcceptInviteRequest,
     LoginRequest,
@@ -71,7 +73,11 @@ async def login(
 
 
 @router.post("/refresh")
-async def refresh_token(request: Request, response: Response):
+async def refresh_token(
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
     token = request.cookies.get(REFRESH_COOKIE)
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No refresh token")
@@ -80,21 +86,13 @@ async def refresh_token(request: Request, response: Response):
         user_id = payload["sub"]
     except (ValueError, KeyError):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
-    # role is encoded into access tokens; for refresh we don't have it. We default to "user"
-    # but the client should re-login if it needs accurate role. To avoid mismatch, decode
-    # role from a quick DB lookup is preferable, but since refresh is short-circuit and
-    # role is checked on every request via dependencies, it's fine to look up.
-    from sqlalchemy import select
-
-    from app.core.database import AsyncSessionLocal
-    from app.models.user import User
-
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(select(User).where(User.id == int(user_id)))
-        user = result.scalar_one_or_none()
-        if not user or not user.is_active:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not available")
-        access = create_access_token(str(user.id), user.role.value)
+    # Refresh tokens don't carry a role claim — look up the current role so the
+    # new access token reflects any admin promotion/demotion since last login.
+    result = await db.execute(select(User).where(User.id == int(user_id)))
+    user = result.scalar_one_or_none()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not available")
+    access = create_access_token(str(user.id), user.role.value)
     return ok({"access_token": access, "token_type": "bearer"})
 
 

@@ -4,10 +4,14 @@
 Mounted by `app/main.py` as a sibling of /notes. Permission gate is
 the same as PATCH /notes — owner or share recipient with EDIT.
 """
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+logger = logging.getLogger(__name__)
 
 from app.core.database import get_db
 from app.core.dependencies import require_user
@@ -138,7 +142,10 @@ async def patch_task(
         try:
             await notify_task_assigned_note_task(db, row, user, new_assignee)
         except Exception:  # pragma: no cover
-            pass
+            logger.warning(
+                "Assignment notification failed for note_task=%s assignee=%s",
+                row.id, new_assignee.id, exc_info=True,
+            )
 
     return ok(_out(row))
 
