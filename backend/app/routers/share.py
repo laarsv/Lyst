@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import get_client_id, require_user
+from app.core.limiter import limiter
 from app.core.responses import ok
 from app.models.user import User
 from app.schemas.share import (
@@ -60,7 +61,8 @@ async def share_disable(
 
 
 @router.get("/share/{token}")
-async def public_share(token: str, db: AsyncSession = Depends(get_db)):
+@limiter.limit("60/minute")
+async def public_share(request: Request, token: str, db: AsyncSession = Depends(get_db)):
     lst = await get_public_list(db, token)
     if not lst:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
@@ -183,7 +185,8 @@ from app.services.recipe_service import get_public_book, get_public_recipe
 
 
 @router.get("/share/recipe/{token}")
-async def public_recipe(token: str, db: AsyncSession = Depends(get_db)):
+@limiter.limit("60/minute")
+async def public_recipe(request: Request, token: str, db: AsyncSession = Depends(get_db)):
     rec = await get_public_recipe(db, token)
     if not rec:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
@@ -211,7 +214,8 @@ async def public_recipe(token: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/share/recipe-book/{token}")
-async def public_recipe_book(token: str, db: AsyncSession = Depends(get_db)):
+@limiter.limit("60/minute")
+async def public_recipe_book(request: Request, token: str, db: AsyncSession = Depends(get_db)):
     result = await get_public_book(db, token)
     if not result:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
@@ -245,7 +249,8 @@ from app.services.note_share_service import get_public_note
 
 
 @router.get("/share/note/{token}")
-async def public_note(token: str, db: AsyncSession = Depends(get_db)):
+@limiter.limit("60/minute")
+async def public_note(request: Request, token: str, db: AsyncSession = Depends(get_db)):
     note = await get_public_note(db, token)
     if not note:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
