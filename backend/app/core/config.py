@@ -33,6 +33,10 @@ class Settings(BaseSettings):
         default="llama3.1:8b",
         validation_alias=AliasChoices("OLLAMA_TEXT_MODEL", "OLLAMA_MODEL"),
     )
+    # Optional override for the plant-prefill call only. Empty → use
+    # OLLAMA_TEXT_MODEL. Lets you point prefill at a schema-friendly model
+    # (e.g. qwen3:8b) without changing the hot-path categorization model.
+    OLLAMA_PLANT_MODEL: str = ""
     # Vision-capable model used by the photo importer (llava, llama3.2-vision,
     # qwen2.5-vl, …). Empty string disables the photo-import feature with a
     # clear 503 instead of a confusing model error.

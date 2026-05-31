@@ -66,6 +66,10 @@ def extract_json(raw: str) -> Any:
     if not raw or not raw.strip():
         raise json.JSONDecodeError("empty response", raw or "", 0)
     s = raw.strip()
+    # Thinking models (e.g. qwen3) can prepend a <think>…</think> block even
+    # when think:false is requested or unsupported by the running version.
+    # Strip it before any further parsing.
+    s = re.sub(r"<think>.*?</think>", "", s, flags=re.DOTALL | re.IGNORECASE).strip()
     # Strip optional ``` / ```json fence wrapper.
     if s.startswith("```"):
         s = re.sub(r"^```(?:json|JSON)?\s*", "", s)
@@ -112,6 +116,8 @@ async def _generate(
     max_tokens: int | None,
     images: list[str] | None,
     timeout: float,
+    format_schema: dict[str, Any] | None = None,
+    think: bool | None = None,
 ) -> str:
     body: dict[str, Any] = {
         "model": model,
@@ -123,7 +129,13 @@ async def _generate(
     if system:
         body["system"] = system
     if json_mode:
-        body["format"] = "json"
+        # A JSON-schema `format` constrains the output structure; plain "json"
+        # only forces valid JSON. Schema is opt-in per call — default unchanged.
+        body["format"] = format_schema if format_schema is not None else "json"
+    # Only sent when a caller opts in (e.g. think=False to silence qwen3
+    # reasoning for one call). Omitted otherwise so other callers are untouched.
+    if think is not None:
+        body["think"] = think
     if images:
         body["images"] = images
 
@@ -159,10 +171,13 @@ async def call_text(
     temperature: float = 0.1,
     max_tokens: int | None = None,
     timeout: float | None = None,
+    format_schema: dict[str, Any] | None = None,
+    think: bool | None = None,
 ) -> str:
     """Call the configured text model. Pass `model=` to override (admin DB
     selection is resolved by the caller, kept out of this module to stay
-    DB-free)."""
+    DB-free). `format_schema` constrains output to a JSON schema (json_mode
+    only); `think` toggles reasoning for this call (e.g. False for qwen3)."""
     return await _generate(
         model=model or settings.OLLAMA_TEXT_MODEL,
         prompt=prompt,
@@ -173,6 +188,8 @@ async def call_text(
         max_tokens=max_tokens,
         images=None,
         timeout=timeout if timeout is not None else float(settings.OLLAMA_TIMEOUT_SECONDS),
+        format_schema=format_schema,
+        think=think,
     )
 
 
@@ -229,8 +246,12 @@ async def call_text_json(
     temperature: float = 0.1,
     max_tokens: int | None = None,
     timeout: float | None = None,
+    format_schema: dict[str, Any] | None = None,
+    think: bool | None = None,
 ) -> Any:
-    """Like `call_text` with json_mode=True, plus extract_json + one retry."""
+    """Like `call_text` with json_mode=True, plus extract_json + one retry.
+    `format_schema` (JSON schema) and `think` are passed through unchanged —
+    both default to None so existing callers behave exactly as before."""
     raw = await call_text(
         prompt,
         system=system,
@@ -239,6 +260,8 @@ async def call_text_json(
         temperature=temperature,
         max_tokens=max_tokens,
         timeout=timeout,
+        format_schema=format_schema,
+        think=think,
     )
     try:
         return extract_json(raw)
@@ -258,6 +281,8 @@ async def call_text_json(
         temperature=temperature,
         max_tokens=max_tokens,
         timeout=timeout,
+        format_schema=format_schema,
+        think=think,
     )
     try:
         return extract_json(raw)

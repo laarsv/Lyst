@@ -16,11 +16,40 @@ from __future__ import annotations
 import logging
 import re
 
+from app.core.config import settings
 from app.models.plant import PlantLocation
 from app.schemas.plant import PlantPrefillResponse
 from app.services.ollama import call_text_json
 
 logger = logging.getLogger(__name__)
+
+# JSON schema handed to Ollama's structured-output `format`. Constrains the
+# shape (and pins `location` to the three enum values); it does NOT guarantee
+# semantic correctness, so the server-side coercion below stays as a backstop.
+# Edibility is isolated in edible_suggestion/edible_note — there is no key here
+# that maps to the plant's real `edible` field.
+_PREFILL_SCHEMA: dict = {
+    "type": "object",
+    "properties": {
+        "species": {"type": ["string", "null"]},
+        "suggested_name": {"type": ["string", "null"]},
+        "location": {"type": "string", "enum": ["SONNIG", "HALBSCHATTEN", "SCHATTEN"]},
+        "watering_interval_days": {"type": ["integer", "null"]},
+        "fertilize": {"type": "boolean"},
+        "fertilize_interval_days": {"type": ["integer", "null"]},
+        "winterhardy": {"type": "boolean"},
+        "height_cm": {"type": ["integer", "null"]},
+        "width_cm": {"type": ["integer", "null"]},
+        "edible_suggestion": {"type": ["boolean", "null"]},
+        "edible_note": {"type": ["string", "null"]},
+        "note": {"type": ["string", "null"]},
+    },
+    "required": [
+        "species", "suggested_name", "location", "watering_interval_days",
+        "fertilize", "fertilize_interval_days", "winterhardy", "height_cm",
+        "width_cm", "edible_suggestion", "edible_note", "note",
+    ],
+}
 
 # CPU inference is slow but a name-prefill shouldn't hold the form hostage:
 # cap well below the global 300s default. On timeout → ok=False path.
@@ -144,8 +173,12 @@ async def prefill_plant(name: str) -> PlantPrefillResponse:
         data = await call_text_json(
             prompt,
             system=_SYSTEM,
+            # Empty OLLAMA_PLANT_MODEL → None → call_text falls back to the text model.
+            model=settings.OLLAMA_PLANT_MODEL or None,
             temperature=0.1,
             timeout=_PREFILL_TIMEOUT_S,
+            format_schema=_PREFILL_SCHEMA,
+            think=False,  # silence qwen3 reasoning for this call only
         )
     except Exception as e:  # noqa: BLE001 — OllamaError, timeouts, anything: stay graceful
         logger.info("Plant prefill failed for %r: %s", name, e)
