@@ -38,8 +38,19 @@ export function dueLabel(iso: string | null): { text: string; overdue: boolean }
   const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const days = Math.round((startOfDay(new Date(iso)) - startOfDay(new Date())) / 86_400_000);
   const word = (n: number) => (n === 1 ? 'Tag' : 'Tagen');
-  if (days < 0) return { text: `überfällig (vor ${-days} ${word(-days)})`, overdue: true };
+  if (days < 0) return { text: `überfällig seit ${-days} ${word(-days)}`, overdue: true };
   if (days === 0) return { text: 'heute fällig', overdue: true };
   if (days === 1) return { text: 'morgen fällig', overdue: false };
   return { text: `fällig in ${days} ${word(days)}`, overdue: false };
+}
+
+/** "heute" / "gestern" / "vor X Tagen" for a past timestamp. "—" for null.
+ *  Used for "Zuletzt gegossen" in the details card. */
+export function relativePast(iso: string | null): string {
+  if (!iso) return '—';
+  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((startOfDay(new Date()) - startOfDay(new Date(iso))) / 86_400_000);
+  if (days <= 0) return 'heute';
+  if (days === 1) return 'gestern';
+  return `vor ${days} Tagen`;
 }

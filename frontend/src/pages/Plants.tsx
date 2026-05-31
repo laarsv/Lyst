@@ -143,9 +143,10 @@ export function PlantsPage() {
         </div>
       </div>
 
-      {/* Diese Woche fällig — overdue + due within 7 days. */}
+      {/* Diese Woche fällig — overdue + due within 7 days. Soft-mint to match
+          the detail-page care card. */}
       {hasDue && (
-        <div className="card p-5 mb-6">
+        <div className="mb-6 rounded-[18px] border border-brand-100 bg-brand-50 p-5">
           <h2 className="text-sm font-semibold text-ink mb-3">Diese Woche fällig</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
             {due.water.length > 0 && (
@@ -209,7 +210,7 @@ function DueColumn({
 }) {
   return (
     <div>
-      <div className="flex items-center gap-1.5 text-xs font-medium text-muted mb-2">
+      <div className="flex items-center gap-1.5 text-xs font-semibold text-brand-700 mb-2">
         {icon}
         <span>{title}</span>
       </div>
@@ -221,7 +222,7 @@ function DueColumn({
               <Link to={`/plants/${p.id}`} className="flex-1 min-w-0">
                 <span className="text-sm text-ink truncate">{p.name}</span>{' '}
                 {label && (
-                  <span className={`text-[11px] ${label.overdue ? 'text-danger' : 'text-muted'}`}>
+                  <span className={`text-[11px] ${label.overdue ? 'text-danger font-medium' : 'text-brand-700'}`}>
                     · {label.text}
                   </span>
                 )}
@@ -229,7 +230,7 @@ function DueColumn({
               <button
                 type="button"
                 onClick={() => onAction(p.id)}
-                className="btn-ghost text-xs shrink-0"
+                className="inline-flex items-center shrink-0 rounded-full border border-brand bg-surface px-3 py-1 text-xs font-medium text-brand-700 transition hover:bg-brand-50 active:scale-[0.98]"
               >
                 {actionLabel}
               </button>

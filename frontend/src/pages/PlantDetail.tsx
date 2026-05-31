@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Droplets, Pencil, Sprout, Trash2 } from 'lucide-react';
+import { Apple, Clock, Droplets, Leaf, Pencil, Ruler, Snowflake, Sprout, Sun, Trash2 } from 'lucide-react';
 import { PlantsApi } from '@/api/endpoints';
 import type { Plant } from '@/types';
 import { toast } from '@/components/Toast';
@@ -9,7 +9,13 @@ import { useConfirm } from '@/components/Dialogs';
 import { BackLink } from '@/components/BackLink';
 import { IconAction } from '@/components/IconAction';
 import { invalidateOverview, useResourceQuery } from '@/hooks/useOverviewQuery';
-import { PLANT_LOCATION_LABELS, dueLabel, fmtPlantDate } from '@/lib/plants';
+import { PLANT_LOCATION_LABELS, dueLabel, relativePast } from '@/lib/plants';
+
+// White info card — ~18px radius, hairline border, no heavy shadow (per design).
+const CARD = 'rounded-[18px] border border-line bg-surface';
+// Outline action pill — white bg, mint border, dark-mint text (never white-on-mint).
+const PILL =
+  'inline-flex items-center gap-1.5 shrink-0 rounded-full border border-brand bg-surface px-3.5 py-1.5 text-sm font-medium text-brand-700 transition hover:bg-brand-50 active:scale-[0.98]';
 
 export function PlantDetailPage() {
   const { id } = useParams();
@@ -78,9 +84,27 @@ export function PlantDetailPage() {
 
   const waterDue = dueLabel(plant.next_water_due);
   const fertDue = dueLabel(plant.next_fertilize_due);
+  // A care row shows only when its interval is set (null = no reminder).
+  const showWater = plant.watering_interval_days != null && waterDue != null;
+  const showFert = plant.fertilize && plant.fertilize_interval_days != null && fertDue != null;
+
+  const wasserValue =
+    plant.watering_interval_days != null ? `alle ${plant.watering_interval_days} Tage` : '—';
+  const duengenValue = !plant.fertilize
+    ? 'nein'
+    : plant.fertilize_interval_days != null
+      ? `alle ${plant.fertilize_interval_days} Tage`
+      : 'ja';
+  const sizeValue =
+    [
+      plant.height_cm != null && `Höhe ${plant.height_cm} cm`,
+      plant.width_cm != null && `Breite ${plant.width_cm} cm`,
+    ]
+      .filter(Boolean)
+      .join(' · ') || '—';
 
   return (
-    <div className="max-w-2xl">
+    <div className="mx-auto max-w-xl">
       <div className="flex items-center justify-between gap-3 mb-4">
         <BackLink to="/plants" label="zu Pflanzen" />
         <div className="flex items-center gap-1.5">
@@ -89,117 +113,153 @@ export function PlantDetailPage() {
         </div>
       </div>
 
+      {/* Hero */}
       {plant.image_url ? (
         <div
-          className="h-48 bg-cover bg-center rounded-2xl mb-4"
+          className="h-52 rounded-[18px] bg-cover bg-center"
           style={{ backgroundImage: `url(${plant.image_url})` }}
         />
       ) : (
-        <div className="h-48 bg-gradient-to-br from-brand-50 to-brand-100/40 rounded-2xl mb-4 flex items-center justify-center text-5xl">
-          🪴
+        <div className="h-52 rounded-[18px] bg-brand-50 flex items-center justify-center">
+          <Leaf size={48} className="text-brand-700" />
         </div>
       )}
 
-      <h1 className="text-2xl font-semibold">{plant.name}</h1>
+      {/* Name + species + Bereich pills */}
+      <h1 className="mt-4 text-2xl font-bold text-ink">{plant.name}</h1>
       {plant.species && <p className="text-muted italic">{plant.species}</p>}
-
-      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-muted">
-        <span>☀️ {PLANT_LOCATION_LABELS[plant.location]}</span>
-        {plant.edible && <span>🍽 Essbar</span>}
-        {plant.winterhardy && <span>❄️ Winterhart</span>}
-        {(plant.height_cm || plant.width_cm) && (
-          <span>
-            📐 {plant.height_cm ? `${plant.height_cm} cm hoch` : ''}
-            {plant.height_cm && plant.width_cm ? ', ' : ''}
-            {plant.width_cm ? `${plant.width_cm} cm breit` : ''}
-          </span>
-        )}
-      </div>
-
       {plant.tags.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1">
+        <div className="mt-2 flex flex-wrap gap-1.5">
           {plant.tags.map((t) => (
-            <span key={t} className="text-xs px-2 py-0.5 rounded-full bg-page text-muted">
-              #{t}
+            <span key={t} className="chip rounded-full px-2.5">
+              {t}
             </span>
           ))}
         </div>
       )}
 
-      {/* Care actions + status */}
-      <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <CareCard
-          icon={<Droplets size={16} className="text-brand-700" />}
-          title="Gießen"
-          interval={plant.watering_interval_days}
-          note={plant.watering_note}
-          last={plant.last_watered_at}
-          due={waterDue}
-          actionLabel="Gegossen"
-          onAction={water}
-        />
-        {plant.fertilize && (
-          <CareCard
-            icon={<Sprout size={16} className="text-brand-700" />}
-            title="Düngen"
-            interval={plant.fertilize_interval_days}
-            note={null}
-            last={plant.last_fertilized_at}
-            due={fertDue}
-            actionLabel="Gedüngt"
-            onAction={fertilize}
-          />
-        )}
-      </div>
+      {/* CARE STATUS — prominent, soft-mint, right under the name. */}
+      {(showWater || showFert) && (
+        <section className="mt-4 rounded-[18px] border border-brand-100 bg-brand-50 p-4 flex flex-col gap-3">
+          {showWater && (
+            <CareRow
+              icon={<Droplets size={18} />}
+              label="Gießen"
+              due={waterDue!}
+              actionLabel="Gegossen"
+              onAction={water}
+            />
+          )}
+          {showFert && (
+            <CareRow
+              icon={<Sprout size={18} />}
+              label="Düngen"
+              due={fertDue!}
+              actionLabel="Gedüngt"
+              onAction={fertilize}
+            />
+          )}
+        </section>
+      )}
 
+      {/* Pflege auf einen Blick — 2×2 */}
+      <section className={`${CARD} mt-4 p-5`}>
+        <h2 className="text-sm font-semibold text-ink mb-4">Pflege auf einen Blick</h2>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-5">
+          <Stat icon={<Sun size={18} />} label="Licht" value={PLANT_LOCATION_LABELS[plant.location]} />
+          <Stat icon={<Droplets size={18} />} label="Wasser" value={wasserValue} />
+          <Stat
+            icon={<Snowflake size={18} />}
+            label="Frosthärte"
+            value={plant.winterhardy ? 'winterhart' : 'nicht winterhart'}
+          />
+          <Stat icon={<Sprout size={18} />} label="Düngen" value={duengenValue} />
+        </div>
+      </section>
+
+      {/* Details */}
+      <section className={`${CARD} mt-4 p-5`}>
+        <h2 className="text-sm font-semibold text-ink mb-4">Details</h2>
+        <div className="flex flex-col gap-4">
+          <DetailRow icon={<Ruler size={18} />} label="Größe" value={sizeValue} />
+          <DetailRow icon={<Apple size={18} />} label="Essbar" value={plant.edible ? 'ja' : 'nein'} />
+          <DetailRow
+            icon={<Clock size={18} />}
+            label="Zuletzt gegossen"
+            value={relativePast(plant.last_watered_at)}
+          />
+        </div>
+      </section>
+
+      {/* Notizen */}
       {plant.notes && (
-        <div className="card p-5 mt-5">
+        <section className={`${CARD} mt-4 p-5`}>
           <h2 className="text-sm font-semibold text-ink mb-2">Notizen</h2>
           <p className="text-sm text-ink whitespace-pre-wrap">{plant.notes}</p>
-        </div>
+        </section>
       )}
     </div>
   );
 }
 
-function CareCard({
+/** Soft-mint icon disc — soft-mint bg, dark-mint glyph. */
+function IconCircle({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="size-9 shrink-0 rounded-full bg-brand-50 text-brand-700 inline-flex items-center justify-center">
+      {children}
+    </span>
+  );
+}
+
+function CareRow({
   icon,
-  title,
-  interval,
-  note,
-  last,
+  label,
   due,
   actionLabel,
   onAction,
 }: {
   icon: React.ReactNode;
-  title: string;
-  interval: number | null;
-  note: string | null;
-  last: string | null;
-  due: { text: string; overdue: boolean } | null;
+  label: string;
+  due: { text: string; overdue: boolean };
   actionLabel: string;
   onAction: () => void;
 }) {
+  // Overdue tints text + icon with the danger token; otherwise dark mint.
+  const tone = due.overdue ? 'text-danger' : 'text-brand-700';
   return (
-    <div className="card p-4 flex flex-col gap-2">
-      <div className="flex items-center gap-1.5 text-sm font-semibold text-ink">
-        {icon}
-        <span>{title}</span>
-      </div>
-      <div className="text-xs text-muted flex flex-col gap-0.5">
-        <span>
-          {interval ? `alle ${interval} Tage` : 'kein Intervall — keine Erinnerung'}
+    <div className="flex items-center justify-between gap-3">
+      <div className={`flex items-center gap-2 min-w-0 ${tone}`}>
+        <span className="shrink-0">{icon}</span>
+        <span className="text-sm truncate">
+          <span className="font-semibold">{label}</span>
+          <span className="opacity-80"> — {due.text}</span>
         </span>
-        {note && <span className="italic">{note}</span>}
-        <span>Zuletzt: {fmtPlantDate(last)}</span>
-        {due && (
-          <span className={due.overdue ? 'text-danger font-medium' : ''}>{due.text}</span>
-        )}
       </div>
-      <button type="button" onClick={onAction} className="btn-secondary text-sm mt-1">
+      <button type="button" onClick={onAction} className={PILL}>
         {actionLabel}
       </button>
+    </div>
+  );
+}
+
+function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="flex items-center gap-3 min-w-0">
+      <IconCircle>{icon}</IconCircle>
+      <div className="min-w-0">
+        <div className="text-sm font-semibold text-ink">{label}</div>
+        <div className="text-sm text-muted truncate">{value}</div>
+      </div>
+    </div>
+  );
+}
+
+function DetailRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="flex items-center gap-3">
+      <IconCircle>{icon}</IconCircle>
+      <span className="text-sm font-semibold text-ink">{label}</span>
+      <span className="ml-auto text-sm text-muted text-right">{value}</span>
     </div>
   );
 }
