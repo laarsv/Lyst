@@ -35,7 +35,6 @@ export function PlantEditPage() {
   const [wateringInterval, setWateringInterval] = useState('');
   const [wateringNote, setWateringNote] = useState('');
   const [fertilize, setFertilize] = useState(false);
-  const [fertilizeInterval, setFertilizeInterval] = useState('');
   const [winterhardy, setWinterhardy] = useState(false);
   const [edible, setEdible] = useState(false);
   const [heightCm, setHeightCm] = useState('');
@@ -50,8 +49,7 @@ export function PlantEditPage() {
   const [bloomStart, setBloomStart] = useState<number | null>(null);
   const [bloomEnd, setBloomEnd] = useState<number | null>(null);
 
-  // Create-only: "Zuletzt gegossen / gedüngt", pre-filled with today. Left at
-  // today → omitted on save so the backend starts the cycle at now().
+  // Create-only date logs, pre-filled with today.
   const [wateredDate, setWateredDate] = useState(todayInputValue());
   const [fertilizedDate, setFertilizedDate] = useState(todayInputValue());
 
@@ -73,13 +71,7 @@ export function PlantEditPage() {
     setWateringInterval((prev) =>
       prev.trim() ? prev : d.watering_interval_days != null ? String(d.watering_interval_days) : prev,
     );
-    if (d.fertilize) {
-      // Only ever turns the flag on (default is off) — never clears a user's choice.
-      setFertilize(true);
-      setFertilizeInterval((prev) =>
-        prev.trim() ? prev : d.fertilize_interval_days != null ? String(d.fertilize_interval_days) : prev,
-      );
-    }
+    if (d.fertilize) setFertilize(true);
     if (d.winterhardy) setWinterhardy(true);
     setHeightCm((prev) => (prev.trim() ? prev : d.height_cm != null ? String(d.height_cm) : prev));
     setWidthCm((prev) => (prev.trim() ? prev : d.width_cm != null ? String(d.width_cm) : prev));
@@ -103,10 +95,7 @@ export function PlantEditPage() {
       const d = await PlantsApi.prefill(query);
       if (d.ok) {
         applyPrefill(d);
-        setPrefillInfo({
-          text: d.note || 'Vorschläge eingefügt – bitte alle Felder prüfen.',
-          ok: true,
-        });
+        setPrefillInfo({ text: d.note || 'Vorschläge eingefügt – bitte alle Felder prüfen.', ok: true });
       } else {
         setPrefillInfo({ text: d.note || 'Konnte nicht ermitteln, bitte manuell ausfüllen.', ok: false });
       }
@@ -127,7 +116,6 @@ export function PlantEditPage() {
       setWateringInterval(p.watering_interval_days?.toString() ?? '');
       setWateringNote(p.watering_note ?? '');
       setFertilize(p.fertilize);
-      setFertilizeInterval(p.fertilize_interval_days?.toString() ?? '');
       setWinterhardy(p.winterhardy);
       setEdible(p.edible);
       setHeightCm(p.height_cm?.toString() ?? '');
@@ -163,14 +151,12 @@ export function PlantEditPage() {
       watering_interval_days: toNum(wateringInterval),
       watering_note: wateringNote.trim() || null,
       fertilize,
-      fertilize_interval_days: fertilize ? toNum(fertilizeInterval) : null,
       winterhardy,
       edible,
       height_cm: toNum(heightCm),
       width_cm: toNum(widthCm),
       notes: notes.trim() || null,
       tags,
-      // Fertilize season only meaningful when fertilizing is on.
       fertilize_start_month: fertilize ? fertSeasonStart : null,
       fertilize_end_month: fertilize ? fertSeasonEnd : null,
       prune_month: pruneMonth,
@@ -188,13 +174,10 @@ export function PlantEditPage() {
         const today = todayInputValue();
         const created = await PlantsApi.create({
           ...base,
-          // Only send when the user moved the date off today; otherwise the
-          // backend falls back to now().
+          // Water: omit when left at today so the backend starts the interval at now().
           last_watered_at: wateredDate !== today ? new Date(wateredDate).toISOString() : undefined,
-          last_fertilized_at:
-            fertilize && fertilizedDate !== today
-              ? new Date(fertilizedDate).toISOString()
-              : undefined,
+          // Fertilize is a log only — record the chosen date when fertilizing is on.
+          last_fertilized_at: fertilize ? new Date(fertilizedDate).toISOString() : undefined,
         });
         invalidateOverview('plants');
         toast.success('Pflanze angelegt');
@@ -210,64 +193,53 @@ export function PlantEditPage() {
   if (loading) return <div className="text-muted/70">Lade…</div>;
 
   return (
-    <form onSubmit={save} className="max-w-2xl flex flex-col gap-5">
+    <form onSubmit={save} className="max-w-2xl flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
         <BackLink to={isEdit ? `/plants/${plantId}` : '/plants'} label="zu Pflanzen" />
-        <h1 className="text-xl font-semibold">
-          {isEdit ? 'Pflanze bearbeiten' : 'Neue Pflanze'}
-        </h1>
+        <h1 className="text-xl font-semibold">{isEdit ? 'Pflanze bearbeiten' : 'Neue Pflanze'}</h1>
       </div>
 
-      {/* AI prefill — name → advisory suggestions. Non-blocking; the form
-          stays editable while it loads. */}
+      {/* AI prefill — name → advisory suggestions (create only, non-blocking). */}
       {!isEdit && (
-        <div className="card p-5 flex flex-col gap-3">
-          <div>
-            <label className="label">Pflanze suchen (KI-Vorschlag)</label>
-            <div className="flex gap-2">
-              <input
-                className="input flex-1"
-                value={searchName}
-                onChange={(e) => setSearchName(e.target.value)}
-                placeholder="z. B. Monstera deliciosa"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    void doPrefill();
-                  }
-                }}
-              />
-              <button
-                type="button"
-                className="btn-secondary shrink-0"
-                onClick={doPrefill}
-                disabled={prefilling || !searchName.trim()}
-              >
-                {prefilling ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-                <span>{prefilling ? 'Suche…' : 'Vorschlag'}</span>
-              </button>
-            </div>
-            {prefilling && (
-              <p className="text-xs text-muted mt-1.5">
-                Die KI denkt nach – kann 10–30 s dauern. Du kannst schon weiter ausfüllen.
-              </p>
-            )}
-          </div>
-          {prefillInfo && (
-            <p
-              className={`text-xs rounded-ctl px-3 py-2 ${
-                prefillInfo.ok ? 'bg-brand-50 text-brand-700' : 'bg-page text-muted'
-              }`}
+        <div className="card p-4 flex flex-col gap-2">
+          <label className="label !mb-0">Pflanze suchen (KI-Vorschlag)</label>
+          <div className="flex gap-2">
+            <input
+              className="input flex-1"
+              value={searchName}
+              onChange={(e) => setSearchName(e.target.value)}
+              placeholder="z. B. Monstera deliciosa"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void doPrefill();
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="btn-secondary shrink-0"
+              onClick={doPrefill}
+              disabled={prefilling || !searchName.trim()}
             >
+              {prefilling ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+              <span>{prefilling ? 'Suche…' : 'Vorschlag'}</span>
+            </button>
+          </div>
+          {prefilling && (
+            <p className="text-xs text-muted">Die KI denkt nach – kann 10–30 s dauern. Du kannst schon weiter ausfüllen.</p>
+          )}
+          {prefillInfo && (
+            <p className={`text-xs rounded-ctl px-3 py-2 ${prefillInfo.ok ? 'bg-brand-50 text-brand-700' : 'bg-page text-muted'}`}>
               {prefillInfo.text}
             </p>
           )}
         </div>
       )}
 
-      <div className="card p-5 flex flex-col gap-4">
-        <div>
-          <label className="label">Name *</label>
+      {/* Basis */}
+      <div className="card p-4 flex flex-col gap-3">
+        <Field label="Name *">
           <input
             className="input"
             value={name}
@@ -275,204 +247,111 @@ export function PlantEditPage() {
             placeholder="z. B. Monstera Wohnzimmer"
             autoFocus
           />
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="label">Art / lat. Name</label>
-            <input
-              className="input"
-              value={species}
-              onChange={(e) => setSpecies(e.target.value)}
-              placeholder="z. B. Monstera deliciosa"
-            />
-          </div>
-          <div>
-            <label className="label">Lichtverhältnisse</label>
-            <select
-              className="input"
-              value={location}
-              onChange={(e) => setLocation(e.target.value as PlantLocation)}
-            >
+        </Field>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="Art / lat. Name">
+            <input className="input" value={species} onChange={(e) => setSpecies(e.target.value)} placeholder="Monstera deliciosa" />
+          </Field>
+          <Field label="Lichtverhältnisse">
+            <select className="input" value={location} onChange={(e) => setLocation(e.target.value as PlantLocation)}>
               {PLANT_LOCATION_OPTIONS.map((loc) => (
-                <option key={loc} value={loc}>
-                  {PLANT_LOCATION_LABELS[loc]}
-                </option>
+                <option key={loc} value={loc}>{PLANT_LOCATION_LABELS[loc]}</option>
               ))}
             </select>
-          </div>
+          </Field>
         </div>
-        <TagInput
-          label="Bereich"
-          value={tags}
-          onChange={setTags}
-          suggestionGroups={SUGGESTED_PLANT_TAGS}
-          datalistId="plant-tag-suggestions"
-        />
+        <TagInput label="Bereich" value={tags} onChange={setTags} suggestionGroups={SUGGESTED_PLANT_TAGS} datalistId="plant-tag-suggestions" />
       </div>
 
-      {/* Watering */}
-      <div className="card p-5 flex flex-col gap-4">
-        <h2 className="text-sm font-semibold text-ink">Gießen</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="label">Intervall (Tage)</label>
-            <input
-              className="input"
-              type="number"
-              min={1}
-              max={365}
-              value={wateringInterval}
-              onChange={(e) => setWateringInterval(e.target.value)}
-              placeholder="leer = keine Erinnerung"
-            />
-          </div>
-          {!isEdit && (
-            <div>
-              <label className="label">Zuletzt gegossen</label>
+      {/* Pflege — Gießen + Düngen + Schnitt & Blüte in einer Karte */}
+      <div className="card p-4 flex flex-col gap-4">
+        {/* Gießen */}
+        <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Gießen alle (Tage)">
               <input
                 className="input"
-                type="date"
-                value={wateredDate}
-                onChange={(e) => setWateredDate(e.target.value)}
+                type="number"
+                min={1}
+                max={365}
+                value={wateringInterval}
+                onChange={(e) => setWateringInterval(e.target.value)}
+                placeholder="leer = keine Erinnerung"
               />
-            </div>
+            </Field>
+            {!isEdit && (
+              <Field label="Zuletzt gegossen">
+                <input className="input" type="date" value={wateredDate} onChange={(e) => setWateredDate(e.target.value)} />
+              </Field>
+            )}
+          </div>
+          <Field label="Gieß-Notiz (wie viel?)">
+            <input className="input" value={wateringNote} onChange={(e) => setWateringNote(e.target.value)} placeholder="z. B. durchdringend gießen" />
+          </Field>
+        </div>
+
+        {/* Düngen */}
+        <div className="flex flex-col gap-3 border-t border-line pt-4">
+          <Toggle label="Düngen (jährlich zu Saisonbeginn erinnern)" checked={fertilize} onChange={setFertilize} />
+          {fertilize && (
+            <>
+              <Field label="Dünge-Saison (Monate)">
+                <div className="grid grid-cols-2 gap-3">
+                  <MonthSelect label="von" value={fertSeasonStart} onChange={setFertSeasonStart} />
+                  <MonthSelect label="bis" value={fertSeasonEnd} onChange={setFertSeasonEnd} />
+                </div>
+              </Field>
+              {!isEdit && (
+                <Field label="Zuletzt gedüngt">
+                  <input className="input" type="date" value={fertilizedDate} onChange={(e) => setFertilizedDate(e.target.value)} />
+                </Field>
+              )}
+            </>
           )}
         </div>
-        <div>
-          <label className="label">Notiz (wie viel?)</label>
-          <input
-            className="input"
-            value={wateringNote}
-            onChange={(e) => setWateringNote(e.target.value)}
-            placeholder="z. B. durchdringend bis Wasser unten austritt"
-          />
+
+        {/* Schnitt & Blüte */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 border-t border-line pt-4">
+          <MonthSelect label="Schnitt-Monat" value={pruneMonth} onChange={setPruneMonth} />
+          <MonthSelect label="Blüte von" value={bloomStart} onChange={setBloomStart} />
+          <MonthSelect label="Blüte bis" value={bloomEnd} onChange={setBloomEnd} />
         </div>
       </div>
 
-      {/* Fertilizing */}
-      <div className="card p-5 flex flex-col gap-4">
-        <Toggle label="Düngen" checked={fertilize} onChange={setFertilize} />
-        {fertilize && (
-          <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="label">Intervall (Tage)</label>
-                <input
-                  className="input"
-                  type="number"
-                  min={1}
-                  max={365}
-                  value={fertilizeInterval}
-                  onChange={(e) => setFertilizeInterval(e.target.value)}
-                  placeholder="leer = keine Erinnerung"
-                />
-              </div>
-              {!isEdit && (
-                <div>
-                  <label className="label">Zuletzt gedüngt</label>
-                  <input
-                    className="input"
-                    type="date"
-                    value={fertilizedDate}
-                    onChange={(e) => setFertilizedDate(e.target.value)}
-                  />
-                </div>
-              )}
-            </div>
-            <div>
-              <label className="label">Dünge-Saison (nur in diesen Monaten erinnern)</label>
-              <div className="grid grid-cols-2 gap-4">
-                <MonthSelect label="von" value={fertSeasonStart} onChange={setFertSeasonStart} />
-                <MonthSelect label="bis" value={fertSeasonEnd} onChange={setFertSeasonEnd} />
-              </div>
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* Schnitt & Blüte — Monat/Saison-basiert. Schnitt erinnert jährlich;
-          Blütezeit ist nur Anzeige. */}
-      <div className="card p-5 flex flex-col gap-4">
-        <h2 className="text-sm font-semibold text-ink">Schnitt & Blüte</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <MonthSelect label="Schnitt-Monat (jährliche Erinnerung)" value={pruneMonth} onChange={setPruneMonth} />
+      {/* Eigenschaften */}
+      <div className="card p-4 flex flex-col gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3">
+          <Toggle label="Winterhart" checked={winterhardy} onChange={setWinterhardy} />
+          <Toggle label="Essbar" checked={edible} onChange={setEdible} />
         </div>
-        <div>
-          <label className="label">Blütezeit (nur Anzeige)</label>
-          <div className="grid grid-cols-2 gap-4">
-            <MonthSelect label="von" value={bloomStart} onChange={setBloomStart} />
-            <MonthSelect label="bis" value={bloomEnd} onChange={setBloomEnd} />
-          </div>
-        </div>
-      </div>
-
-      {/* Properties */}
-      <div className="card p-5 flex flex-col gap-4">
-        <Toggle label="Winterhart" checked={winterhardy} onChange={setWinterhardy} />
-        <Toggle label="Essbar" checked={edible} onChange={setEdible} />
         {edibleSuggestion !== null && (
-          <p className="-mt-2 text-xs text-muted">
-            KI vermutet:{' '}
-            <span className="font-medium text-ink">
-              {edibleSuggestion ? 'essbar' : 'nicht essbar'}
-            </span>{' '}
-            — bitte selbst bestätigen.{edibleNote ? ` ${edibleNote}` : ''}
+          <p className="text-xs text-muted">
+            KI vermutet: <span className="font-medium text-ink">{edibleSuggestion ? 'essbar' : 'nicht essbar'}</span> — bitte selbst bestätigen.{edibleNote ? ` ${edibleNote}` : ''}
           </p>
         )}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="label">Höhe (cm)</label>
-            <input
-              className="input"
-              type="number"
-              min={0}
-              value={heightCm}
-              onChange={(e) => setHeightCm(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="label">Breite (cm)</label>
-            <input
-              className="input"
-              type="number"
-              min={0}
-              value={widthCm}
-              onChange={(e) => setWidthCm(e.target.value)}
-            />
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="Höhe (cm)">
+            <input className="input" type="number" min={0} value={heightCm} onChange={(e) => setHeightCm(e.target.value)} />
+          </Field>
+          <Field label="Breite (cm)">
+            <input className="input" type="number" min={0} value={widthCm} onChange={(e) => setWidthCm(e.target.value)} />
+          </Field>
         </div>
-        <div>
-          <label className="label">Notizen</label>
-          <textarea
-            className="input min-h-[80px]"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-          />
-        </div>
-      </div>
-
-      {/* Image — only once the plant exists (needs an id to upload against). */}
-      <div className="card p-5 flex flex-col gap-3">
-        <h2 className="text-sm font-semibold text-ink">Bild</h2>
+        <Field label="Notizen">
+          <textarea className="input min-h-[56px]" value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </Field>
+        {/* Bild — only once the plant exists (needs an id to upload against). */}
         {isEdit ? (
-          <PlantImageUploader
-            plantId={plantId}
-            currentUrl={imageUrl}
-            onChanged={(url) => setImageUrl(url ?? '')}
-          />
+          <Field label="Bild">
+            <PlantImageUploader plantId={plantId} currentUrl={imageUrl} onChanged={(url) => setImageUrl(url ?? '')} />
+          </Field>
         ) : (
-          <p className="text-xs text-muted">
-            Ein Bild kannst du nach dem Speichern hinzufügen.
-          </p>
+          <p className="text-xs text-muted">Ein Bild kannst du nach dem Speichern hinzufügen.</p>
         )}
       </div>
 
       <div className="flex justify-end gap-2">
-        <button
-          type="button"
-          className="btn-ghost"
-          onClick={() => nav(isEdit ? `/plants/${plantId}` : '/plants')}
-        >
+        <button type="button" className="btn-ghost" onClick={() => nav(isEdit ? `/plants/${plantId}` : '/plants')}>
           Abbrechen
         </button>
         <button type="submit" className="btn-primary" disabled={saving}>
@@ -480,6 +359,16 @@ export function PlantEditPage() {
         </button>
       </div>
     </form>
+  );
+}
+
+/** Compact label + control wrapper (tighter than the standalone .label block). */
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-muted mb-1">{label}</label>
+      {children}
+    </div>
   );
 }
 
@@ -493,8 +382,7 @@ function MonthSelect({
   onChange: (v: number | null) => void;
 }) {
   return (
-    <div>
-      <label className="label">{label}</label>
+    <Field label={label}>
       <select
         className="input"
         value={value ?? ''}
@@ -502,12 +390,10 @@ function MonthSelect({
       >
         <option value="">—</option>
         {MONTHS.map((m, i) => (
-          <option key={m} value={i + 1}>
-            {m}
-          </option>
+          <option key={m} value={i + 1}>{m}</option>
         ))}
       </select>
-    </div>
+    </Field>
   );
 }
 
@@ -521,15 +407,10 @@ function Toggle({
   onChange: (v: boolean) => void;
 }) {
   return (
-    <label className="flex items-center justify-between cursor-pointer">
+    <label className="flex items-center justify-between gap-3 cursor-pointer">
       <span className="text-sm font-medium text-ink">{label}</span>
-      <span className="inline-flex items-center">
-        <input
-          type="checkbox"
-          className="sr-only peer"
-          checked={checked}
-          onChange={(e) => onChange(e.target.checked)}
-        />
+      <span className="inline-flex items-center shrink-0">
+        <input type="checkbox" className="sr-only peer" checked={checked} onChange={(e) => onChange(e.target.checked)} />
         <span className="w-11 h-6 bg-line peer-checked:bg-brand rounded-full transition relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-[#fff] after:rounded-full after:h-5 after:w-5 after:transition peer-checked:after:translate-x-5" />
       </span>
     </label>

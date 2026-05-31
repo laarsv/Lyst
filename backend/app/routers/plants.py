@@ -21,7 +21,6 @@ from app.services.plant_service import (
     list_plants,
     mark_fertilized,
     mark_watered,
-    next_fertilize_due,
     next_water_due,
     prune_due,
     update_plant,
@@ -39,14 +38,11 @@ def _serialize(plant) -> dict:
 
     now = datetime.now(timezone.utc)
     nwd = next_water_due(plant)
-    nfd = next_fertilize_due(plant)
     return PlantOut.model_validate(plant).model_copy(
         update={
             "next_water_due": nwd,
-            "next_fertilize_due": nfd,
             "water_due": nwd is not None and nwd <= now,
-            # Out of the fertilize season → not "due" even if the interval elapsed.
-            "fertilize_due": nfd is not None and nfd <= now and fertilize_in_season(plant, now),
+            "fertilize_in_season": fertilize_in_season(plant, now),
             "prune_due": prune_due(plant, now),
         }
     ).model_dump(mode="json")
@@ -69,12 +65,9 @@ async def get_due(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Plants needing water/fertilizer — overdue or within the next 7 days."""
-    groups = await due_this_week(db, user.id)
-    return ok({
-        "water": [_serialize(p) for p in groups["water"]],
-        "fertilize": [_serialize(p) for p in groups["fertilize"]],
-    })
+    """Plants needing water — overdue or within the next 7 days."""
+    water = await due_this_week(db, user.id)
+    return ok({"water": [_serialize(p) for p in water]})
 
 
 # Declared BEFORE /{plant_id} so "prefill" isn't captured as a plant id.

@@ -36,7 +36,6 @@ _PREFILL_SCHEMA: dict = {
         "location": {"type": "string", "enum": ["SONNIG", "HALBSCHATTEN", "SCHATTEN"]},
         "watering_interval_days": {"type": ["integer", "null"]},
         "fertilize": {"type": "boolean"},
-        "fertilize_interval_days": {"type": ["integer", "null"]},
         "winterhardy": {"type": "boolean"},
         "height_cm": {"type": ["integer", "null"]},
         "width_cm": {"type": ["integer", "null"]},
@@ -51,8 +50,8 @@ _PREFILL_SCHEMA: dict = {
     },
     "required": [
         "species", "suggested_name", "location", "watering_interval_days",
-        "fertilize", "fertilize_interval_days", "winterhardy", "height_cm",
-        "width_cm", "fertilize_start_month", "fertilize_end_month", "prune_month",
+        "fertilize", "winterhardy", "height_cm", "width_cm",
+        "fertilize_start_month", "fertilize_end_month", "prune_month",
         "bloom_start_month", "bloom_end_month", "edible_suggestion", "edible_note",
         "note",
     ],
@@ -73,7 +72,6 @@ _SYSTEM = (
     '  "location": GENAU einer von "SONNIG", "HALBSCHATTEN", "SCHATTEN",\n'
     '  "watering_interval_days": typischer Gieß-Abstand in Tagen (ganze Zahl),\n'
     '  "fertilize": true/false ob Düngen sinnvoll ist,\n'
-    '  "fertilize_interval_days": Dünge-Abstand in Tagen (ganze Zahl) oder null,\n'
     '  "winterhardy": true/false ob winterhart,\n'
     '  "height_cm": typische Höhe in cm (ganze Zahl) oder null,\n'
     '  "width_cm": typische Breite in cm (ganze Zahl) oder null,\n'
@@ -200,7 +198,6 @@ async def prefill_plant(name: str) -> PlantPrefillResponse:
         logger.info("Plant prefill returned non-object for %r: %r", name, type(data))
         return PlantPrefillResponse(ok=False, note=_FALLBACK_NOTE)
 
-    fertilize = _coerce_bool(data.get("fertilize"))
     return PlantPrefillResponse(
         ok=True,
         note=_coerce_str(data.get("note"), 500),
@@ -208,11 +205,7 @@ async def prefill_plant(name: str) -> PlantPrefillResponse:
         suggested_name=_coerce_str(data.get("suggested_name"), 255),
         location=_coerce_location(data.get("location")),
         watering_interval_days=_coerce_int(data.get("watering_interval_days"), 1, 365),
-        fertilize=fertilize,
-        # Only meaningful when fertilizing is suggested.
-        fertilize_interval_days=(
-            _coerce_int(data.get("fertilize_interval_days"), 1, 365) if fertilize else None
-        ),
+        fertilize=_coerce_bool(data.get("fertilize")),
         winterhardy=_coerce_bool(data.get("winterhardy")),
         height_cm=_coerce_int(data.get("height_cm"), 0, 10000),
         width_cm=_coerce_int(data.get("width_cm"), 0, 10000),

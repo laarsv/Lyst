@@ -465,32 +465,33 @@ export interface Plant {
   image_url: string | null;
   notes: string | null;
   tags: string[];
-  /** Seasonal/month-based care (1–12). Fertilize season gates the fertilize
-   *  reminder; prune_month drives an annual reminder; bloom window is info. */
+  /** Seasonal/month-based care (1–12). Fertilizing is season-driven (annual
+   *  reminder at fertilize_start_month); prune_month drives an annual reminder;
+   *  bloom window is info. */
   fertilize_start_month: number | null;
   fertilize_end_month: number | null;
   prune_month: number | null;
   bloom_start_month: number | null;
   bloom_end_month: number | null;
   last_watered_at: string | null;
+  /** Log only ("Zuletzt gedüngt") — fertilizing no longer has an interval. */
   last_fertilized_at: string | null;
   created_at: string;
   updated_at: string;
-  /** Computed server-side as last_*_at + interval; null when the interval
-   *  is unset. *_due flips true once that moment has passed. */
+  /** Computed server-side as last_watered_at + interval; null when unset.
+   *  water_due flips true once that moment has passed. */
   next_water_due: string | null;
-  next_fertilize_due: string | null;
   water_due: boolean;
-  /** fertilize_due is false outside the fertilize season even if the interval
-   *  elapsed. prune_due is true when the current month == prune_month. */
-  fertilize_due: boolean;
+  /** fertilize_in_season: current month is inside the fertilize window.
+   *  prune_due: current month == prune_month. */
+  fertilize_in_season: boolean;
   prune_due: boolean;
 }
 
-/** GET /plants/due — plants overdue or due within the next 7 days. */
+/** GET /plants/due — plants whose watering is overdue or due within 7 days.
+ *  Fertilizing/pruning are annual/seasonal and don't appear here. */
 export interface PlantDue {
   water: Plant[];
-  fertilize: Plant[];
 }
 
 /** POST /plants/prefill — advisory, AI-suggested values for the create form.
@@ -504,7 +505,6 @@ export interface PlantPrefill {
   location: PlantLocation | null;
   watering_interval_days: number | null;
   fertilize: boolean;
-  fertilize_interval_days: number | null;
   winterhardy: boolean;
   height_cm: number | null;
   width_cm: number | null;

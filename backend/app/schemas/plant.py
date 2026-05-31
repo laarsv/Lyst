@@ -13,7 +13,6 @@ class PlantBase(BaseModel):
     watering_interval_days: int | None = Field(default=None, ge=1, le=365)
     watering_note: str | None = None
     fertilize: bool = False
-    fertilize_interval_days: int | None = Field(default=None, ge=1, le=365)
     winterhardy: bool = False
     edible: bool = False
     height_cm: int | None = Field(default=None, ge=0, le=10000)
@@ -46,7 +45,6 @@ class PlantUpdate(BaseModel):
     watering_interval_days: int | None = Field(default=None, ge=1, le=365)
     watering_note: str | None = None
     fertilize: bool | None = None
-    fertilize_interval_days: int | None = Field(default=None, ge=1, le=365)
     winterhardy: bool | None = None
     edible: bool | None = None
     height_cm: int | None = Field(default=None, ge=0, le=10000)
@@ -75,20 +73,19 @@ class PlantOut(PlantBase):
     # unset. *_due is true once that moment has passed — drives the "fällig"
     # badges and the "Diese Woche fällig" overview.
     next_water_due: datetime | None = None
-    next_fertilize_due: datetime | None = None
     water_due: bool = False
-    # fertilize_due respects the fertilize season (false outside it, even if the
-    # interval elapsed). prune_due is true when the current month == prune_month.
-    fertilize_due: bool = False
+    # Fertilizing is season-driven now: fertilize_in_season is true when the
+    # current month is inside the fertilize window; prune_due is true when the
+    # current month == prune_month.
+    fertilize_in_season: bool = False
     prune_due: bool = False
 
 
 class PlantDueResponse(BaseModel):
-    """GET /plants/due — plants whose next water/fertilize moment is overdue
-    or falls within the next 7 days. Each list holds full PlantOut rows so
-    the frontend reuses the same card; sorted soonest-first."""
+    """GET /plants/due — plants whose next watering is overdue or falls within
+    the next 7 days, soonest first. Fertilizing/pruning are annual/seasonal and
+    don't appear here."""
     water: list[PlantOut] = Field(default_factory=list)
-    fertilize: list[PlantOut] = Field(default_factory=list)
 
 
 # --- AI prefill (Ollama-powered, advisory) ---
@@ -115,7 +112,6 @@ class PlantPrefillResponse(BaseModel):
     location: PlantLocation | None = None
     watering_interval_days: int | None = None
     fertilize: bool = False
-    fertilize_interval_days: int | None = None
     winterhardy: bool = False
     height_cm: int | None = None
     width_cm: int | None = None

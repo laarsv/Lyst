@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Droplets, Plus, Sprout } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { PlantsApi } from '@/api/endpoints';
 import type { Plant, PlantDue } from '@/types';
 import { PlantCard } from '@/components/plants/PlantCard';
@@ -17,7 +17,7 @@ type Filter = 'ALL' | string;
 export function PlantsPage() {
   const nav = useNavigate();
   const [plants, setPlants] = useState<Plant[]>([]);
-  const [due, setDue] = useState<PlantDue>({ water: [], fertilize: [] });
+  const [due, setDue] = useState<PlantDue>({ water: [] });
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState<Filter>('ALL');
@@ -87,17 +87,7 @@ export function PlantsPage() {
     }
   };
 
-  const doFertilize = async (id: number) => {
-    try {
-      await PlantsApi.fertilize(id);
-      toast.success('Als gedüngt markiert');
-      void load();
-    } catch (e) {
-      toast.error(getApiError(e));
-    }
-  };
-
-  const hasDue = due.water.length > 0 || due.fertilize.length > 0;
+  const hasDue = due.water.length > 0;
 
   return (
     <div>
@@ -147,29 +137,8 @@ export function PlantsPage() {
           the detail-page care card. */}
       {hasDue && (
         <div className="mb-6 rounded-[18px] border border-brand-100 bg-brand-50 p-5">
-          <h2 className="text-sm font-semibold text-ink mb-3">Diese Woche fällig</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
-            {due.water.length > 0 && (
-              <DueColumn
-                title="Gießen"
-                icon={<Droplets size={14} className="text-brand-700" />}
-                plants={due.water}
-                dueField="next_water_due"
-                actionLabel="Gegossen"
-                onAction={doWater}
-              />
-            )}
-            {due.fertilize.length > 0 && (
-              <DueColumn
-                title="Düngen"
-                icon={<Sprout size={14} className="text-brand-700" />}
-                plants={due.fertilize}
-                dueField="next_fertilize_due"
-                actionLabel="Gedüngt"
-                onAction={doFertilize}
-              />
-            )}
-          </div>
+          <h2 className="text-sm font-semibold text-ink mb-3">Diese Woche zu gießen</h2>
+          <DueColumn plants={due.water} onAction={doWater} />
         </div>
       )}
 
@@ -193,51 +162,31 @@ export function PlantsPage() {
   );
 }
 
-function DueColumn({
-  title,
-  icon,
-  plants,
-  dueField,
-  actionLabel,
-  onAction,
-}: {
-  title: string;
-  icon: React.ReactNode;
-  plants: Plant[];
-  dueField: 'next_water_due' | 'next_fertilize_due';
-  actionLabel: string;
-  onAction: (id: number) => void;
-}) {
+function DueColumn({ plants, onAction }: { plants: Plant[]; onAction: (id: number) => void }) {
   return (
-    <div>
-      <div className="flex items-center gap-1.5 text-xs font-semibold text-brand-700 mb-2">
-        {icon}
-        <span>{title}</span>
-      </div>
-      <ul className="flex flex-col gap-1.5">
-        {plants.map((p) => {
-          const label = dueLabel(p[dueField]);
-          return (
-            <li key={p.id} className="flex items-center gap-2">
-              <Link to={`/plants/${p.id}`} className="flex-1 min-w-0">
-                <span className="text-sm text-ink truncate">{p.name}</span>{' '}
-                {label && (
-                  <span className={`text-[11px] ${label.overdue ? 'text-danger font-medium' : 'text-brand-700'}`}>
-                    · {label.text}
-                  </span>
-                )}
-              </Link>
-              <button
-                type="button"
-                onClick={() => onAction(p.id)}
-                className="inline-flex items-center shrink-0 rounded-full border border-brand bg-surface px-3 py-1 text-xs font-medium text-brand-700 transition hover:bg-brand-50 active:scale-[0.98]"
-              >
-                {actionLabel}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
+    <ul className="flex flex-col gap-1.5">
+      {plants.map((p) => {
+        const label = dueLabel(p.next_water_due);
+        return (
+          <li key={p.id} className="flex items-center gap-2">
+            <Link to={`/plants/${p.id}`} className="flex-1 min-w-0">
+              <span className="text-sm text-ink truncate">{p.name}</span>{' '}
+              {label && (
+                <span className={`text-[11px] ${label.overdue ? 'text-danger font-medium' : 'text-brand-700'}`}>
+                  · {label.text}
+                </span>
+              )}
+            </Link>
+            <button
+              type="button"
+              onClick={() => onAction(p.id)}
+              className="inline-flex items-center shrink-0 rounded-full border border-brand bg-surface px-3 py-1 text-xs font-medium text-brand-700 transition hover:bg-brand-50 active:scale-[0.98]"
+            >
+              Gegossen
+            </button>
+          </li>
+        );
+      })}
+    </ul>
   );
 }

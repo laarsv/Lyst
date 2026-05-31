@@ -41,7 +41,6 @@ class Plant(Base, TimestampMixin):
     watering_interval_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     watering_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     fertilize: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    fertilize_interval_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     winterhardy: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     edible: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -65,24 +64,27 @@ class Plant(Base, TimestampMixin):
     last_watered_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, index=True
     )
+    # last_fertilized_at is now a log only ("Zuletzt gedüngt") — fertilizing is
+    # season-driven (see below), no longer an interval cycle.
     last_fertilized_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, index=True
     )
     water_reminder_sent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    fertilize_reminder_sent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # --- Seasonal / month-based care (months 1–12, NULL = not set) ---
     #
     # Calendar-based, distinct from the interval recurrence above:
-    #   - fertilize_start/end_month: gate the fertilize interval reminder to a
-    #     season (e.g. Apr–Aug, wrap-around like Nov–Feb supported); outside it
-    #     the reminder pauses.
+    #   - fertilize_start/end_month: the fertilize season. An ANNUAL reminder
+    #     fires once when fertilize_start_month arrives (fertilize_reminder_year
+    #     = yearly dedup; reset when fertilize_start_month changes). The window
+    #     end is used for display + the "in season now" flag.
     #   - prune_month: an annual "time to prune" reminder. prune_reminder_year
     #     records the year it last fired (yearly dedup; re-armed each new year,
     #     and reset when prune_month changes).
     #   - bloom_start/end_month: display-only likely bloom window (no reminder).
     fertilize_start_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
     fertilize_end_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fertilize_reminder_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     prune_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
     prune_reminder_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     bloom_start_month: Mapped[int | None] = mapped_column(Integer, nullable=True)

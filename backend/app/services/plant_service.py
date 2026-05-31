@@ -33,19 +33,13 @@ def next_water_due(plant: Plant) -> datetime | None:
     return _aware(plant.last_watered_at) + timedelta(days=plant.watering_interval_days)
 
 
-def next_fertilize_due(plant: Plant) -> datetime | None:
-    if not plant.fertilize or plant.fertilize_interval_days is None or plant.last_fertilized_at is None:
-        return None
-    return _aware(plant.last_fertilized_at) + timedelta(days=plant.fertilize_interval_days)
-
-
 def fertilize_in_season(plant: Plant, now: datetime) -> bool:
-    """True when fertilizing is allowed in `now`'s month. No season set (either
-    bound NULL) → always in season. Supports wrap-around windows (e.g. a
-    Nov–Feb season has start > end)."""
+    """True when `now`'s month is inside the fertilize season. Used for the
+    "in season now" display flag. No season set (either bound NULL) → False
+    (nothing to be in). Supports wrap-around windows (e.g. Nov–Feb → start>end)."""
     s, e = plant.fertilize_start_month, plant.fertilize_end_month
     if s is None or e is None:
-        return True
+        return False
     m = now.month
     return s <= m <= e if s <= e else (m >= s or m <= e)
 
@@ -100,17 +94,14 @@ async def create_plant(
     last_fertilized_at: datetime | None = None,
     **fields,
 ) -> Plant:
-    now = _utcnow()
     plant = Plant(
         owner_id=owner_id,
-        last_watered_at=_aware(last_watered_at) or now,
+        last_watered_at=_aware(last_watered_at) or _utcnow(),
+        # last_fertilized_at is a log only — leave NULL when not supplied
+        # (fertilizing is season-driven, not a cycle that needs a start).
         last_fertilized_at=_aware(last_fertilized_at),
         **fields,
     )
-    # Fertilizing turned on but no start date given → start the cycle now so
-    # the first reminder fires one interval out (parallels watering's default).
-    if plant.fertilize and plant.last_fertilized_at is None:
-        plant.last_fertilized_at = now
     db.add(plant)
     await db.commit()
     await db.refresh(plant)
@@ -119,7 +110,7 @@ async def create_plant(
 
 # Fields whose new value of None should still be written (i.e. "clear this").
 _NULLABLE = {
-    "species", "watering_interval_days", "watering_note", "fertilize_interval_days",
+    "species", "watering_interval_days", "watering_note",
     "height_cm", "width_cm", "image_url", "notes",
     "fertilize_start_month", "fertilize_end_month", "prune_month",
     "bloom_start_month", "bloom_end_month",
@@ -133,21 +124,15 @@ async def update_plant(db: AsyncSession, plant: Plant, **fields) -> Plant:
     # the next cycle fire even if the previous one already did.
     if "watering_interval_days" in fields and fields["watering_interval_days"] != plant.watering_interval_days:
         plant.water_reminder_sent = False
-    if "fertilize_interval_days" in fields and fields["fertilize_interval_days"] != plant.fertilize_interval_days:
-        plant.fertilize_reminder_sent = False
-    if "fertilize" in fields and fields["fertilize"] != plant.fertilize:
-        plant.fertilize_reminder_sent = False
-    # Moving the prune month re-arms this year's annual reminder.
+    # Moving a season/prune month re-arms this year's annual reminder.
+    if "fertilize_start_month" in fields and fields["fertilize_start_month"] != plant.fertilize_start_month:
+        plant.fertilize_reminder_year = None
     if "prune_month" in fields and fields["prune_month"] != plant.prune_month:
         plant.prune_reminder_year = None
 
     for k, v in fields.items():
         if v is not None or k in _NULLABLE:
             setattr(plant, k, v)
-
-    # Enabling fertilize on a plant that never had a start date → begin now.
-    if plant.fertilize and plant.last_fertilized_at is None:
-        plant.last_fertilized_at = _utcnow()
 
     await db.commit()
     await db.refresh(plant)
@@ -170,8 +155,9 @@ async def mark_watered(db: AsyncSession, plant: Plant) -> Plant:
 
 
 async def mark_fertilized(db: AsyncSession, plant: Plant) -> Plant:
+    # Log only — fertilizing is season-driven, so this doesn't touch any
+    # reminder state. Just records when the user last fertilised.
     plant.last_fertilized_at = _utcnow()
-    plant.fertilize_reminder_sent = False
     await db.commit()
     await db.refresh(plant)
     return plant
@@ -179,35 +165,25 @@ async def mark_fertilized(db: AsyncSession, plant: Plant) -> Plant:
 
 # ---------- "Diese Woche fällig" overview ----------
 
-async def due_this_week(db: AsyncSession, owner_id: int) -> dict[str, list[Plant]]:
-    """Plants whose next water/fertilize moment is already overdue or falls
-    within the next 7 days. Personal inventory → small N, so we fetch the
-    owner's plants and reuse the computed-due helpers rather than encoding
-    interval arithmetic in SQL."""
-    now = _utcnow()
-    horizon = now + timedelta(days=7)
+async def due_this_week(db: AsyncSession, owner_id: int) -> list[Plant]:
+    """Plants whose next watering is overdue or falls within the next 7 days,
+    soonest first. Watering is the only interval-based, "this week"-shaped
+    reminder — fertilizing and pruning are annual/seasonal and surface via the
+    detail page, not this overview."""
+    horizon = _utcnow() + timedelta(days=7)
     result = await db.execute(select(Plant).where(Plant.owner_id == owner_id))
     plants = list(result.scalars().all())
     water = [p for p in plants if (d := next_water_due(p)) is not None and d <= horizon]
-    # Out-of-season plants drop out of the overview too — "pause" is consistent
-    # with the email reminder.
-    fertilize = [
-        p for p in plants
-        if (d := next_fertilize_due(p)) is not None and d <= horizon and fertilize_in_season(p, now)
-    ]
     water.sort(key=lambda p: next_water_due(p))
-    fertilize.sort(key=lambda p: next_fertilize_due(p))
-    return {"water": water, "fertilize": fertilize}
+    return water
 
 
 # ---------- Scheduler support ----------
 
-async def fetch_due_care(db: AsyncSession, now: datetime) -> tuple[list[Plant], list[Plant]]:
-    """Return (due_water, due_fertilize) — plants whose reminder hasn't been
-    sent for the current cycle and whose next-due moment has passed. The DB
-    filter trims to plausible rows (interval set, not yet sent); the Python
-    pass applies the same next_*_due logic the rest of the module uses."""
-    water_candidates = (
+async def fetch_due_water(db: AsyncSession, now: datetime) -> list[Plant]:
+    """Plants whose interval-based watering reminder is due and not yet sent
+    this cycle. Re-arm is a user action (mark_watered clears the flag)."""
+    candidates = (
         await db.execute(
             select(Plant).where(
                 Plant.watering_interval_days.is_not(None),
@@ -216,25 +192,25 @@ async def fetch_due_care(db: AsyncSession, now: datetime) -> tuple[list[Plant], 
             )
         )
     ).scalars().all()
-    due_water = [p for p in water_candidates if (d := next_water_due(p)) is not None and d <= now]
+    return [p for p in candidates if (d := next_water_due(p)) is not None and d <= now]
 
-    fertilize_candidates = (
+
+async def fetch_due_fertilize_season(db: AsyncSession, now: datetime) -> list[Plant]:
+    """Plants whose ANNUAL fertilize reminder is due: fertilizing is on, the
+    current month matches `fertilize_start_month`, and we haven't already fired
+    this calendar year. Mirrors fetch_due_prune."""
+    rows = (
         await db.execute(
             select(Plant).where(
                 Plant.fertilize.is_(True),
-                Plant.fertilize_interval_days.is_not(None),
-                Plant.last_fertilized_at.is_not(None),
-                Plant.fertilize_reminder_sent.is_(False),
+                Plant.fertilize_start_month.is_not(None),
             )
         )
     ).scalars().all()
-    # Season gate: outside fertilize_start..end_month the reminder pauses.
-    due_fertilize = [
-        p for p in fertilize_candidates
-        if (d := next_fertilize_due(p)) is not None and d <= now and fertilize_in_season(p, now)
+    return [
+        p for p in rows
+        if p.fertilize_start_month == now.month and p.fertilize_reminder_year != now.year
     ]
-
-    return due_water, due_fertilize
 
 
 async def fetch_due_prune(db: AsyncSession, now: datetime) -> list[Plant]:

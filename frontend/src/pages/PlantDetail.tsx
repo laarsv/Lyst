@@ -83,21 +83,19 @@ export function PlantDetailPage() {
   if (!plant) return null;
 
   const waterDue = dueLabel(plant.next_water_due);
-  const fertDue = dueLabel(plant.next_fertilize_due);
-  // A care row shows only when its interval is set (null = no reminder).
+  // Gießen: interval-based due row. Düngen: shown while we're in the fertilize
+  // season (the actual reminder is the annual season-start email).
   const showWater = plant.watering_interval_days != null && waterDue != null;
-  const showFert = plant.fertilize && plant.fertilize_interval_days != null && fertDue != null;
+  const showFert = plant.fertilize && plant.fertilize_in_season;
 
+  const seasonRange = monthRangeLabel(plant.fertilize_start_month, plant.fertilize_end_month);
   const wasserValue =
     plant.watering_interval_days != null ? `alle ${plant.watering_interval_days} Tage` : '—';
-  const fertSeason =
-    plant.fertilize_start_month != null && plant.fertilize_end_month != null
-      ? ` (${monthRangeLabel(plant.fertilize_start_month, plant.fertilize_end_month)})`
-      : '';
   const duengenValue = !plant.fertilize
     ? 'nein'
-    : (plant.fertilize_interval_days != null ? `alle ${plant.fertilize_interval_days} Tage` : 'ja') +
-      fertSeason;
+    : plant.fertilize_start_month != null && plant.fertilize_end_month != null
+      ? `Saison ${seasonRange}`
+      : 'ja';
   const schnittValue = plant.prune_month
     ? monthLabel(plant.prune_month) + (plant.prune_due ? ' · jetzt fällig' : '')
     : '—';
@@ -161,7 +159,10 @@ export function PlantDetailPage() {
             <CareRow
               icon={<Sprout size={18} />}
               label="Düngen"
-              due={fertDue!}
+              due={{
+                text: seasonRange !== '—' ? `Saison läuft (${seasonRange})` : 'Dünge-Saison läuft',
+                overdue: false,
+              }}
               actionLabel="Gedüngt"
               onAction={fertilize}
             />
@@ -197,6 +198,13 @@ export function PlantDetailPage() {
             label="Zuletzt gegossen"
             value={relativePast(plant.last_watered_at)}
           />
+          {plant.fertilize && (
+            <DetailRow
+              icon={<Sprout size={18} />}
+              label="Zuletzt gedüngt"
+              value={relativePast(plant.last_fertilized_at)}
+            />
+          )}
         </div>
       </section>
 

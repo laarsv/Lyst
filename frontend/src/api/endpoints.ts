@@ -703,7 +703,6 @@ type PlantWritePayload = {
   watering_interval_days?: number | null;
   watering_note?: string | null;
   fertilize: boolean;
-  fertilize_interval_days?: number | null;
   winterhardy: boolean;
   edible: boolean;
   height_cm?: number | null;
