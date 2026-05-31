@@ -35,6 +35,7 @@ import type {
   Plant,
   PlantDue,
   PlantLocation,
+  PlantPrefill,
   PublicListData,
   PublicNoteData,
   InternalShare,
@@ -717,6 +718,10 @@ export const PlantsApi = {
     api.get<{ data: Plant[] }>('/plants', { params }).then(unwrap),
   /** Plants overdue or due within the next 7 days, split water/fertilize. */
   due: () => api.get<{ data: PlantDue }>('/plants/due').then(unwrap),
+  /** Ollama-powered advisory prefill from a plant name. Always resolves
+   *  (ok=false on the backend's "couldn't determine" path). */
+  prefill: (name: string) =>
+    api.post<{ data: PlantPrefill }>('/plants/prefill', { name }).then(unwrap),
   get: (id: number) => api.get<{ data: Plant }>(`/plants/${id}`).then(unwrap),
   create: (
     // last_*_at: the optional "Zuletzt gegossen/gedüngt" dates. Omit to let

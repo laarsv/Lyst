@@ -1,7 +1,8 @@
 import { useCallback, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { Loader2, Sparkles } from 'lucide-react';
 import { PlantsApi } from '@/api/endpoints';
-import type { Plant, PlantLocation } from '@/types';
+import type { Plant, PlantLocation, PlantPrefill } from '@/types';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
 import { BackLink } from '@/components/BackLink';
@@ -47,6 +48,62 @@ export function PlantEditPage() {
   // today → omitted on save so the backend starts the cycle at now().
   const [wateredDate, setWateredDate] = useState(todayInputValue());
   const [fertilizedDate, setFertilizedDate] = useState(todayInputValue());
+
+  // Create-only AI prefill (Ollama, advisory). Non-blocking: it runs while the
+  // user keeps typing, and only fills fields still at their default/empty value.
+  const [searchName, setSearchName] = useState('');
+  const [prefilling, setPrefilling] = useState(false);
+  const [prefillInfo, setPrefillInfo] = useState<{ text: string; ok: boolean } | null>(null);
+  const [edibleSuggestion, setEdibleSuggestion] = useState<boolean | null>(null);
+  const [edibleNote, setEdibleNote] = useState<string | null>(null);
+
+  /** Populate via functional updaters so we read the LATEST value at apply
+   *  time — a field the user edited DURING the (slow) request is never
+   *  overwritten. We never touch `edible` — edibility stays a hint. */
+  const applyPrefill = (d: PlantPrefill) => {
+    setName((prev) => (prev.trim() ? prev : d.suggested_name || searchName.trim()));
+    setSpecies((prev) => (prev.trim() ? prev : d.species ?? ''));
+    setLocation((prev) => (prev !== 'HALBSCHATTEN' ? prev : d.location ?? prev));
+    setWateringInterval((prev) =>
+      prev.trim() ? prev : d.watering_interval_days != null ? String(d.watering_interval_days) : prev,
+    );
+    if (d.fertilize) {
+      // Only ever turns the flag on (default is off) — never clears a user's choice.
+      setFertilize(true);
+      setFertilizeInterval((prev) =>
+        prev.trim() ? prev : d.fertilize_interval_days != null ? String(d.fertilize_interval_days) : prev,
+      );
+    }
+    if (d.winterhardy) setWinterhardy(true);
+    setHeightCm((prev) => (prev.trim() ? prev : d.height_cm != null ? String(d.height_cm) : prev));
+    setWidthCm((prev) => (prev.trim() ? prev : d.width_cm != null ? String(d.width_cm) : prev));
+    // edible: intentionally NOT set — only surfaced as a hint below.
+    setEdibleSuggestion(d.edible_suggestion);
+    setEdibleNote(d.edible_note);
+  };
+
+  const doPrefill = async () => {
+    const query = searchName.trim();
+    if (!query || prefilling) return;
+    setPrefilling(true);
+    setPrefillInfo(null);
+    try {
+      const d = await PlantsApi.prefill(query);
+      if (d.ok) {
+        applyPrefill(d);
+        setPrefillInfo({
+          text: d.note || 'Vorschläge eingefügt – bitte alle Felder prüfen.',
+          ok: true,
+        });
+      } else {
+        setPrefillInfo({ text: d.note || 'Konnte nicht ermitteln, bitte manuell ausfüllen.', ok: false });
+      }
+    } catch (err) {
+      setPrefillInfo({ text: getApiError(err), ok: false });
+    } finally {
+      setPrefilling(false);
+    }
+  };
 
   const fetchPlant = useCallback(async () => {
     if (!isEdit) return;
@@ -137,6 +194,53 @@ export function PlantEditPage() {
           {isEdit ? 'Pflanze bearbeiten' : 'Neue Pflanze'}
         </h1>
       </div>
+
+      {/* AI prefill — name → advisory suggestions. Non-blocking; the form
+          stays editable while it loads. */}
+      {!isEdit && (
+        <div className="card p-5 flex flex-col gap-3">
+          <div>
+            <label className="label">Pflanze suchen (KI-Vorschlag)</label>
+            <div className="flex gap-2">
+              <input
+                className="input flex-1"
+                value={searchName}
+                onChange={(e) => setSearchName(e.target.value)}
+                placeholder="z. B. Monstera deliciosa"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void doPrefill();
+                  }
+                }}
+              />
+              <button
+                type="button"
+                className="btn-secondary shrink-0"
+                onClick={doPrefill}
+                disabled={prefilling || !searchName.trim()}
+              >
+                {prefilling ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                <span>{prefilling ? 'Suche…' : 'Vorschlag'}</span>
+              </button>
+            </div>
+            {prefilling && (
+              <p className="text-xs text-muted mt-1.5">
+                Die KI denkt nach – kann 10–30 s dauern. Du kannst schon weiter ausfüllen.
+              </p>
+            )}
+          </div>
+          {prefillInfo && (
+            <p
+              className={`text-xs rounded-ctl px-3 py-2 ${
+                prefillInfo.ok ? 'bg-brand-50 text-brand-700' : 'bg-page text-muted'
+              }`}
+            >
+              {prefillInfo.text}
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="card p-5 flex flex-col gap-4">
         <div>
@@ -258,6 +362,15 @@ export function PlantEditPage() {
       <div className="card p-5 flex flex-col gap-4">
         <Toggle label="Winterhart" checked={winterhardy} onChange={setWinterhardy} />
         <Toggle label="Essbar" checked={edible} onChange={setEdible} />
+        {edibleSuggestion !== null && (
+          <p className="-mt-2 text-xs text-muted">
+            KI vermutet:{' '}
+            <span className="font-medium text-ink">
+              {edibleSuggestion ? 'essbar' : 'nicht essbar'}
+            </span>{' '}
+            — bitte selbst bestätigen.{edibleNote ? ` ${edibleNote}` : ''}
+          </p>
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="label">Höhe (cm)</label>

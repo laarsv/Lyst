@@ -10,7 +10,8 @@ from app.core.database import get_db
 from app.core.dependencies import require_user
 from app.core.responses import ok
 from app.models.user import User
-from app.schemas.plant import PlantCreate, PlantUpdate
+from app.schemas.plant import PlantCreate, PlantPrefillRequest, PlantUpdate
+from app.services.plant_prefill_service import prefill_plant
 from app.services.plant_service import (
     create_plant,
     delete_plant,
@@ -70,6 +71,19 @@ async def get_due(
         "water": [_serialize(p) for p in groups["water"]],
         "fertilize": [_serialize(p) for p in groups["fertilize"]],
     })
+
+
+# Declared BEFORE /{plant_id} so "prefill" isn't captured as a plant id.
+@router.post("/prefill")
+async def post_prefill(
+    payload: PlantPrefillRequest,
+    user: User = Depends(require_user),
+):
+    """Ollama-powered, advisory care suggestions for the create form. Always
+    200: returns ok=false ("manuell ausfüllen") on any failure. Never sets
+    the real `edible` field — edibility is hint-only."""
+    result = await prefill_plant(payload.name)
+    return ok(result.model_dump(mode="json"))
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

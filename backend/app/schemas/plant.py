@@ -73,3 +73,35 @@ class PlantDueResponse(BaseModel):
     the frontend reuses the same card; sorted soonest-first."""
     water: list[PlantOut] = Field(default_factory=list)
     fertilize: list[PlantOut] = Field(default_factory=list)
+
+
+# --- AI prefill (Ollama-powered, advisory) ---
+
+class PlantPrefillRequest(BaseModel):
+    """POST /plants/prefill — the user types a plant name."""
+    name: str = Field(min_length=1, max_length=120)
+
+
+class PlantPrefillResponse(BaseModel):
+    """Advisory, fully-validated suggestions for the create form. Every field
+    is a *suggestion* the user reviews — nothing here is authoritative.
+
+    `ok=False` (with `note`) is the catch-all "couldn't determine" path used
+    on Ollama timeout/unreachable/garbage; the form then stays manual.
+
+    Edibility is INTENTIONALLY isolated in `edible_suggestion`/`edible_note`
+    and never maps to the plant's real `edible` field — the frontend renders
+    it as a hint the user must actively confirm."""
+    ok: bool
+    note: str | None = None
+    species: str | None = None
+    suggested_name: str | None = None
+    location: PlantLocation | None = None
+    watering_interval_days: int | None = None
+    fertilize: bool = False
+    fertilize_interval_days: int | None = None
+    winterhardy: bool = False
+    height_cm: int | None = None
+    width_cm: int | None = None
+    edible_suggestion: bool | None = None
+    edible_note: str | None = None

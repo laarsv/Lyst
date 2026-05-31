@@ -483,6 +483,25 @@ export interface PlantDue {
   fertilize: Plant[];
 }
 
+/** POST /plants/prefill — advisory, AI-suggested values for the create form.
+ *  `ok=false` means "couldn't determine" (show `note`, stay manual). Edibility
+ *  is hint-only via edible_suggestion/edible_note — never the real `edible`. */
+export interface PlantPrefill {
+  ok: boolean;
+  note: string | null;
+  species: string | null;
+  suggested_name: string | null;
+  location: PlantLocation | null;
+  watering_interval_days: number | null;
+  fertilize: boolean;
+  fertilize_interval_days: number | null;
+  winterhardy: boolean;
+  height_cm: number | null;
+  width_cm: number | null;
+  edible_suggestion: boolean | null;
+  edible_note: string | null;
+}
+
 // ---------- Internal sharing (alembic 0012) ----------
 
 export interface ShareByEmailResponse {
