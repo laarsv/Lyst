@@ -5,9 +5,11 @@ import type { Plant, PlantLocation } from '@/types';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
 import { BackLink } from '@/components/BackLink';
+import { TagInput } from '@/components/TagInput';
 import { PlantImageUploader } from '@/components/plants/PlantImageUploader';
 import { invalidateOverview, useResourceQuery } from '@/hooks/useOverviewQuery';
 import { PLANT_LOCATION_LABELS, PLANT_LOCATION_OPTIONS, todayInputValue } from '@/lib/plants';
+import { SUGGESTED_PLANT_TAGS } from '@/data/plantTags';
 
 const toNum = (s: string): number | null => {
   const t = s.trim();
@@ -38,6 +40,7 @@ export function PlantEditPage() {
   const [heightCm, setHeightCm] = useState('');
   const [widthCm, setWidthCm] = useState('');
   const [notes, setNotes] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
   const [imageUrl, setImageUrl] = useState('');
 
   // Create-only: "Zuletzt gegossen / gedüngt", pre-filled with today. Left at
@@ -61,6 +64,7 @@ export function PlantEditPage() {
       setHeightCm(p.height_cm?.toString() ?? '');
       setWidthCm(p.width_cm?.toString() ?? '');
       setNotes(p.notes ?? '');
+      setTags(p.tags ?? []);
       setImageUrl(p.image_url ?? '');
     } catch (e) {
       toast.error(getApiError(e));
@@ -91,6 +95,7 @@ export function PlantEditPage() {
       height_cm: toNum(heightCm),
       width_cm: toNum(widthCm),
       notes: notes.trim() || null,
+      tags,
     };
     setSaving(true);
     try {
@@ -155,7 +160,7 @@ export function PlantEditPage() {
             />
           </div>
           <div>
-            <label className="label">Standort</label>
+            <label className="label">Lichtverhältnisse</label>
             <select
               className="input"
               value={location}
@@ -169,6 +174,13 @@ export function PlantEditPage() {
             </select>
           </div>
         </div>
+        <TagInput
+          label="Bereich"
+          value={tags}
+          onChange={setTags}
+          suggestionGroups={SUGGESTED_PLANT_TAGS}
+          datalistId="plant-tag-suggestions"
+        />
       </div>
 
       {/* Watering */}

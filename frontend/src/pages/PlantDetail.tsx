@@ -104,7 +104,7 @@ export function PlantDetailPage() {
       {plant.species && <p className="text-muted italic">{plant.species}</p>}
 
       <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-muted">
-        <span>📍 {PLANT_LOCATION_LABELS[plant.location]}</span>
+        <span>☀️ {PLANT_LOCATION_LABELS[plant.location]}</span>
         {plant.edible && <span>🍽 Essbar</span>}
         {plant.winterhardy && <span>❄️ Winterhart</span>}
         {(plant.height_cm || plant.width_cm) && (
@@ -115,6 +115,16 @@ export function PlantDetailPage() {
           </span>
         )}
       </div>
+
+      {plant.tags.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {plant.tags.map((t) => (
+            <span key={t} className="text-xs px-2 py-0.5 rounded-full bg-page text-muted">
+              #{t}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Care actions + status */}
       <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">

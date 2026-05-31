@@ -709,10 +709,11 @@ type PlantWritePayload = {
   width_cm?: number | null;
   image_url?: string | null;
   notes?: string | null;
+  tags: string[];
 };
 
 export const PlantsApi = {
-  list: (params?: { q?: string }) =>
+  list: (params?: { q?: string; tag?: string }) =>
     api.get<{ data: Plant[] }>('/plants', { params }).then(unwrap),
   /** Plants overdue or due within the next 7 days, split water/fertilize. */
   due: () => api.get<{ data: PlantDue }>('/plants/due').then(unwrap),

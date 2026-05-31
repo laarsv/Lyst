@@ -464,6 +464,7 @@ export interface Plant {
   width_cm: number | null;
   image_url: string | null;
   notes: string | null;
+  tags: string[];
   last_watered_at: string | null;
   last_fertilized_at: string | null;
   created_at: string;

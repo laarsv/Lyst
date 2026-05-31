@@ -50,10 +50,11 @@ def _serialize(plant) -> dict:
 @router.get("")
 async def get_plants(
     q: str | None = None,
+    tag: str | None = None,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    plants = await list_plants(db, user.id, q=q)
+    plants = await list_plants(db, user.id, q=q, tag=tag)
     return ok([_serialize(p) for p in plants])
 
 

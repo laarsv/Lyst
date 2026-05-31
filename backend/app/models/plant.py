@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 
 import enum
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import ARRAY, Boolean, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -49,6 +49,9 @@ class Plant(Base, TimestampMixin):
     width_cm: Mapped[int | None] = mapped_column(Integer, nullable=True)
     image_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Free-form grouping ("Bereich": Garten, Wohnung, Balkon, …). Identical
+    # mechanism to Recipe.tags — a string array, filtered with .any().
+    tags: Mapped[list[str]] = mapped_column(ARRAY(String), default=list, nullable=False)
 
     # --- Recurring-care bookkeeping (not user-facing fields) ---
     #

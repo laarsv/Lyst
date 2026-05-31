@@ -26,10 +26,8 @@ import { Apple, ImagePlus, Loader2, Sparkles, Trash2, Upload } from 'lucide-reac
 import { AiSuggestionModal } from '@/components/AiSuggestionModal';
 import { NutritionBadge } from '@/components/recipes/NutritionBadge';
 import { NutritionSheet, type NutritionPick } from '@/components/recipes/NutritionSheet';
-import {
-  ALL_SUGGESTED_RECIPE_TAGS,
-  SUGGESTED_RECIPE_TAGS,
-} from '@/data/recipeTags';
+import { SUGGESTED_RECIPE_TAGS } from '@/data/recipeTags';
+import { TagInput } from '@/components/TagInput';
 
 // Categories were replaced by tags in alembic 0011 — see SUGGESTED_RECIPE_TAGS
 // from `@/data/recipeTags` for the new dropdown (rendered near the tag input
@@ -136,7 +134,6 @@ export function RecipeEditPage() {
   const [imageUrl, setImageUrl] = useState('');
   const [sourceUrl, setSourceUrl] = useState(prefill?.source_url ?? '');
   const [tags, setTags] = useState<string[]>(prefill?.tags ?? []);
-  const [tagInput, setTagInput] = useState('');
   // Image extracted from the import source (URL og:image, JSON-LD,
   // PDF embedded image, or the uploaded photo itself). Held in state
   // until the recipe is created — then POSTed via the existing
@@ -270,13 +267,6 @@ export function RecipeEditPage() {
       // eslint-disable-next-line no-console
       console.warn('Bulk-fill reload failed', e);
     }
-  };
-
-  // Tags
-  const addTag = () => {
-    const v = tagInput.trim().replace(/^#/, '');
-    if (v && !tags.includes(v)) setTags([...tags, v]);
-    setTagInput('');
   };
 
   // Ingredients
@@ -650,93 +640,31 @@ export function RecipeEditPage() {
           </div>
         </div>
         <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <label className="label !mb-0">Tags</label>
-            {recipeId && (
-              <button
-                type="button"
-                onClick={suggestTags}
-                disabled={tagsLoading}
-                title="Tags vorschlagen (KI)"
-                aria-label="Tags vorschlagen (KI)"
-                className="size-7 inline-flex items-center justify-center rounded-full text-muted hover:text-brand-700 hover:bg-page transition disabled:opacity-50"
-              >
-                {tagsLoading ? (
-                  <Loader2 size={14} className="animate-spin" />
-                ) : (
-                  <Sparkles size={14} />
-                )}
-              </button>
-            )}
-          </div>
-          <div className="flex flex-wrap items-center gap-1 input min-h-[42px] py-2">
-            {tags.map((t) => (
-              <span key={t} className="inline-flex items-center gap-1 text-xs bg-page px-2 py-1 rounded-full">
-                #{t}
+          <TagInput
+            label="Tags"
+            value={tags}
+            onChange={setTags}
+            suggestionGroups={SUGGESTED_RECIPE_TAGS}
+            datalistId="recipe-tag-suggestions"
+            labelAction={
+              recipeId ? (
                 <button
                   type="button"
-                  onClick={() => setTags(tags.filter((x) => x !== t))}
-                  className="text-muted/70 hover:text-danger"
+                  onClick={suggestTags}
+                  disabled={tagsLoading}
+                  title="Tags vorschlagen (KI)"
+                  aria-label="Tags vorschlagen (KI)"
+                  className="size-7 inline-flex items-center justify-center rounded-full text-muted hover:text-brand-700 hover:bg-page transition disabled:opacity-50"
                 >
-                  ×
+                  {tagsLoading ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Sparkles size={14} />
+                  )}
                 </button>
-              </span>
-            ))}
-            <input
-              list="recipe-tag-suggestions"
-              className="flex-1 min-w-[100px] outline-none text-sm"
-              placeholder="+ tag"
-              value={tagInput}
-              inputMode="text"
-              enterKeyHint="done"
-              onChange={(e) => setTagInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ',') {
-                  // Same fix as the note tag inputs: stopPropagation
-                  // so an ancestor form/handler doesn't claim the
-                  // Enter and shift focus to the next field.
-                  e.preventDefault();
-                  e.stopPropagation();
-                  addTag();
-                  e.currentTarget.focus();
-                }
-              }}
-              onBlur={addTag}
-            />
-            <datalist id="recipe-tag-suggestions">
-              {ALL_SUGGESTED_RECIPE_TAGS.filter((t) => !tags.includes(t)).map((t) => (
-                <option key={t} value={t} />
-              ))}
-            </datalist>
-          </div>
-          {/* Curated quick-pick chips — replaces the old fixed category
-              dropdown. Hidden when all suggestions are already applied to
-              keep the form quiet for users who pick custom tags only. */}
-          {SUGGESTED_RECIPE_TAGS.some((g) => g.tags.some((t) => !tags.includes(t))) && (
-            <div className="mt-2 space-y-1">
-              {SUGGESTED_RECIPE_TAGS.map((group) => {
-                const remaining = group.tags.filter((t) => !tags.includes(t));
-                if (remaining.length === 0) return null;
-                return (
-                  <div key={group.label} className="flex flex-wrap items-center gap-1">
-                    <span className="text-[10px] uppercase tracking-wider text-muted w-20 shrink-0">
-                      {group.label}
-                    </span>
-                    {remaining.map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        onClick={() => setTags([...tags, t])}
-                        className="inline-flex items-center text-xs bg-page hover:bg-brand-50 hover:text-brand-700 px-2 py-1 rounded-full border border-line transition"
-                      >
-                        + {t}
-                      </button>
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
-          )}
+              ) : undefined
+            }
+          />
           {tagSuggestions.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1 items-center">
               <span className="text-[10px] uppercase tracking-wider text-muted">

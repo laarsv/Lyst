@@ -41,13 +41,27 @@ def next_fertilize_due(plant: Plant) -> datetime | None:
 
 # ---------- CRUD ----------
 
-async def list_plants(db: AsyncSession, owner_id: int, *, q: str | None = None) -> list[Plant]:
+async def list_plants(
+    db: AsyncSession,
+    owner_id: int,
+    *,
+    q: str | None = None,
+    tag: str | None = None,
+) -> list[Plant]:
+    """List the user's plants. `tag` filters to plants carrying that tag
+    (exact array membership via .any()) — same mechanism as list_recipes."""
     stmt = select(Plant).where(Plant.owner_id == owner_id).order_by(Plant.name)
     if q:
         like = f"%{q.lower()}%"
         stmt = stmt.where(
-            or_(func.lower(Plant.name).like(like), func.lower(Plant.species).like(like))
+            or_(
+                func.lower(Plant.name).like(like),
+                func.lower(Plant.species).like(like),
+                Plant.tags.any(q.lower()),
+            )
         )
+    if tag:
+        stmt = stmt.where(Plant.tags.any(tag))
     result = await db.execute(stmt)
     return list(result.scalars().all())
 

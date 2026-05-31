@@ -30,7 +30,7 @@ export function PlantCard({ plant }: { plant: Plant }) {
           <div className="text-xs text-muted italic truncate">{plant.species}</div>
         )}
         <div className="mt-1 text-xs text-muted flex flex-wrap gap-x-3 gap-y-1">
-          <span>📍 {PLANT_LOCATION_LABELS[plant.location]}</span>
+          <span>☀️ {PLANT_LOCATION_LABELS[plant.location]}</span>
           {plant.edible && <span>🍽 Essbar</span>}
           {plant.winterhardy && <span>❄️ Winterhart</span>}
         </div>
@@ -54,6 +54,15 @@ export function PlantCard({ plant }: { plant: Plant }) {
                 <Sprout size={11} /> {fert.text}
               </span>
             )}
+          </div>
+        )}
+        {plant.tags.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {plant.tags.slice(0, 4).map((t) => (
+              <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-page text-muted">
+                #{t}
+              </span>
+            ))}
           </div>
         )}
       </div>

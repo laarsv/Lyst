@@ -20,6 +20,7 @@ class PlantBase(BaseModel):
     width_cm: int | None = Field(default=None, ge=0, le=10000)
     image_url: str | None = Field(default=None, max_length=1024)
     notes: str | None = None
+    tags: list[str] = Field(default_factory=list)
 
 
 class PlantCreate(PlantBase):
@@ -44,6 +45,7 @@ class PlantUpdate(BaseModel):
     width_cm: int | None = Field(default=None, ge=0, le=10000)
     image_url: str | None = Field(default=None, max_length=1024)
     notes: str | None = None
+    tags: list[str] | None = None
 
 
 class PlantOut(PlantBase):
