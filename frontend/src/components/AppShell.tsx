@@ -18,7 +18,8 @@ const USER_LINKS: [string, string][] = [
   ['/plants', 'Pflanzen'],
   ['/meal-planner', 'Wochenplan'],
   ['/notes', 'Notizen'],
-  ['/settings', 'Konto'],
+  // "Konto" intentionally NOT here — it lives only in AccountMenu (avatar).
+  // The /settings route still exists; AccountMenu's "Konto" row navigates to it.
 ];
 
 const ADMIN_LINKS: [string, string][] = [
