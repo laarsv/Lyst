@@ -39,6 +39,22 @@ def next_fertilize_due(plant: Plant) -> datetime | None:
     return _aware(plant.last_fertilized_at) + timedelta(days=plant.fertilize_interval_days)
 
 
+def fertilize_in_season(plant: Plant, now: datetime) -> bool:
+    """True when fertilizing is allowed in `now`'s month. No season set (either
+    bound NULL) → always in season. Supports wrap-around windows (e.g. a
+    Nov–Feb season has start > end)."""
+    s, e = plant.fertilize_start_month, plant.fertilize_end_month
+    if s is None or e is None:
+        return True
+    m = now.month
+    return s <= m <= e if s <= e else (m >= s or m <= e)
+
+
+def prune_due(plant: Plant, now: datetime) -> bool:
+    """True when the current month is the configured prune month."""
+    return plant.prune_month is not None and plant.prune_month == now.month
+
+
 # ---------- CRUD ----------
 
 async def list_plants(
@@ -105,6 +121,8 @@ async def create_plant(
 _NULLABLE = {
     "species", "watering_interval_days", "watering_note", "fertilize_interval_days",
     "height_cm", "width_cm", "image_url", "notes",
+    "fertilize_start_month", "fertilize_end_month", "prune_month",
+    "bloom_start_month", "bloom_end_month",
 }
 
 
@@ -119,6 +137,9 @@ async def update_plant(db: AsyncSession, plant: Plant, **fields) -> Plant:
         plant.fertilize_reminder_sent = False
     if "fertilize" in fields and fields["fertilize"] != plant.fertilize:
         plant.fertilize_reminder_sent = False
+    # Moving the prune month re-arms this year's annual reminder.
+    if "prune_month" in fields and fields["prune_month"] != plant.prune_month:
+        plant.prune_reminder_year = None
 
     for k, v in fields.items():
         if v is not None or k in _NULLABLE:
@@ -163,11 +184,17 @@ async def due_this_week(db: AsyncSession, owner_id: int) -> dict[str, list[Plant
     within the next 7 days. Personal inventory → small N, so we fetch the
     owner's plants and reuse the computed-due helpers rather than encoding
     interval arithmetic in SQL."""
-    horizon = _utcnow() + timedelta(days=7)
+    now = _utcnow()
+    horizon = now + timedelta(days=7)
     result = await db.execute(select(Plant).where(Plant.owner_id == owner_id))
     plants = list(result.scalars().all())
     water = [p for p in plants if (d := next_water_due(p)) is not None and d <= horizon]
-    fertilize = [p for p in plants if (d := next_fertilize_due(p)) is not None and d <= horizon]
+    # Out-of-season plants drop out of the overview too — "pause" is consistent
+    # with the email reminder.
+    fertilize = [
+        p for p in plants
+        if (d := next_fertilize_due(p)) is not None and d <= horizon and fertilize_in_season(p, now)
+    ]
     water.sort(key=lambda p: next_water_due(p))
     fertilize.sort(key=lambda p: next_fertilize_due(p))
     return {"water": water, "fertilize": fertilize}
@@ -201,15 +228,28 @@ async def fetch_due_care(db: AsyncSession, now: datetime) -> tuple[list[Plant], 
             )
         )
     ).scalars().all()
-    due_fertilize = [p for p in fertilize_candidates if (d := next_fertilize_due(p)) is not None and d <= now]
+    # Season gate: outside fertilize_start..end_month the reminder pauses.
+    due_fertilize = [
+        p for p in fertilize_candidates
+        if (d := next_fertilize_due(p)) is not None and d <= now and fertilize_in_season(p, now)
+    ]
 
     return due_water, due_fertilize
 
 
+async def fetch_due_prune(db: AsyncSession, now: datetime) -> list[Plant]:
+    """Plants whose annual prune reminder is due: the current month matches
+    `prune_month` and we haven't already fired this calendar year."""
+    rows = (
+        await db.execute(select(Plant).where(Plant.prune_month.is_not(None)))
+    ).scalars().all()
+    return [p for p in rows if p.prune_month == now.month and p.prune_reminder_year != now.year]
+
+
 async def notify_plant_care(db: AsyncSession, plant: Plant, *, kind: str) -> None:
     """Send one care-reminder email to the plant's owner. `kind` is
-    "water" or "fertilize". Caller has already flipped the matching
-    *_reminder_sent flag and committed (mirrors the task-reminder path)."""
+    "water", "fertilize" or "prune". Caller has already flipped the matching
+    dedup field and committed (mirrors the task-reminder path)."""
     owner = (
         await db.execute(select(User).where(User.id == plant.owner_id))
     ).scalar_one_or_none()

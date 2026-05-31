@@ -82,18 +82,20 @@ def reminder_email(list_title: str, message: str | None, app_url: str) -> tuple[
 def plant_care_reminder_email(
     plant_name: str, kind: str, note: str | None, app_url: str
 ) -> tuple[str, str]:
-    """Sent by the scheduler when a plant's next watering/fertilizing moment
-    falls due. `kind` is "water" or "fertilize". `note` carries the optional
-    "wie viel"-Freitext, only shown for watering."""
+    """Sent by the scheduler when a plant's care moment falls due. `kind` is
+    "water", "fertilize" or "prune". `note` carries the optional "wie viel"-
+    Freitext, only shown for watering."""
     safe_name = (plant_name or "(Pflanze)").replace("<", "&lt;").replace(">", "&gt;")
+    note_html = ""
     if kind == "water":
         headline, action, intro, emoji = "Zeit zum Gießen", "gießen", "Diese Pflanze braucht Wasser:", "💧"
         note_html = (
             f"<p style='color:{_MUTED};font-size:14px;'><em>{note}</em></p>" if note else ""
         )
+    elif kind == "prune":
+        headline, action, intro, emoji = "Zeit für den Schnitt", "schneiden", "Diese Pflanze sollte geschnitten werden:", "🌿"
     else:
         headline, action, intro, emoji = "Zeit zum Düngen", "düngen", "Diese Pflanze braucht Dünger:", "🌱"
-        note_html = ""
     body = (
         f"<p>{intro}</p>"
         f"<h2 style='font-size:22px;margin:8px 0 16px 0;font-weight:500;letter-spacing:-0.01em;'>{emoji} {safe_name}</h2>"

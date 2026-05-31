@@ -16,12 +16,14 @@ from app.services.plant_service import (
     create_plant,
     delete_plant,
     due_this_week,
+    fertilize_in_season,
     get_plant,
     list_plants,
     mark_fertilized,
     mark_watered,
     next_fertilize_due,
     next_water_due,
+    prune_due,
     update_plant,
 )
 
@@ -43,7 +45,9 @@ def _serialize(plant) -> dict:
             "next_water_due": nwd,
             "next_fertilize_due": nfd,
             "water_due": nwd is not None and nwd <= now,
-            "fertilize_due": nfd is not None and nfd <= now,
+            # Out of the fertilize season → not "due" even if the interval elapsed.
+            "fertilize_due": nfd is not None and nfd <= now and fertilize_in_season(plant, now),
+            "prune_due": prune_due(plant, now),
         }
     ).model_dump(mode="json")
 

@@ -21,6 +21,14 @@ class PlantBase(BaseModel):
     image_url: str | None = Field(default=None, max_length=1024)
     notes: str | None = None
     tags: list[str] = Field(default_factory=list)
+    # Seasonal/month-based care (1–12). Fertilize season gates the fertilize
+    # interval reminder; prune_month drives an annual reminder; bloom window is
+    # display-only.
+    fertilize_start_month: int | None = Field(default=None, ge=1, le=12)
+    fertilize_end_month: int | None = Field(default=None, ge=1, le=12)
+    prune_month: int | None = Field(default=None, ge=1, le=12)
+    bloom_start_month: int | None = Field(default=None, ge=1, le=12)
+    bloom_end_month: int | None = Field(default=None, ge=1, le=12)
 
 
 class PlantCreate(PlantBase):
@@ -46,6 +54,11 @@ class PlantUpdate(BaseModel):
     image_url: str | None = Field(default=None, max_length=1024)
     notes: str | None = None
     tags: list[str] | None = None
+    fertilize_start_month: int | None = Field(default=None, ge=1, le=12)
+    fertilize_end_month: int | None = Field(default=None, ge=1, le=12)
+    prune_month: int | None = Field(default=None, ge=1, le=12)
+    bloom_start_month: int | None = Field(default=None, ge=1, le=12)
+    bloom_end_month: int | None = Field(default=None, ge=1, le=12)
 
 
 class PlantOut(PlantBase):
@@ -64,7 +77,10 @@ class PlantOut(PlantBase):
     next_water_due: datetime | None = None
     next_fertilize_due: datetime | None = None
     water_due: bool = False
+    # fertilize_due respects the fertilize season (false outside it, even if the
+    # interval elapsed). prune_due is true when the current month == prune_month.
     fertilize_due: bool = False
+    prune_due: bool = False
 
 
 class PlantDueResponse(BaseModel):
@@ -103,5 +119,10 @@ class PlantPrefillResponse(BaseModel):
     winterhardy: bool = False
     height_cm: int | None = None
     width_cm: int | None = None
+    fertilize_start_month: int | None = None
+    fertilize_end_month: int | None = None
+    prune_month: int | None = None
+    bloom_start_month: int | None = None
+    bloom_end_month: int | None = None
     edible_suggestion: bool | None = None
     edible_note: str | None = None

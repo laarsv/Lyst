@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Apple, Clock, Droplets, Leaf, Pencil, Ruler, Snowflake, Sprout, Sun, Trash2 } from 'lucide-react';
+import { Apple, Clock, Droplets, Flower2, Leaf, Pencil, Ruler, Scissors, Snowflake, Sprout, Sun, Trash2 } from 'lucide-react';
 import { PlantsApi } from '@/api/endpoints';
 import type { Plant } from '@/types';
 import { toast } from '@/components/Toast';
@@ -9,7 +9,7 @@ import { useConfirm } from '@/components/Dialogs';
 import { BackLink } from '@/components/BackLink';
 import { IconAction } from '@/components/IconAction';
 import { invalidateOverview, useResourceQuery } from '@/hooks/useOverviewQuery';
-import { PLANT_LOCATION_LABELS, dueLabel, relativePast } from '@/lib/plants';
+import { PLANT_LOCATION_LABELS, dueLabel, monthLabel, monthRangeLabel, relativePast } from '@/lib/plants';
 
 // White info card — ~18px radius, hairline border, no heavy shadow (per design).
 const CARD = 'rounded-[18px] border border-line bg-surface';
@@ -90,11 +90,18 @@ export function PlantDetailPage() {
 
   const wasserValue =
     plant.watering_interval_days != null ? `alle ${plant.watering_interval_days} Tage` : '—';
+  const fertSeason =
+    plant.fertilize_start_month != null && plant.fertilize_end_month != null
+      ? ` (${monthRangeLabel(plant.fertilize_start_month, plant.fertilize_end_month)})`
+      : '';
   const duengenValue = !plant.fertilize
     ? 'nein'
-    : plant.fertilize_interval_days != null
-      ? `alle ${plant.fertilize_interval_days} Tage`
-      : 'ja';
+    : (plant.fertilize_interval_days != null ? `alle ${plant.fertilize_interval_days} Tage` : 'ja') +
+      fertSeason;
+  const schnittValue = plant.prune_month
+    ? monthLabel(plant.prune_month) + (plant.prune_due ? ' · jetzt fällig' : '')
+    : '—';
+  const blueteValue = monthRangeLabel(plant.bloom_start_month, plant.bloom_end_month);
   const sizeValue =
     [
       plant.height_cm != null && `Höhe ${plant.height_cm} cm`,
@@ -174,6 +181,8 @@ export function PlantDetailPage() {
             value={plant.winterhardy ? 'winterhart' : 'nicht winterhart'}
           />
           <Stat icon={<Sprout size={18} />} label="Düngen" value={duengenValue} />
+          <Stat icon={<Scissors size={18} />} label="Schnitt" value={schnittValue} />
+          <Stat icon={<Flower2 size={18} />} label="Blüte" value={blueteValue} />
         </div>
       </section>
 

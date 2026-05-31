@@ -711,6 +711,11 @@ type PlantWritePayload = {
   image_url?: string | null;
   notes?: string | null;
   tags: string[];
+  fertilize_start_month?: number | null;
+  fertilize_end_month?: number | null;
+  prune_month?: number | null;
+  bloom_start_month?: number | null;
+  bloom_end_month?: number | null;
 };
 
 export const PlantsApi = {

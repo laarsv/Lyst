@@ -7,7 +7,7 @@ from sqlalchemy import select
 from app.core.database import AsyncSessionLocal
 from app.models.list_item import ListItem
 from app.models.task_item import TaskItem
-from app.services.plant_service import fetch_due_care, notify_plant_care
+from app.services.plant_service import fetch_due_care, fetch_due_prune, notify_plant_care
 from app.services.reminder_service import deliver_reminder, fetch_due_reminders
 from app.services.task_notification_service import (
     notify_task_reminder_list_item,
@@ -107,10 +107,14 @@ async def _check_due_plant_care() -> None:
     now = datetime.now(timezone.utc)
     async with AsyncSessionLocal() as db:
         due_water, due_fertilize = await fetch_due_care(db, now)
+        # Annual, calendar-based: fires once when prune_month arrives each year.
+        due_prune = await fetch_due_prune(db, now)
         for p in due_water:
             p.water_reminder_sent = True
         for p in due_fertilize:
             p.fertilize_reminder_sent = True
+        for p in due_prune:
+            p.prune_reminder_year = now.year
         await db.commit()
         for p in due_water:
             try:
@@ -124,6 +128,12 @@ async def _check_due_plant_care() -> None:
                 logger.info("plant fertilize reminder fired plant=%s", p.id)
             except Exception as e:  # pragma: no cover
                 logger.error("plant fertilize reminder failed plant=%s err=%s", p.id, e)
+        for p in due_prune:
+            try:
+                await notify_plant_care(db, p, kind="prune")
+                logger.info("plant prune reminder fired plant=%s", p.id)
+            except Exception as e:  # pragma: no cover
+                logger.error("plant prune reminder failed plant=%s err=%s", p.id, e)
 
 
 async def _check_due() -> None:

@@ -44,6 +44,24 @@ export function dueLabel(iso: string | null): { text: string; overdue: boolean }
   return { text: `fällig in ${days} ${word(days)}`, overdue: false };
 }
 
+/** German month names, index 0 = Januar. */
+export const MONTHS = [
+  'Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
+  'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember',
+] as const;
+
+/** Month number (1–12) → German name. "—" for null/out-of-range. */
+export function monthLabel(m: number | null | undefined): string {
+  return m && m >= 1 && m <= 12 ? MONTHS[m - 1] : '—';
+}
+
+/** A month range → "Mai–Juli". Single bound → that month. "—" if both unset. */
+export function monthRangeLabel(a: number | null | undefined, b: number | null | undefined): string {
+  if (a && b) return `${MONTHS[a - 1]}–${MONTHS[b - 1]}`;
+  if (a || b) return monthLabel(a || b);
+  return '—';
+}
+
 /** "heute" / "gestern" / "vor X Tagen" for a past timestamp. "—" for null.
  *  Used for "Zuletzt gegossen" in the details card. */
 export function relativePast(iso: string | null): string {

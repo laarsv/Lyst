@@ -465,6 +465,13 @@ export interface Plant {
   image_url: string | null;
   notes: string | null;
   tags: string[];
+  /** Seasonal/month-based care (1–12). Fertilize season gates the fertilize
+   *  reminder; prune_month drives an annual reminder; bloom window is info. */
+  fertilize_start_month: number | null;
+  fertilize_end_month: number | null;
+  prune_month: number | null;
+  bloom_start_month: number | null;
+  bloom_end_month: number | null;
   last_watered_at: string | null;
   last_fertilized_at: string | null;
   created_at: string;
@@ -474,7 +481,10 @@ export interface Plant {
   next_water_due: string | null;
   next_fertilize_due: string | null;
   water_due: boolean;
+  /** fertilize_due is false outside the fertilize season even if the interval
+   *  elapsed. prune_due is true when the current month == prune_month. */
   fertilize_due: boolean;
+  prune_due: boolean;
 }
 
 /** GET /plants/due — plants overdue or due within the next 7 days. */
@@ -498,6 +508,11 @@ export interface PlantPrefill {
   winterhardy: boolean;
   height_cm: number | null;
   width_cm: number | null;
+  fertilize_start_month: number | null;
+  fertilize_end_month: number | null;
+  prune_month: number | null;
+  bloom_start_month: number | null;
+  bloom_end_month: number | null;
   edible_suggestion: boolean | null;
   edible_note: string | null;
 }

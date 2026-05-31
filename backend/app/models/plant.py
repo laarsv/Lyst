@@ -71,4 +71,21 @@ class Plant(Base, TimestampMixin):
     water_reminder_sent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     fertilize_reminder_sent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # --- Seasonal / month-based care (months 1–12, NULL = not set) ---
+    #
+    # Calendar-based, distinct from the interval recurrence above:
+    #   - fertilize_start/end_month: gate the fertilize interval reminder to a
+    #     season (e.g. Apr–Aug, wrap-around like Nov–Feb supported); outside it
+    #     the reminder pauses.
+    #   - prune_month: an annual "time to prune" reminder. prune_reminder_year
+    #     records the year it last fired (yearly dedup; re-armed each new year,
+    #     and reset when prune_month changes).
+    #   - bloom_start/end_month: display-only likely bloom window (no reminder).
+    fertilize_start_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fertilize_end_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    prune_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    prune_reminder_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bloom_start_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bloom_end_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     owner: Mapped["User"] = relationship()

@@ -9,7 +9,7 @@ import { BackLink } from '@/components/BackLink';
 import { TagInput } from '@/components/TagInput';
 import { PlantImageUploader } from '@/components/plants/PlantImageUploader';
 import { invalidateOverview, useResourceQuery } from '@/hooks/useOverviewQuery';
-import { PLANT_LOCATION_LABELS, PLANT_LOCATION_OPTIONS, todayInputValue } from '@/lib/plants';
+import { MONTHS, PLANT_LOCATION_LABELS, PLANT_LOCATION_OPTIONS, todayInputValue } from '@/lib/plants';
 import { SUGGESTED_PLANT_TAGS } from '@/data/plantTags';
 
 const toNum = (s: string): number | null => {
@@ -43,6 +43,12 @@ export function PlantEditPage() {
   const [notes, setNotes] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [imageUrl, setImageUrl] = useState('');
+  // Seasonal/month-based care (1–12, null = unset).
+  const [fertSeasonStart, setFertSeasonStart] = useState<number | null>(null);
+  const [fertSeasonEnd, setFertSeasonEnd] = useState<number | null>(null);
+  const [pruneMonth, setPruneMonth] = useState<number | null>(null);
+  const [bloomStart, setBloomStart] = useState<number | null>(null);
+  const [bloomEnd, setBloomEnd] = useState<number | null>(null);
 
   // Create-only: "Zuletzt gegossen / gedüngt", pre-filled with today. Left at
   // today → omitted on save so the backend starts the cycle at now().
@@ -77,6 +83,12 @@ export function PlantEditPage() {
     if (d.winterhardy) setWinterhardy(true);
     setHeightCm((prev) => (prev.trim() ? prev : d.height_cm != null ? String(d.height_cm) : prev));
     setWidthCm((prev) => (prev.trim() ? prev : d.width_cm != null ? String(d.width_cm) : prev));
+    // Month fields: fill only if still unset (?? keeps a user-chosen value).
+    setFertSeasonStart((prev) => prev ?? d.fertilize_start_month);
+    setFertSeasonEnd((prev) => prev ?? d.fertilize_end_month);
+    setPruneMonth((prev) => prev ?? d.prune_month);
+    setBloomStart((prev) => prev ?? d.bloom_start_month);
+    setBloomEnd((prev) => prev ?? d.bloom_end_month);
     // edible: intentionally NOT set — only surfaced as a hint below.
     setEdibleSuggestion(d.edible_suggestion);
     setEdibleNote(d.edible_note);
@@ -123,6 +135,11 @@ export function PlantEditPage() {
       setNotes(p.notes ?? '');
       setTags(p.tags ?? []);
       setImageUrl(p.image_url ?? '');
+      setFertSeasonStart(p.fertilize_start_month ?? null);
+      setFertSeasonEnd(p.fertilize_end_month ?? null);
+      setPruneMonth(p.prune_month ?? null);
+      setBloomStart(p.bloom_start_month ?? null);
+      setBloomEnd(p.bloom_end_month ?? null);
     } catch (e) {
       toast.error(getApiError(e));
       nav('/plants');
@@ -153,6 +170,12 @@ export function PlantEditPage() {
       width_cm: toNum(widthCm),
       notes: notes.trim() || null,
       tags,
+      // Fertilize season only meaningful when fertilizing is on.
+      fertilize_start_month: fertilize ? fertSeasonStart : null,
+      fertilize_end_month: fertilize ? fertSeasonEnd : null,
+      prune_month: pruneMonth,
+      bloom_start_month: bloomStart,
+      bloom_end_month: bloomEnd,
     };
     setSaving(true);
     try {
@@ -330,32 +353,57 @@ export function PlantEditPage() {
       <div className="card p-5 flex flex-col gap-4">
         <Toggle label="Düngen" checked={fertilize} onChange={setFertilize} />
         {fertilize && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="label">Intervall (Tage)</label>
-              <input
-                className="input"
-                type="number"
-                min={1}
-                max={365}
-                value={fertilizeInterval}
-                onChange={(e) => setFertilizeInterval(e.target.value)}
-                placeholder="leer = keine Erinnerung"
-              />
-            </div>
-            {!isEdit && (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="label">Zuletzt gedüngt</label>
+                <label className="label">Intervall (Tage)</label>
                 <input
                   className="input"
-                  type="date"
-                  value={fertilizedDate}
-                  onChange={(e) => setFertilizedDate(e.target.value)}
+                  type="number"
+                  min={1}
+                  max={365}
+                  value={fertilizeInterval}
+                  onChange={(e) => setFertilizeInterval(e.target.value)}
+                  placeholder="leer = keine Erinnerung"
                 />
               </div>
-            )}
-          </div>
+              {!isEdit && (
+                <div>
+                  <label className="label">Zuletzt gedüngt</label>
+                  <input
+                    className="input"
+                    type="date"
+                    value={fertilizedDate}
+                    onChange={(e) => setFertilizedDate(e.target.value)}
+                  />
+                </div>
+              )}
+            </div>
+            <div>
+              <label className="label">Dünge-Saison (nur in diesen Monaten erinnern)</label>
+              <div className="grid grid-cols-2 gap-4">
+                <MonthSelect label="von" value={fertSeasonStart} onChange={setFertSeasonStart} />
+                <MonthSelect label="bis" value={fertSeasonEnd} onChange={setFertSeasonEnd} />
+              </div>
+            </div>
+          </>
         )}
+      </div>
+
+      {/* Schnitt & Blüte — Monat/Saison-basiert. Schnitt erinnert jährlich;
+          Blütezeit ist nur Anzeige. */}
+      <div className="card p-5 flex flex-col gap-4">
+        <h2 className="text-sm font-semibold text-ink">Schnitt & Blüte</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <MonthSelect label="Schnitt-Monat (jährliche Erinnerung)" value={pruneMonth} onChange={setPruneMonth} />
+        </div>
+        <div>
+          <label className="label">Blütezeit (nur Anzeige)</label>
+          <div className="grid grid-cols-2 gap-4">
+            <MonthSelect label="von" value={bloomStart} onChange={setBloomStart} />
+            <MonthSelect label="bis" value={bloomEnd} onChange={setBloomEnd} />
+          </div>
+        </div>
       </div>
 
       {/* Properties */}
@@ -432,6 +480,34 @@ export function PlantEditPage() {
         </button>
       </div>
     </form>
+  );
+}
+
+function MonthSelect({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number | null;
+  onChange: (v: number | null) => void;
+}) {
+  return (
+    <div>
+      <label className="label">{label}</label>
+      <select
+        className="input"
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
+      >
+        <option value="">—</option>
+        {MONTHS.map((m, i) => (
+          <option key={m} value={i + 1}>
+            {m}
+          </option>
+        ))}
+      </select>
+    </div>
   );
 }
 

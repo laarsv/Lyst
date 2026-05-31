@@ -40,6 +40,11 @@ _PREFILL_SCHEMA: dict = {
         "winterhardy": {"type": "boolean"},
         "height_cm": {"type": ["integer", "null"]},
         "width_cm": {"type": ["integer", "null"]},
+        "fertilize_start_month": {"type": ["integer", "null"]},
+        "fertilize_end_month": {"type": ["integer", "null"]},
+        "prune_month": {"type": ["integer", "null"]},
+        "bloom_start_month": {"type": ["integer", "null"]},
+        "bloom_end_month": {"type": ["integer", "null"]},
         "edible_suggestion": {"type": ["boolean", "null"]},
         "edible_note": {"type": ["string", "null"]},
         "note": {"type": ["string", "null"]},
@@ -47,7 +52,9 @@ _PREFILL_SCHEMA: dict = {
     "required": [
         "species", "suggested_name", "location", "watering_interval_days",
         "fertilize", "fertilize_interval_days", "winterhardy", "height_cm",
-        "width_cm", "edible_suggestion", "edible_note", "note",
+        "width_cm", "fertilize_start_month", "fertilize_end_month", "prune_month",
+        "bloom_start_month", "bloom_end_month", "edible_suggestion", "edible_note",
+        "note",
     ],
 }
 
@@ -70,6 +77,11 @@ _SYSTEM = (
     '  "winterhardy": true/false ob winterhart,\n'
     '  "height_cm": typische Höhe in cm (ganze Zahl) oder null,\n'
     '  "width_cm": typische Breite in cm (ganze Zahl) oder null,\n'
+    '  "fertilize_start_month": Monat (1-12) für Beginn der Dünge-Saison oder null,\n'
+    '  "fertilize_end_month": Monat (1-12) für Ende der Dünge-Saison oder null,\n'
+    '  "prune_month": Monat (1-12) für den besten Rückschnitt oder null,\n'
+    '  "bloom_start_month": Monat (1-12) für Beginn der Blütezeit oder null,\n'
+    '  "bloom_end_month": Monat (1-12) für Ende der Blütezeit oder null,\n'
     '  "edible_suggestion": true/false/null ob essbar,\n'
     '  "edible_note": kurzer Hinweis zur Essbarkeit (String) oder null,\n'
     '  "note": kurzer Hinweis bei Unsicherheit (String) oder null.\n'
@@ -204,6 +216,11 @@ async def prefill_plant(name: str) -> PlantPrefillResponse:
         winterhardy=_coerce_bool(data.get("winterhardy")),
         height_cm=_coerce_int(data.get("height_cm"), 0, 10000),
         width_cm=_coerce_int(data.get("width_cm"), 0, 10000),
+        fertilize_start_month=_coerce_int(data.get("fertilize_start_month"), 1, 12),
+        fertilize_end_month=_coerce_int(data.get("fertilize_end_month"), 1, 12),
+        prune_month=_coerce_int(data.get("prune_month"), 1, 12),
+        bloom_start_month=_coerce_int(data.get("bloom_start_month"), 1, 12),
+        bloom_end_month=_coerce_int(data.get("bloom_end_month"), 1, 12),
         edible_suggestion=_coerce_tristate(data.get("edible_suggestion")),
         edible_note=_coerce_str(data.get("edible_note"), 500),
     )
