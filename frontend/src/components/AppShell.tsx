@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Menu, Search, X } from 'lucide-react';
 import { useAuthStore } from '@/store/auth';
 import { AuthApi } from '@/api/endpoints';
-import { ThemeToggle } from '@/components/ThemeToggle';
 import { SearchModal } from '@/components/SearchModal';
 import { SyncStatusBadge } from '@/components/SyncStatusBadge';
-import { LiveIndicator } from '@/components/LiveIndicator';
 import { NotificationBell } from '@/components/NotificationBell';
+import { AccountMenu } from '@/components/AccountMenu';
 import { useOverviewRouteRefresh } from '@/hooks/useOverviewQuery';
 import { useUserWebSocket } from '@/hooks/useUserWebSocket';
 import clsx from 'clsx';
@@ -45,11 +45,12 @@ export function AppShell() {
   // might keep an overview mounted across route changes.
   useOverviewRouteRefresh(loc.pathname);
 
-  // One WebSocket per session — receives every mutation that touches
-  // a resource this user can see and invalidates the matching
-  // overview cache. Drives the green "Live" dot in the header.
+  // One WebSocket per session — receives every mutation that touches a
+  // resource this user can see and invalidates the matching overview cache.
+  // We no longer render its connection state (SyncStatusBadge owns the
+  // offline signal); the call stays purely for those sync side-effects.
   // Disconnects automatically when AppShell unmounts (logout).
-  const liveConnected = useUserWebSocket();
+  useUserWebSocket();
 
   // Cmd/Ctrl+K → open global search; Esc handled inside the modal.
   useEffect(() => {
@@ -89,7 +90,7 @@ export function AppShell() {
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((o) => !o)}
           >
-            {menuOpen ? <CloseIcon /> : <BurgerIcon />}
+            {menuOpen ? <X size={22} /> : <Menu size={22} />}
           </button>
 
           <Link
@@ -126,12 +127,9 @@ export function AppShell() {
           </nav>
 
           <div className="flex items-center gap-2 ml-auto">
-            {/* Live dot — reflects the per-user WebSocket. Replaces
-                the per-list LiveIndicator's UI role here; that one
-                still mounts inside ListDetail for the per-list
-                channel (kept as parallel sync for now). */}
-            <LiveIndicator connected={liveConnected} />
-            <NotificationBell />
+            {/* SyncStatusBadge is the single offline/sync signal — silent when
+                online+clean, "Offline" when offline. (The old "Live" indicator
+                was removed; the WebSocket still runs for cache invalidation.) */}
             <SyncStatusBadge />
             <button
               type="button"
@@ -140,15 +138,10 @@ export function AppShell() {
               title="Suchen (Cmd+K)"
               className="p-2 rounded-lg text-muted hover:bg-page hover:text-ink transition"
             >
-              <SearchIcon />
+              <Search size={18} />
             </button>
-            <span className="text-sm text-muted hidden sm:inline truncate max-w-[140px]">
-              {name}
-            </span>
-            <ThemeToggle />
-            <button onClick={onLogout} className="btn-ghost text-sm">
-              Abmelden
-            </button>
+            <NotificationBell />
+            <AccountMenu name={name} onLogout={onLogout} />
           </div>
         </div>
 
@@ -173,11 +166,6 @@ export function AppShell() {
                   {label}
                 </NavLink>
               ))}
-              {name && (
-                <div className="px-3 pt-3 mt-1 border-t border-line text-xs text-muted">
-                  Angemeldet als <span className="text-ink font-medium">{name}</span>
-                </div>
-              )}
             </nav>
           </div>
         )}
@@ -202,33 +190,5 @@ export function AppShell() {
 
       <SearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
     </div>
-  );
-}
-
-function SearchIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="11" cy="11" r="7" />
-      <path d="m20 20-3.5-3.5" />
-    </svg>
-  );
-}
-
-function BurgerIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-      <line x1="4" y1="7" x2="20" y2="7" />
-      <line x1="4" y1="12" x2="20" y2="12" />
-      <line x1="4" y1="17" x2="20" y2="17" />
-    </svg>
-  );
-}
-
-function CloseIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-      <line x1="6" y1="6" x2="18" y2="18" />
-      <line x1="18" y1="6" x2="6" y2="18" />
-    </svg>
   );
 }
