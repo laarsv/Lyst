@@ -32,6 +32,9 @@ import type {
   NutritionFillAllResponse,
   NutritionSearchResponse,
   NutritionSource,
+  Plant,
+  PlantDue,
+  PlantLocation,
   PublicListData,
   PublicNoteData,
   InternalShare,
@@ -690,6 +693,58 @@ export const RecipesApi = {
         payload,
       )
       .then(unwrap),
+};
+
+type PlantWritePayload = {
+  name: string;
+  species?: string | null;
+  location: PlantLocation;
+  watering_interval_days?: number | null;
+  watering_note?: string | null;
+  fertilize: boolean;
+  fertilize_interval_days?: number | null;
+  winterhardy: boolean;
+  edible: boolean;
+  height_cm?: number | null;
+  width_cm?: number | null;
+  image_url?: string | null;
+  notes?: string | null;
+};
+
+export const PlantsApi = {
+  list: (params?: { q?: string }) =>
+    api.get<{ data: Plant[] }>('/plants', { params }).then(unwrap),
+  /** Plants overdue or due within the next 7 days, split water/fertilize. */
+  due: () => api.get<{ data: PlantDue }>('/plants/due').then(unwrap),
+  get: (id: number) => api.get<{ data: Plant }>(`/plants/${id}`).then(unwrap),
+  create: (
+    // last_*_at: the optional "Zuletzt gegossen/gedüngt" dates. Omit to let
+    // the backend start the cycle at now().
+    payload: PlantWritePayload & {
+      last_watered_at?: string | null;
+      last_fertilized_at?: string | null;
+    },
+  ) => api.post<{ data: Plant }>('/plants', payload).then(unwrap),
+  update: (id: number, payload: Partial<PlantWritePayload>) =>
+    api.patch<{ data: Plant }>(`/plants/${id}`, payload).then(unwrap),
+  remove: (id: number) => api.delete(`/plants/${id}`),
+  /** "Gegossen" — stamps last_watered_at=now and arms the next reminder. */
+  water: (id: number) => api.post<{ data: Plant }>(`/plants/${id}/water`).then(unwrap),
+  /** "Gedüngt" — stamps last_fertilized_at=now and arms the next reminder. */
+  fertilize: (id: number) => api.post<{ data: Plant }>(`/plants/${id}/fertilize`).then(unwrap),
+  uploadImage: (id: number, file: File, onProgress?: (pct: number) => void) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return api
+      .post<{ data: Plant }>(`/plants/${id}/image`, fd, {
+        onUploadProgress: (e) => {
+          if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100));
+        },
+      })
+      .then(unwrap);
+  },
+  removeImage: (id: number) =>
+    api.delete<{ data: Plant }>(`/plants/${id}/image`).then(unwrap),
 };
 
 export const SnapshotsApi = {

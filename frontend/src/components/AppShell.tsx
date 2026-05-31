@@ -15,6 +15,7 @@ const USER_LINKS: [string, string][] = [
   ['/', 'Listen'],
   ['/tasks', 'Aufgaben'],
   ['/recipes', 'Rezepte'],
+  ['/plants', 'Pflanzen'],
   ['/meal-planner', 'Wochenplan'],
   ['/notes', 'Notizen'],
   ['/settings', 'Konto'],

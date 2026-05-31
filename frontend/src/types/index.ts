@@ -443,6 +443,45 @@ export interface Recipe extends RecipeBase {
   share_state: ShareState | null;
 }
 
+// ---------- Plants (Pflanzen module, alembic 0023) ----------
+
+export type PlantLocation = 'SONNIG' | 'HALBSCHATTEN' | 'SCHATTEN';
+
+export interface Plant {
+  id: number;
+  owner_id: number;
+  name: string;
+  species: string | null;
+  location: PlantLocation;
+  /** null = tracked but no watering reminder fires. */
+  watering_interval_days: number | null;
+  watering_note: string | null;
+  fertilize: boolean;
+  fertilize_interval_days: number | null;
+  winterhardy: boolean;
+  edible: boolean;
+  height_cm: number | null;
+  width_cm: number | null;
+  image_url: string | null;
+  notes: string | null;
+  last_watered_at: string | null;
+  last_fertilized_at: string | null;
+  created_at: string;
+  updated_at: string;
+  /** Computed server-side as last_*_at + interval; null when the interval
+   *  is unset. *_due flips true once that moment has passed. */
+  next_water_due: string | null;
+  next_fertilize_due: string | null;
+  water_due: boolean;
+  fertilize_due: boolean;
+}
+
+/** GET /plants/due — plants overdue or due within the next 7 days. */
+export interface PlantDue {
+  water: Plant[];
+  fertilize: Plant[];
+}
+
 // ---------- Internal sharing (alembic 0012) ----------
 
 export interface ShareByEmailResponse {

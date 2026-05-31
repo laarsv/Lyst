@@ -79,6 +79,30 @@ def reminder_email(list_title: str, message: str | None, app_url: str) -> tuple[
     return f"lyst erinnert: {list_title}", _BASE.format(title=f"Erinnerung: {list_title}", body=body)
 
 
+def plant_care_reminder_email(
+    plant_name: str, kind: str, note: str | None, app_url: str
+) -> tuple[str, str]:
+    """Sent by the scheduler when a plant's next watering/fertilizing moment
+    falls due. `kind` is "water" or "fertilize". `note` carries the optional
+    "wie viel"-Freitext, only shown for watering."""
+    safe_name = (plant_name or "(Pflanze)").replace("<", "&lt;").replace(">", "&gt;")
+    if kind == "water":
+        headline, action, intro, emoji = "Zeit zum Gießen", "gießen", "Diese Pflanze braucht Wasser:", "💧"
+        note_html = (
+            f"<p style='color:{_MUTED};font-size:14px;'><em>{note}</em></p>" if note else ""
+        )
+    else:
+        headline, action, intro, emoji = "Zeit zum Düngen", "düngen", "Diese Pflanze braucht Dünger:", "🌱"
+        note_html = ""
+    body = (
+        f"<p>{intro}</p>"
+        f"<h2 style='font-size:22px;margin:8px 0 16px 0;font-weight:500;letter-spacing:-0.01em;'>{emoji} {safe_name}</h2>"
+        f"{note_html}"
+        f"{_btn(app_url, 'Pflanze öffnen')}"
+    )
+    return f"lyst erinnert: {plant_name} {action}", _BASE.format(title=headline, body=body)
+
+
 def welcome_email(name: str, app_url: str) -> tuple[str, str]:
     body = (
         f"<p>Hallo {name},</p>"

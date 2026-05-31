@@ -13,7 +13,7 @@ from app.core.config import settings
 from app.core.limiter import limiter
 from app.routers import (
     admin, auth, items, lists, me, meal_plans, note_folders, note_tasks, notes,
-    notifications, recipes, recipes_ai, recipes_import, recipes_nutrition,
+    notifications, plants, recipes, recipes_ai, recipes_import, recipes_nutrition,
     recipes_share, reminders, search, share, snapshots, tags, tasks, ws,
 )
 from app.services.ollama import prewarm_text
@@ -99,6 +99,7 @@ app.include_router(recipes_import.router, prefix=PREFIX)
 app.include_router(recipes_nutrition.router, prefix=PREFIX)
 app.include_router(recipes_share.router, prefix=PREFIX)
 app.include_router(meal_plans.router, prefix=PREFIX)
+app.include_router(plants.router, prefix=PREFIX)
 app.include_router(snapshots.router, prefix=PREFIX)
 app.include_router(search.router, prefix=PREFIX)
 # WebSocket router is intentionally NOT prefixed with /api so the

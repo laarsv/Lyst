@@ -7,6 +7,7 @@ from sqlalchemy import select
 from app.core.database import AsyncSessionLocal
 from app.models.list_item import ListItem
 from app.models.task_item import TaskItem
+from app.services.plant_service import fetch_due_care, notify_plant_care
 from app.services.reminder_service import deliver_reminder, fetch_due_reminders
 from app.services.task_notification_service import (
     notify_task_reminder_list_item,
@@ -92,11 +93,45 @@ async def _check_due_task_reminders() -> None:
                 logger.error("task reminder delivery failed task_item=%s err=%s", ti.id, e)
 
 
+async def _check_due_plant_care() -> None:
+    """Fire watering/fertilizing reminders for plants whose next-due moment
+    has passed and whose per-cycle flag is still clear. Same shape as the
+    task path: flip the *_reminder_sent flag and commit FIRST, then send
+    the emails. A plant with watering_interval_days / fertilize_interval_days
+    NULL is skipped at the query level (fetch_due_care), so "tracked but no
+    reminder" works exactly like an unset fertilize interval.
+
+    Re-arm is a user action: marking the plant watered/fertilised clears the
+    flag (plant_service.mark_watered / mark_fertilized), which lets the next
+    cycle fire."""
+    now = datetime.now(timezone.utc)
+    async with AsyncSessionLocal() as db:
+        due_water, due_fertilize = await fetch_due_care(db, now)
+        for p in due_water:
+            p.water_reminder_sent = True
+        for p in due_fertilize:
+            p.fertilize_reminder_sent = True
+        await db.commit()
+        for p in due_water:
+            try:
+                await notify_plant_care(db, p, kind="water")
+                logger.info("plant water reminder fired plant=%s", p.id)
+            except Exception as e:  # pragma: no cover
+                logger.error("plant water reminder failed plant=%s err=%s", p.id, e)
+        for p in due_fertilize:
+            try:
+                await notify_plant_care(db, p, kind="fertilize")
+                logger.info("plant fertilize reminder fired plant=%s", p.id)
+            except Exception as e:  # pragma: no cover
+                logger.error("plant fertilize reminder failed plant=%s err=%s", p.id, e)
+
+
 async def _check_due() -> None:
-    """Combined tick — runs both reminder kinds. Kept as one entry
+    """Combined tick — runs all reminder kinds. Kept as one entry
     point so the APScheduler config below stays single-line."""
     await _check_due_list_reminders()
     await _check_due_task_reminders()
+    await _check_due_plant_care()
 
 
 def start_scheduler() -> None:

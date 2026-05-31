@@ -9,6 +9,9 @@ import { NotesPage } from '@/pages/Notes';
 import { RecipesPage } from '@/pages/Recipes';
 import { RecipeDetailPage } from '@/pages/RecipeDetail';
 import { RecipeEditPage } from '@/pages/RecipeEdit';
+import { PlantsPage } from '@/pages/Plants';
+import { PlantDetailPage } from '@/pages/PlantDetail';
+import { PlantEditPage } from '@/pages/PlantEdit';
 import { MealPlannerPage } from '@/pages/MealPlanner';
 import { TasksPage } from '@/pages/Tasks';
 import { SettingsPage } from '@/pages/Settings';
@@ -55,6 +58,10 @@ export default function App() {
           <Route path="/recipes/new" element={<RecipeEditPage />} />
           <Route path="/recipes/:id" element={<RecipeDetailPage />} />
           <Route path="/recipes/:id/edit" element={<RecipeEditPage />} />
+          <Route path="/plants" element={<PlantsPage />} />
+          <Route path="/plants/new" element={<PlantEditPage />} />
+          <Route path="/plants/:id" element={<PlantDetailPage />} />
+          <Route path="/plants/:id/edit" element={<PlantEditPage />} />
           <Route path="/meal-planner" element={<MealPlannerPage />} />
           <Route path="/tasks" element={<TasksPage />} />
           <Route path="/settings" element={<SettingsPage />} />
