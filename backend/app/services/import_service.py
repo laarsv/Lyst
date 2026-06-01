@@ -28,6 +28,7 @@ from app.services.nutrition_lookup_service import search_for_each
 from app.services.ollama import (
     OllamaError,
     call_text_json,
+    call_vision,
     call_vision_json,
     list_installed_models,
 )
@@ -548,6 +549,64 @@ async def import_recipe_from_image(image_bytes: bytes) -> ImportedRecipe:
     except Exception as e:  # pragma: no cover
         logger.debug("Photo image attach failed: %s", e)
     return await _enrich_ingredients_with_off(recipe)
+
+
+# ---------- Multi-photo import (several photos → ONE recipe) ----------
+
+# OCR each photo to plain text with the vision model, then let the standard
+# text importer merge the transcripts into one structured recipe. Model-
+# agnostic: works even with single-image vision models (each photo is its own
+# call), at the cost of N vision calls + 1 text call.
+_PHOTO_OCR_SYSTEM = (
+    "Du transkribierst Fotos von Rezepten. Gib NUR den lesbaren Text des Fotos "
+    "wieder — Titel, Zutaten mit Mengen, Zubereitungsschritte und Hinweise — "
+    "möglichst vollständig und in der Reihenfolge auf dem Bild. Keine "
+    "Erklärungen, keine Bewertung, kein Markdown-Drumherum."
+)
+
+
+async def import_recipe_from_images(
+    images: list[bytes], db: AsyncSession
+) -> ImportedRecipe:
+    """Several photos of ONE recipe (e.g. front/back, multiple pages). Each
+    photo is OCR'd to plain text by the vision model; the transcripts are
+    concatenated and run through the standard text importer, which merges them
+    into a single structured recipe. The first photo becomes the hero image."""
+    if not images:
+        raise RecipeImportError(400, "Keine Bilder hochgeladen")
+    transcripts: list[str] = []
+    for idx, data in enumerate(images, start=1):
+        b64 = base64.b64encode(data).decode("ascii")
+        try:
+            text = await call_vision(
+                "Transkribiere dieses Rezept-Foto vollständig als reinen Text.",
+                b64,
+                system=_PHOTO_OCR_SYSTEM,
+                temperature=0.1,
+            )
+        except OllamaError as e:
+            raise _from_ollama_error(e) from e
+        text = (text or "").strip()
+        if text:
+            transcripts.append(f"--- Foto {idx} ---\n{text}")
+    combined = "\n\n".join(transcripts).strip()
+    if not combined:
+        raise RecipeImportError(400, "Auf den Fotos war kein lesbares Rezept zu erkennen")
+
+    recipe = await import_recipe_from_text(combined, db)
+
+    # First photo becomes the hero image — same treatment as single-photo import.
+    try:
+        from app.services.recipe_image_extractor import _looks_like_image
+        mime = _looks_like_image(images[0])
+        if mime:
+            recipe.extracted_image = ExtractedImage(
+                data_base64=base64.b64encode(images[0]).decode("ascii"),
+                mime_type=mime,
+            )
+    except Exception as e:  # pragma: no cover
+        logger.debug("Multi-photo hero attach failed: %s", e)
+    return recipe
 
 
 # ---------- "Was kann ich kochen?" suggestions ----------

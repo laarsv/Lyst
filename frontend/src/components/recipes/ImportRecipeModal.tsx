@@ -32,6 +32,7 @@ interface Props {
 type Mode = 'url' | 'photo' | 'file' | 'text';
 
 const TEXT_MAX = 10_000;
+const MAX_PHOTOS = 4; // matches the backend's import-photos cap
 
 function fmtElapsed(s: number): string {
   if (s < 60) return `${s}s`;
@@ -41,7 +42,7 @@ function fmtElapsed(s: number): string {
 export function ImportRecipeModal({ open, onClose }: Props) {
   const [mode, setMode] = useState<Mode>('url');
   const [url, setUrl] = useState('');
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoFiles, setPhotoFiles] = useState<File[]>([]);
   const [anyFile, setAnyFile] = useState<File | null>(null);
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(false);
@@ -55,7 +56,7 @@ export function ImportRecipeModal({ open, onClose }: Props) {
   useEffect(() => {
     if (!open) {
       setUrl('');
-      setPhotoFile(null);
+      setPhotoFiles([]);
       setAnyFile(null);
       setText('');
       setError(null);
@@ -86,8 +87,8 @@ export function ImportRecipeModal({ open, onClose }: Props) {
       setError('Bitte eine URL eingeben');
       return;
     }
-    if (mode === 'photo' && !photoFile) {
-      setError('Bitte ein Bild auswählen');
+    if (mode === 'photo' && photoFiles.length === 0) {
+      setError('Bitte mindestens ein Bild auswählen');
       return;
     }
     if (mode === 'file' && !anyFile) {
@@ -104,7 +105,11 @@ export function ImportRecipeModal({ open, onClose }: Props) {
         mode === 'url'
           ? await RecipesApi.importFromUrl(url.trim())
           : mode === 'photo'
-            ? await RecipesApi.importFromPhoto(photoFile!)
+            ? // One photo → the direct single-image extractor; several → the
+              // OCR-each-then-merge endpoint.
+              photoFiles.length === 1
+              ? await RecipesApi.importFromPhoto(photoFiles[0])
+              : await RecipesApi.importFromPhotos(photoFiles)
             : mode === 'file'
               ? await RecipesApi.importFromFile(anyFile!)
               : await RecipesApi.importFromText(text.trim().slice(0, TEXT_MAX));
@@ -184,25 +189,38 @@ export function ImportRecipeModal({ open, onClose }: Props) {
           {mode === 'photo' && (
             <>
               <p className="text-sm text-muted">
-                Lade ein Foto eines Rezepts hoch (z.B. aus einem Kochbuch).
-                Ein Vision-Modell erkennt das Rezept. Max. 10 MB,
+                Lade ein oder mehrere Fotos eines Rezepts hoch (z.B. mehrere
+                Seiten aus einem Kochbuch). Die KI liest jedes Foto und baut
+                daraus ein Rezept. Bis {MAX_PHOTOS} Fotos, je max. 10 MB,
                 JPG/PNG/WebP.
               </p>
               <div>
-                <label className="label">Bild</label>
+                <label className="label">Bilder</label>
                 <input
                   ref={photoInputRef}
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
+                  multiple
                   className="block w-full text-sm text-muted file:mr-3 file:py-2 file:px-4 file:rounded-ctl file:border file:border-line file:text-sm file:font-medium file:bg-surface file:text-ink hover:file:bg-page"
-                  onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)}
+                  onChange={(e) => {
+                    const picked = Array.from(e.target.files ?? []);
+                    if (picked.length > MAX_PHOTOS) {
+                      setError(`Maximal ${MAX_PHOTOS} Fotos — es werden die ersten ${MAX_PHOTOS} verwendet.`);
+                    }
+                    setPhotoFiles(picked.slice(0, MAX_PHOTOS));
+                  }}
                   disabled={loading}
                   required
                 />
-                {photoFile && (
-                  <div className="text-xs text-muted mt-1">
-                    {photoFile.name} · {(photoFile.size / 1024 / 1024).toFixed(2)} MB
-                  </div>
+                {photoFiles.length > 0 && (
+                  <ul className="mt-2 flex flex-col gap-1">
+                    {photoFiles.map((f, i) => (
+                      <li key={`${f.name}-${i}`} className="text-xs text-muted flex items-center justify-between gap-2">
+                        <span className="truncate">{f.name}</span>
+                        <span className="shrink-0 tabular-nums">{(f.size / 1024 / 1024).toFixed(2)} MB</span>
+                      </li>
+                    ))}
+                  </ul>
                 )}
               </div>
             </>
@@ -265,7 +283,7 @@ export function ImportRecipeModal({ open, onClose }: Props) {
               disabled={
                 loading ||
                 (mode === 'url' && !url.trim()) ||
-                (mode === 'photo' && !photoFile) ||
+                (mode === 'photo' && photoFiles.length === 0) ||
                 (mode === 'file' && !anyFile) ||
                 (mode === 'text' && !text.trim())
               }

@@ -615,6 +615,17 @@ export const RecipesApi = {
       })
       .then(unwrap);
   },
+  /** Several photos of ONE recipe → a single extracted recipe. Each photo is
+   *  OCR'd separately and merged server-side. */
+  importFromPhotos: (files: File[]) => {
+    const fd = new FormData();
+    files.forEach((f) => fd.append('files', f));
+    return api
+      .post<{ data: ImportedRecipe }>('/recipes/import-photos', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      .then(unwrap);
+  },
   /** Unified import endpoint. Accepts an image / HTML / PDF file or
    *  a free-text body. The backend dispatches on the Content-Type
    *  and the file's own type, returning the same ImportedRecipe

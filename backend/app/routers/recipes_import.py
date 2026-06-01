@@ -31,6 +31,7 @@ from app.services.import_service import (
     RecipeImportError,
     import_recipe_from_html_bytes,
     import_recipe_from_image,
+    import_recipe_from_images,
     import_recipe_from_pdf_bytes,
     import_recipe_from_text,
     import_recipe_from_url,
@@ -80,6 +81,49 @@ async def post_import_photo(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Leere Datei")
     try:
         result = await import_recipe_from_image(data)
+    except RecipeImportError as e:
+        raise HTTPException(status_code=e.status, detail=e.message)
+    return ok(result.model_dump(mode="json"))
+
+
+# ---------- Multi-photo import (several photos → ONE recipe) ----------
+
+MAX_IMPORT_PHOTOS = 4
+
+
+@router.post("/import-photos")
+async def post_import_photos(
+    files: list[UploadFile] = File(...),
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Several photos of ONE recipe → a single extracted recipe. Each photo is
+    OCR'd separately and merged (see import_recipe_from_images)."""
+    if not files:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Keine Bilder hochgeladen")
+    if len(files) > MAX_IMPORT_PHOTOS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Maximal {MAX_IMPORT_PHOTOS} Fotos pro Import",
+        )
+    images: list[bytes] = []
+    for f in files:
+        if f.content_type not in ALLOWED_PHOTO_TYPES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Nur JPG, PNG und WebP werden unterstützt",
+            )
+        data = await f.read()
+        if len(data) > MAX_PHOTO_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Maximale Bildgröße: 10 MB pro Foto",
+            )
+        if not data:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Leere Datei")
+        images.append(data)
+    try:
+        result = await import_recipe_from_images(images, db)
     except RecipeImportError as e:
         raise HTTPException(status_code=e.status, detail=e.message)
     return ok(result.model_dump(mode="json"))
