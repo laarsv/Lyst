@@ -501,7 +501,20 @@ async def import_recipe_from_text(
 
 # ---------- Photo import via Ollama vision model ----------
 
-PHOTO_SYSTEM_PROMPT = SYSTEM_PROMPT  # same JSON contract
+# Vision framing of the same JSON contract. Crucially tells the model it's
+# reading an IMAGE (not webpage text — the old `= SYSTEM_PROMPT` claimed the
+# latter) and forbids fabricating a recipe, which is the classic weak-vision
+# failure mode ("can't read it → returns a generic recipe").
+PHOTO_SYSTEM_PROMPT = SYSTEM_PROMPT.replace(
+    "The user will give you the raw text of a recipe webpage.",
+    "You are shown a PHOTO or screenshot of a recipe. Read ONLY the text that is "
+    "actually visible in the image. Do NOT invent, guess, or add ingredients or "
+    "steps that are not shown, and ignore phone/app UI elements (status bar, "
+    "clock, buttons, navigation, input boxes).",
+) + (
+    "\nIf you cannot actually read a recipe in the image, return \"title\": null "
+    "with an empty \"ingredients\" array — never fabricate a recipe."
+)
 
 
 async def import_recipe_from_image(image_bytes: bytes) -> ImportedRecipe:
@@ -558,10 +571,13 @@ async def import_recipe_from_image(image_bytes: bytes) -> ImportedRecipe:
 # agnostic: works even with single-image vision models (each photo is its own
 # call), at the cost of N vision calls + 1 text call.
 _PHOTO_OCR_SYSTEM = (
-    "Du transkribierst Fotos von Rezepten. Gib NUR den lesbaren Text des Fotos "
-    "wieder — Titel, Zutaten mit Mengen, Zubereitungsschritte und Hinweise — "
-    "möglichst vollständig und in der Reihenfolge auf dem Bild. Keine "
-    "Erklärungen, keine Bewertung, kein Markdown-Drumherum."
+    "Du transkribierst ein Foto/Screenshot eines Rezepts. Gib NUR den "
+    "tatsächlich sichtbaren Text wieder — Titel, Zutaten mit Mengen, "
+    "Zubereitungsschritte und Hinweise — möglichst vollständig und in der "
+    "Reihenfolge auf dem Bild. Erfinde NICHTS und rate nicht. Ignoriere "
+    "App-/Handy-Bedienelemente (Statusleiste, Uhrzeit, Buttons, Navigation, "
+    "Eingabefelder). Wenn kein Rezept zu erkennen ist, gib nichts aus. Keine "
+    "Erklärungen, kein Markdown."
 )
 
 
