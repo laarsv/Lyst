@@ -36,6 +36,7 @@ from app.services.settings_service import (
     get_anthropic_model,
     get_llm_provider,
     get_ollama_model,
+    get_ollama_vision_model,
 )
 
 logger = logging.getLogger(__name__)
@@ -517,13 +518,14 @@ PHOTO_SYSTEM_PROMPT = SYSTEM_PROMPT.replace(
 )
 
 
-async def import_recipe_from_image(image_bytes: bytes) -> ImportedRecipe:
-    """Send the uploaded image to a vision-capable Ollama model and parse
-    the same recipe JSON shape as the URL importer. The uploaded image
+async def import_recipe_from_image(image_bytes: bytes, db: AsyncSession) -> ImportedRecipe:
+    """Send the uploaded image to the configured vision-capable Ollama model and
+    parse the same recipe JSON shape as the URL importer. The uploaded image
     ALSO becomes the recipe's hero image — same one the user saw when
     they decided to import this — so the frontend's "Bild aus Quelle
     übernommen" treatment is uniform across all import paths."""
     b64 = base64.b64encode(image_bytes).decode("ascii")
+    vision_model = await get_ollama_vision_model(db)
     try:
         parsed = await call_vision_json(
             (
@@ -532,6 +534,7 @@ async def import_recipe_from_image(image_bytes: bytes) -> ImportedRecipe:
             ),
             b64,
             system=PHOTO_SYSTEM_PROMPT,
+            model=vision_model,
             temperature=0.1,
         )
     except OllamaError as e:
@@ -590,6 +593,7 @@ async def import_recipe_from_images(
     into a single structured recipe. The first photo becomes the hero image."""
     if not images:
         raise RecipeImportError(400, "Keine Bilder hochgeladen")
+    vision_model = await get_ollama_vision_model(db)
     transcripts: list[str] = []
     for idx, data in enumerate(images, start=1):
         b64 = base64.b64encode(data).decode("ascii")
@@ -598,6 +602,7 @@ async def import_recipe_from_images(
                 "Transkribiere dieses Rezept-Foto vollständig als reinen Text.",
                 b64,
                 system=_PHOTO_OCR_SYSTEM,
+                model=vision_model,
                 temperature=0.1,
             )
         except OllamaError as e:

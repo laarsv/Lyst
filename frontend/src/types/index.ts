@@ -606,6 +606,8 @@ export interface OllamaModel {
   model?: string;
   size?: number;
   modified_at?: string;
+  /** Backend-computed vision-capability flag (from /api/tags families). */
+  vision?: boolean;
   details?: {
     parameter_size?: string;
     quantization_level?: string;
@@ -624,6 +626,10 @@ export interface OllamaInfo {
   selected: string;
   is_override: boolean;
   env_default: string;
+  /** Vision model (photo import) — separate selection from the text model. */
+  vision_selected: string;
+  vision_is_override: boolean;
+  vision_env_default: string;
   base_url: string;
   error: string | null;
 }

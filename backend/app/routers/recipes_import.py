@@ -65,6 +65,7 @@ ALLOWED_PHOTO_TYPES = {"image/jpeg", "image/jpg", "image/png", "image/webp"}
 async def post_import_photo(
     file: UploadFile = File(...),
     user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
 ):
     if file.content_type not in ALLOWED_PHOTO_TYPES:
         raise HTTPException(
@@ -80,7 +81,7 @@ async def post_import_photo(
     if not data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Leere Datei")
     try:
-        result = await import_recipe_from_image(data)
+        result = await import_recipe_from_image(data, db)
     except RecipeImportError as e:
         raise HTTPException(status_code=e.status, detail=e.message)
     return ok(result.model_dump(mode="json"))
@@ -236,7 +237,7 @@ async def post_import(
 
     try:
         if file_ct in _IMPORT_IMAGE_TYPES:
-            result = await import_recipe_from_image(data)
+            result = await import_recipe_from_image(data, db)
         elif file_ct in _IMPORT_HTML_TYPES:
             result = await import_recipe_from_html_bytes(data, db)
         elif file_ct in _IMPORT_PDF_TYPES:

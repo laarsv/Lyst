@@ -106,6 +106,13 @@ export const AdminApi = {
     api
       .put<{ data: { selected: string; is_override: boolean } }>('/admin/llm/ollama-model', { model })
       .then(unwrap),
+  setOllamaVisionModel: (model: string | null) =>
+    api
+      .put<{ data: { vision_selected: string; vision_is_override: boolean } }>(
+        '/admin/llm/ollama-vision-model',
+        { model },
+      )
+      .then(unwrap),
   setAnthropicModel: (model: string | null) =>
     api
       .put<{ data: { selected: string; is_override: boolean } }>('/admin/llm/anthropic-model', { model })

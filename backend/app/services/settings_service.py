@@ -8,6 +8,7 @@ from app.core.config import settings as env_settings
 from app.models.app_setting import AppSetting
 
 KEY_OLLAMA_MODEL = "ollama_model"
+KEY_OLLAMA_VISION_MODEL = "ollama_vision_model"
 KEY_ANTHROPIC_MODEL = "anthropic_model"
 KEY_LLM_PROVIDER = "llm_provider"  # "ollama" | "anthropic"
 
@@ -34,6 +35,12 @@ async def set_setting(db: AsyncSession, key: str, value: str | None) -> None:
 async def get_ollama_model(db: AsyncSession) -> str:
     """Returns the admin-selected Ollama text model, falling back to the env default."""
     return (await get_setting(db, KEY_OLLAMA_MODEL)) or env_settings.OLLAMA_TEXT_MODEL
+
+
+async def get_ollama_vision_model(db: AsyncSession) -> str:
+    """Returns the admin-selected Ollama vision model (photo import), falling
+    back to the env default."""
+    return (await get_setting(db, KEY_OLLAMA_VISION_MODEL)) or env_settings.OLLAMA_VISION_MODEL
 
 
 async def get_anthropic_model(db: AsyncSession) -> str:

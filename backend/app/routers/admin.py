@@ -37,10 +37,34 @@ from app.services.settings_service import (
     KEY_ANTHROPIC_MODEL,
     KEY_LLM_PROVIDER,
     KEY_OLLAMA_MODEL,
+    KEY_OLLAMA_VISION_MODEL,
     get_llm_provider,
     get_setting,
     set_setting,
 )
+
+
+# Vision-capability heuristic from /api/tags `details.families` (+ name as a
+# backstop). No reliable single flag exists in /api/tags, but vision models
+# carry a projector family ("clip"), a known vision family ("mllama"), or a
+# *-vl family. Good enough to filter the vision-model picker; the currently
+# selected model is always kept visible regardless.
+_VISION_FAMILY_MARKERS = {
+    "clip", "mllama", "llava", "qwen2vl", "qwen25vl", "vit", "siglip",
+    "bakllava", "moondream", "gemma3", "mistral3",
+}
+
+
+def _is_vision_model(m: dict) -> bool:
+    det = m.get("details") or {}
+    cand = {str(f).lower() for f in (det.get("families") or [])}
+    cand.add(str(det.get("family") or "").lower())
+    if cand & _VISION_FAMILY_MARKERS:
+        return True
+    if any("clip" in c or "vision" in c or c.endswith("vl") for c in cand if c):
+        return True
+    name = (m.get("name") or m.get("model") or "").lower()
+    return any(k in name for k in ("llava", "vision", "minicpm-v", "bakllava", "moondream", "-vl"))
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -149,7 +173,12 @@ async def get_llm_settings(db: AsyncSession = Depends(get_db)):
         ollama_models = await list_ollama_models()
     except RecipeImportError as e:
         ollama_error = e.message
+    # Tag each model with a vision-capability flag so the frontend can filter
+    # the vision-model picker.
+    for m in ollama_models:
+        m["vision"] = _is_vision_model(m)
     ollama_override = await get_setting(db, KEY_OLLAMA_MODEL)
+    vision_override = await get_setting(db, KEY_OLLAMA_VISION_MODEL)
 
     # Anthropic section
     anthropic_override = await get_setting(db, KEY_ANTHROPIC_MODEL)
@@ -162,6 +191,9 @@ async def get_llm_settings(db: AsyncSession = Depends(get_db)):
                 "selected": ollama_override or env_settings.OLLAMA_TEXT_MODEL,
                 "is_override": ollama_override is not None,
                 "env_default": env_settings.OLLAMA_TEXT_MODEL,
+                "vision_selected": vision_override or env_settings.OLLAMA_VISION_MODEL,
+                "vision_is_override": vision_override is not None,
+                "vision_env_default": env_settings.OLLAMA_VISION_MODEL,
                 "base_url": env_settings.OLLAMA_BASE_URL,
                 "error": ollama_error,
             },
@@ -189,6 +221,18 @@ async def put_ollama_model(payload: ModelSetting, db: AsyncSession = Depends(get
     value = payload.model.strip() if payload.model and payload.model.strip() else None
     await set_setting(db, KEY_OLLAMA_MODEL, value)
     return ok({"selected": value or env_settings.OLLAMA_TEXT_MODEL, "is_override": value is not None})
+
+
+@router.put("/llm/ollama-vision-model")
+async def put_ollama_vision_model(payload: ModelSetting, db: AsyncSession = Depends(get_db)):
+    """Set (or clear, with model=null) the Ollama vision model used by the photo
+    importer. Setting null falls back to the env default."""
+    value = payload.model.strip() if payload.model and payload.model.strip() else None
+    await set_setting(db, KEY_OLLAMA_VISION_MODEL, value)
+    return ok({
+        "vision_selected": value or env_settings.OLLAMA_VISION_MODEL,
+        "vision_is_override": value is not None,
+    })
 
 
 @router.put("/llm/anthropic-model")

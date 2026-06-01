@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AdminApi } from '@/api/endpoints';
-import type { LlmProvider, LlmSettings, OllamaStatus } from '@/types';
+import type { LlmProvider, LlmSettings, OllamaModel, OllamaStatus } from '@/types';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
 import { useAuthStore } from '@/store/auth';
@@ -52,6 +52,19 @@ export function AdminSettingsPage() {
     try {
       await AdminApi.setOllamaModel(model);
       toast.success(model ? `Ollama-Modell: ${model}` : 'Ollama auf Standard zurückgesetzt');
+      await load();
+    } catch (e) {
+      toast.error(getApiError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const setOllamaVision = async (model: string | null) => {
+    setBusy(true);
+    try {
+      await AdminApi.setOllamaVisionModel(model);
+      toast.success(model ? `Vision-Modell: ${model}` : 'Vision-Modell auf Standard zurückgesetzt');
       await load();
     } catch (e) {
       toast.error(getApiError(e));
@@ -114,7 +127,13 @@ export function AdminSettingsPage() {
             </div>
 
             {data.provider === 'ollama' ? (
-              <OllamaSection data={data.ollama} onSelect={setOllama} busy={busy} onReload={load} />
+              <OllamaSection
+                data={data.ollama}
+                onSelectText={setOllama}
+                onSelectVision={setOllamaVision}
+                busy={busy}
+                onReload={load}
+              />
             ) : (
               <AnthropicSection data={data.anthropic} onSelect={setAnthropic} busy={busy} />
             )}
@@ -225,15 +244,21 @@ function OllamaStatusSection() {
 
 function OllamaSection({
   data,
-  onSelect,
+  onSelectText,
+  onSelectVision,
   busy,
   onReload,
 }: {
   data: LlmSettings['ollama'];
-  onSelect: (model: string | null) => Promise<void>;
+  onSelectText: (model: string | null) => Promise<void>;
+  onSelectVision: (model: string | null) => Promise<void>;
   busy: boolean;
   onReload: () => Promise<void>;
 }) {
+  // Vision picker: only vision-capable models, but always keep the currently
+  // selected one visible even if the heuristic missed it.
+  const visionModels = data.models.filter((m) => m.vision || m.name === data.vision_selected);
+
   return (
     <div>
       <div className="flex items-center justify-between mb-3 text-xs text-muted flex-wrap gap-2">
@@ -256,15 +281,79 @@ function OllamaSection({
           Keine Modelle installiert. Per <code className="bg-page px-1.5 py-0.5 rounded">ollama pull &lt;modell&gt;</code> auf dem Ollama-Host eines installieren.
         </div>
       ) : (
+        <div className="space-y-6">
+          <ModelPicker
+            heading="Text-Modell"
+            sub="Für URL-/Text-/PDF-Import und Rezept-Extraktion."
+            name="ollama-text-model"
+            models={data.models}
+            selected={data.selected}
+            envDefault={data.env_default}
+            isOverride={data.is_override}
+            onSelect={onSelectText}
+            busy={busy}
+          />
+          <ModelPicker
+            heading="Vision-Modell"
+            sub="Für den Foto-Import. Nur Vision-fähige Modelle — z. B. llama3.2-vision, minicpm-v, qwen2.5vl."
+            name="ollama-vision-model"
+            models={visionModels}
+            selected={data.vision_selected}
+            envDefault={data.vision_env_default}
+            isOverride={data.vision_is_override}
+            onSelect={onSelectVision}
+            busy={busy}
+            emptyHint="Kein Vision-Modell installiert. Per ollama pull llama3.2-vision (oder minicpm-v) eines hinzufügen, dann die Liste oben neu laden."
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ModelPicker({
+  heading,
+  sub,
+  name,
+  models,
+  selected,
+  envDefault,
+  isOverride,
+  onSelect,
+  busy,
+  emptyHint,
+}: {
+  heading: string;
+  sub: string;
+  name: string;
+  models: OllamaModel[];
+  selected: string;
+  envDefault: string;
+  isOverride: boolean;
+  onSelect: (model: string | null) => Promise<void>;
+  busy: boolean;
+  emptyHint?: string;
+}) {
+  return (
+    <div>
+      <div className="mb-2">
+        <h3 className="text-sm font-semibold text-ink">{heading}</h3>
+        <p className="text-xs text-muted">{sub}</p>
+      </div>
+      {models.length === 0 ? (
+        <div className="text-xs text-muted bg-page border border-line rounded-lg p-3">
+          {emptyHint || 'Keine passenden Modelle.'}
+        </div>
+      ) : (
         <>
           <ul className="divide-y divide-line border border-line rounded-xl">
-            {data.models.map((m) => {
-              const isSelected = data.selected === m.name;
+            {models.map((m) => {
+              const isSelected = selected === m.name;
               return (
                 <li key={m.name} className={`p-3 flex items-center gap-3 ${isSelected ? 'bg-brand-50' : ''}`}>
                   <input
                     type="radio"
-                    name="ollama-model"
+                    name={name}
                     checked={isSelected}
                     onChange={() => !isSelected && onSelect(m.name)}
                     disabled={busy}
@@ -286,12 +375,12 @@ function OllamaSection({
               );
             })}
           </ul>
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-muted">
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-muted">
             <span>
               Standard aus <code className="bg-page px-1.5 py-0.5 rounded">.env</code>:{' '}
-              <code className="bg-page px-1.5 py-0.5 rounded">{data.env_default}</code>
+              <code className="bg-page px-1.5 py-0.5 rounded">{envDefault}</code>
             </span>
-            {data.is_override && (
+            {isOverride && (
               <button
                 type="button"
                 className="text-brand hover:underline"
