@@ -260,7 +260,9 @@ export function ImportRecipeModal({ open, onClose }: Props) {
                 aria-hidden
               />
               <span className="flex-1">
-                KI analysiert Rezept… (je nach Hardware bis zu 1–2 Minuten)
+                {mode === 'photo'
+                  ? 'KI liest die Fotos… je nach Modell und Anzahl Fotos mehrere Minuten (ein kleineres Vision-Modell wie minicpm-v ist deutlich schneller).'
+                  : 'KI analysiert Rezept… (je nach Hardware bis zu 1–2 Minuten)'}
               </span>
               <span className="tabular-nums font-mono text-brand-700/70 shrink-0">
                 {fmtElapsed(elapsed)}
