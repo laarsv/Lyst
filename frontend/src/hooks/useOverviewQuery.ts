@@ -183,6 +183,8 @@ export const OVERVIEW_ROUTES: Array<{ match: (path: string) => boolean; key: str
   { match: (p) => p === '/notes', key: 'notes' },
   { match: (p) => p === '/recipes', key: 'recipes' },
   { match: (p) => p === '/plants', key: 'plants' },
+  { match: (p) => p === '/fitness', key: 'fitness' },
+  { match: (p) => p === '/fitness/exercises', key: 'exercises' },
   { match: (p) => p === '/meal-planner', key: 'mealplans' },
   { match: (p) => p === '/tasks', key: 'tasks' },
 ];

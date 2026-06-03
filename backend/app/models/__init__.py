@@ -12,6 +12,16 @@ from app.models.note_folder import NoteFolder
 from app.models.note_version import NoteVersion
 from app.models.notification import Notification
 from app.models.plant import Plant, PlantLocation
+from app.models.fitness import (
+    Exercise,
+    ExerciseLocation,
+    ExerciseType,
+    SetLog,
+    TrackingType,
+    Workout,
+    WorkoutExercise,
+    WorkoutSession,
+)
 from app.models.task_item import TaskItem
 from app.models.recipe import (
     Recipe,
@@ -52,4 +62,12 @@ __all__ = [
     "Notification",
     "Plant",
     "PlantLocation",
+    "Exercise",
+    "ExerciseType",
+    "ExerciseLocation",
+    "TrackingType",
+    "Workout",
+    "WorkoutExercise",
+    "WorkoutSession",
+    "SetLog",
 ]

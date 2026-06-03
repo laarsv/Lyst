@@ -16,6 +16,7 @@ const USER_LINKS: [string, string][] = [
   ['/tasks', 'Aufgaben'],
   ['/recipes', 'Rezepte'],
   ['/plants', 'Pflanzen'],
+  ['/fitness', 'Fitness'],
   ['/meal-planner', 'Wochenplan'],
   ['/notes', 'Notizen'],
   // "Konto" intentionally NOT here — it lives only in AccountMenu (avatar).

@@ -12,9 +12,10 @@ from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.routers import (
-    admin, auth, items, lists, me, meal_plans, note_folders, note_tasks, notes,
-    notifications, plants, recipes, recipes_ai, recipes_import, recipes_nutrition,
-    recipes_share, reminders, search, share, snapshots, tags, tasks, ws,
+    admin, auth, fitness_exercises, fitness_sessions, fitness_workouts, items,
+    lists, me, meal_plans, note_folders, note_tasks, notes, notifications, plants,
+    recipes, recipes_ai, recipes_import, recipes_nutrition, recipes_share,
+    reminders, search, share, snapshots, tags, tasks, ws,
 )
 from app.services.ollama import prewarm_text
 from app.services.scheduler import start_scheduler, stop_scheduler
@@ -100,6 +101,9 @@ app.include_router(recipes_nutrition.router, prefix=PREFIX)
 app.include_router(recipes_share.router, prefix=PREFIX)
 app.include_router(meal_plans.router, prefix=PREFIX)
 app.include_router(plants.router, prefix=PREFIX)
+app.include_router(fitness_exercises.router, prefix=PREFIX)
+app.include_router(fitness_workouts.router, prefix=PREFIX)
+app.include_router(fitness_sessions.router, prefix=PREFIX)
 app.include_router(snapshots.router, prefix=PREFIX)
 app.include_router(search.router, prefix=PREFIX)
 # WebSocket router is intentionally NOT prefixed with /api so the

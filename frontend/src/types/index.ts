@@ -599,6 +599,116 @@ export interface ImportedStep {
   position: number | null;
 }
 
+// ---------- Fitness (alembic 0027) ----------
+
+export type ExerciseType = 'AUFBAU' | 'DEHNEN' | 'PHYSIO';
+export type ExerciseLocation = 'STUDIO' | 'HOME' | 'BEIDES';
+export type TrackingType = 'REPS' | 'WEIGHT_REPS' | 'TIME';
+
+export interface Exercise {
+  id: number;
+  /** null = global seed (read-only for everyone). */
+  owner_id: number | null;
+  name: string;
+  muscle_group: string;
+  type: ExerciseType;
+  location: ExerciseLocation;
+  tracking_type: TrackingType;
+  instructions: string | null;
+  image_url: string | null;
+  created_at: string;
+  updated_at: string;
+  is_global: boolean;
+  editable: boolean;
+}
+
+export interface WorkoutExercise {
+  id: number;
+  workout_id: number;
+  exercise_id: number;
+  position: number;
+  target_sets: number | null;
+  target_reps: number | null;
+  target_weight: number | null;
+  notes: string | null;
+  exercise: Exercise;
+}
+
+export interface WorkoutSummary {
+  id: number;
+  owner_id: number;
+  name: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+  exercise_count: number;
+}
+
+export interface Workout {
+  id: number;
+  owner_id: number;
+  name: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+  exercises: WorkoutExercise[];
+}
+
+export interface SetLog {
+  id: number;
+  session_id: number;
+  exercise_id: number;
+  set_number: number;
+  reps_done: number | null;
+  weight_done: number | null;
+  duration_done: number | null;
+  completed: boolean;
+}
+
+export interface Session {
+  id: number;
+  owner_id: number;
+  workout_id: number | null;
+  started_at: string;
+  finished_at: string | null;
+  notes: string | null;
+  sets: SetLog[];
+}
+
+export interface SessionSummary {
+  id: number;
+  workout_id: number | null;
+  workout_name: string | null;
+  started_at: string;
+  finished_at: string | null;
+  set_count: number;
+}
+
+export interface LastSetValue {
+  set_number: number;
+  reps_done: number | null;
+  weight_done: number | null;
+  duration_done: number | null;
+}
+
+export interface LastValues {
+  session_id: number | null;
+  performed_at: string | null;
+  sets: LastSetValue[];
+}
+
+export interface HistoryPoint {
+  date: string;
+  weight: number | null;
+  reps: number | null;
+  duration: number | null;
+}
+
+export interface ExerciseHistory {
+  tracking_type: TrackingType;
+  points: HistoryPoint[];
+}
+
 export type LlmProvider = 'ollama' | 'anthropic';
 
 export interface OllamaModel {

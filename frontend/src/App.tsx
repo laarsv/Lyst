@@ -12,6 +12,13 @@ import { RecipeEditPage } from '@/pages/RecipeEdit';
 import { PlantsPage } from '@/pages/Plants';
 import { PlantDetailPage } from '@/pages/PlantDetail';
 import { PlantEditPage } from '@/pages/PlantEdit';
+import { FitnessPage } from '@/pages/Fitness';
+import { ExerciseLibraryPage } from '@/pages/ExerciseLibrary';
+import { ExerciseDetailPage } from '@/pages/ExerciseDetail';
+import { ExerciseEditPage } from '@/pages/ExerciseEdit';
+import { WorkoutDetailPage } from '@/pages/WorkoutDetail';
+import { WorkoutEditPage } from '@/pages/WorkoutEdit';
+import { SessionLogPage } from '@/pages/SessionLog';
 import { MealPlannerPage } from '@/pages/MealPlanner';
 import { TasksPage } from '@/pages/Tasks';
 import { SettingsPage } from '@/pages/Settings';
@@ -62,6 +69,15 @@ export default function App() {
           <Route path="/plants/new" element={<PlantEditPage />} />
           <Route path="/plants/:id" element={<PlantDetailPage />} />
           <Route path="/plants/:id/edit" element={<PlantEditPage />} />
+          <Route path="/fitness" element={<FitnessPage />} />
+          <Route path="/fitness/exercises" element={<ExerciseLibraryPage />} />
+          <Route path="/fitness/exercises/new" element={<ExerciseEditPage />} />
+          <Route path="/fitness/exercises/:id" element={<ExerciseDetailPage />} />
+          <Route path="/fitness/exercises/:id/edit" element={<ExerciseEditPage />} />
+          <Route path="/fitness/workouts/new" element={<WorkoutEditPage />} />
+          <Route path="/fitness/workouts/:id" element={<WorkoutDetailPage />} />
+          <Route path="/fitness/workouts/:id/edit" element={<WorkoutEditPage />} />
+          <Route path="/fitness/session/:id" element={<SessionLogPage />} />
           <Route path="/meal-planner" element={<MealPlannerPage />} />
           <Route path="/tasks" element={<TasksPage />} />
           <Route path="/settings" element={<SettingsPage />} />

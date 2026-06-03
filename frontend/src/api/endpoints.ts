@@ -32,6 +32,15 @@ import type {
   NutritionFillAllResponse,
   NutritionSearchResponse,
   NutritionSource,
+  Exercise,
+  ExerciseHistory,
+  LastValues,
+  Session,
+  SessionSummary,
+  SetLog,
+  Workout,
+  WorkoutExercise,
+  WorkoutSummary,
   Plant,
   PlantDue,
   PlantLocation,
@@ -773,6 +782,91 @@ export const PlantsApi = {
   },
   removeImage: (id: number) =>
     api.delete<{ data: Plant }>(`/plants/${id}/image`).then(unwrap),
+};
+
+type ExerciseWrite = {
+  name: string;
+  muscle_group: string;
+  type: string;
+  location: string;
+  tracking_type: string;
+  instructions?: string | null;
+  image_url?: string | null;
+};
+
+export const FitnessApi = {
+  // ----- Exercises (shared library) -----
+  listExercises: (params?: { q?: string; muscle_group?: string; type?: string; location?: string }) =>
+    api.get<{ data: Exercise[] }>('/fitness/exercises', { params }).then(unwrap),
+  getExercise: (id: number) => api.get<{ data: Exercise }>(`/fitness/exercises/${id}`).then(unwrap),
+  createExercise: (payload: ExerciseWrite) =>
+    api.post<{ data: Exercise }>('/fitness/exercises', payload).then(unwrap),
+  updateExercise: (id: number, patch: Partial<ExerciseWrite>) =>
+    api.patch<{ data: Exercise }>(`/fitness/exercises/${id}`, patch).then(unwrap),
+  removeExercise: (id: number) => api.delete(`/fitness/exercises/${id}`),
+  uploadExerciseImage: (id: number, file: File, onProgress?: (pct: number) => void) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return api
+      .post<{ data: Exercise }>(`/fitness/exercises/${id}/image`, fd, {
+        onUploadProgress: (e) => {
+          if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100));
+        },
+      })
+      .then(unwrap);
+  },
+  removeExerciseImage: (id: number) =>
+    api.delete<{ data: Exercise }>(`/fitness/exercises/${id}/image`).then(unwrap),
+
+  // ----- Workouts (private templates) -----
+  listWorkouts: () => api.get<{ data: WorkoutSummary[] }>('/fitness/workouts').then(unwrap),
+  getWorkout: (id: number) => api.get<{ data: Workout }>(`/fitness/workouts/${id}`).then(unwrap),
+  createWorkout: (payload: { name: string; description?: string | null }) =>
+    api.post<{ data: Workout }>('/fitness/workouts', payload).then(unwrap),
+  updateWorkout: (id: number, patch: Partial<{ name: string; description: string | null }>) =>
+    api.patch<{ data: Workout }>(`/fitness/workouts/${id}`, patch).then(unwrap),
+  removeWorkout: (id: number) => api.delete(`/fitness/workouts/${id}`),
+  addWorkoutExercise: (
+    workoutId: number,
+    payload: { exercise_id: number; target_sets?: number | null; target_reps?: number | null; target_weight?: number | null; notes?: string | null },
+  ) => api.post<{ data: WorkoutExercise }>(`/fitness/workouts/${workoutId}/exercises`, payload).then(unwrap),
+  updateWorkoutExercise: (
+    workoutId: number,
+    weId: number,
+    patch: Partial<{ target_sets: number | null; target_reps: number | null; target_weight: number | null; notes: string | null }>,
+  ) => api.patch<{ data: WorkoutExercise }>(`/fitness/workouts/${workoutId}/exercises/${weId}`, patch).then(unwrap),
+  removeWorkoutExercise: (workoutId: number, weId: number) =>
+    api.delete(`/fitness/workouts/${workoutId}/exercises/${weId}`),
+  reorderWorkoutExercises: (workoutId: number, items: { id: number; position: number }[]) =>
+    api.patch(`/fitness/workouts/${workoutId}/exercises/reorder`, { items }),
+
+  // ----- Sessions (private logging) -----
+  getOpenSession: () => api.get<{ data: Session | null }>('/fitness/sessions/open').then(unwrap),
+  startSession: (workout_id: number | null) =>
+    api.post<{ data: Session }>('/fitness/sessions', { workout_id }).then(unwrap),
+  listSessions: () => api.get<{ data: SessionSummary[] }>('/fitness/sessions').then(unwrap),
+  getSession: (id: number) => api.get<{ data: Session }>(`/fitness/sessions/${id}`).then(unwrap),
+  updateSession: (id: number, patch: Partial<{ finished_at: string | null; notes: string | null }>) =>
+    api.patch<{ data: Session }>(`/fitness/sessions/${id}`, patch).then(unwrap),
+  finishSession: (id: number) => api.post<{ data: Session }>(`/fitness/sessions/${id}/finish`).then(unwrap),
+  removeSession: (id: number) => api.delete(`/fitness/sessions/${id}`),
+  addSet: (
+    sessionId: number,
+    payload: { exercise_id: number; set_number: number; reps_done?: number | null; weight_done?: number | null; duration_done?: number | null; completed?: boolean },
+  ) => api.post<{ data: SetLog }>(`/fitness/sessions/${sessionId}/sets`, payload).then(unwrap),
+  updateSet: (
+    sessionId: number,
+    setId: number,
+    patch: Partial<{ reps_done: number | null; weight_done: number | null; duration_done: number | null; completed: boolean }>,
+  ) => api.patch<{ data: SetLog }>(`/fitness/sessions/${sessionId}/sets/${setId}`, patch).then(unwrap),
+  removeSet: (sessionId: number, setId: number) =>
+    api.delete(`/fitness/sessions/${sessionId}/sets/${setId}`),
+
+  // ----- Per-exercise last values + history -----
+  lastValues: (exerciseId: number) =>
+    api.get<{ data: LastValues }>(`/fitness/exercises/${exerciseId}/last`).then(unwrap),
+  history: (exerciseId: number) =>
+    api.get<{ data: ExerciseHistory }>(`/fitness/exercises/${exerciseId}/history`).then(unwrap),
 };
 
 export const SnapshotsApi = {
