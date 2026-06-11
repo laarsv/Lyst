@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeftRight, ChefHat, ChevronDown, Copy, Loader2, LogOut, Pencil, RefreshCw, Share2, ShoppingCart, Sparkles, Trash2, Users } from 'lucide-react';
+import { ArrowLeftRight, ChefHat, ChevronDown, Copy, Heart, Loader2, LogOut, Pencil, RefreshCw, Share2, ShoppingCart, Sparkles, Trash2, Users } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { BulkNutritionFill } from '@/components/recipes/BulkNutritionFill';
 import { fmtDe } from '@/lib/format';
@@ -9,11 +9,13 @@ import { Modal } from '@/components/Modal';
 import { ShareRecipePanel } from '@/components/recipes/ShareRecipePanel';
 import { NutritionBadge } from '@/components/recipes/NutritionBadge';
 import { RecipesApi } from '@/api/endpoints';
-import type { ImportedRecipe, Recipe } from '@/types';
+import type { CookLog, ImportedRecipe, Recipe } from '@/types';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
 import { CopyToListModal } from '@/components/recipes/CopyToListModal';
 import { CookMode } from '@/components/recipes/CookMode';
+import { StarRating } from '@/components/recipes/StarRating';
+import { relativeDe } from '@/lib/relativeTime';
 import { useConfirm } from '@/components/Dialogs';
 import { BackLink } from '@/components/BackLink';
 import { IconAction } from '@/components/IconAction';
@@ -30,6 +32,9 @@ export function RecipeDetailPage() {
   const [copyOpen, setCopyOpen] = useState(false);
   const [variationOpen, setVariationOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [history, setHistory] = useState<CookLog[] | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const confirmDialog = useConfirm();
 
   const fetchRecipe = useCallback(async () => {
@@ -119,6 +124,38 @@ export function RecipeDetailPage() {
     }
   };
 
+  // Rating / favorite — owner-set; optimistic with revert on failure so the
+  // stars/heart feel instant. invalidateOverview keeps the card grid in sync.
+  const patchRecipe = async (patch: { rating?: number; is_favorite?: boolean }) => {
+    if (!recipe) return;
+    const prev = recipe;
+    setRecipe({ ...recipe, ...patch });
+    try {
+      const updated = await RecipesApi.update(recipe.id, patch);
+      setRecipe(updated);
+      invalidateOverview('recipes');
+    } catch (e) {
+      setRecipe(prev);
+      toast.error(getApiError(e));
+    }
+  };
+
+  const toggleHistory = async () => {
+    if (!recipe) return;
+    const next = !historyOpen;
+    setHistoryOpen(next);
+    if (next && history === null) {
+      setHistoryLoading(true);
+      try {
+        setHistory(await RecipesApi.cookLog(recipe.id));
+      } catch {
+        setHistory([]);
+      } finally {
+        setHistoryLoading(false);
+      }
+    }
+  };
+
   if (loading || !recipe) return <div className="text-muted/70">Lade…</div>;
 
   const totalTime = (recipe.prep_time_minutes ?? 0) + (recipe.cook_time_minutes ?? 0);
@@ -145,6 +182,29 @@ export function RecipeDetailPage() {
                   <SharedChip state={recipe.share_state} />
                 )}
               </div>
+              {/* Rating + favorite — owner edits inline; recipients see the
+                  owner's values read-only (hidden entirely when unrated). */}
+              {!recipe.share_source ? (
+                <div className="flex items-center gap-3 mt-2">
+                  <StarRating value={recipe.rating} onChange={(r) => patchRecipe({ rating: r })} size={22} />
+                  <button
+                    type="button"
+                    onClick={() => patchRecipe({ is_favorite: !recipe.is_favorite })}
+                    aria-pressed={recipe.is_favorite}
+                    title={recipe.is_favorite ? 'Favorit entfernen' : 'Als Favorit markieren'}
+                    className="p-1 rounded-md hover:scale-110 transition-transform"
+                  >
+                    <Heart size={22} className={recipe.is_favorite ? 'fill-danger text-danger' : 'text-muted'} />
+                  </button>
+                </div>
+              ) : (
+                (recipe.rating > 0 || recipe.is_favorite) && (
+                  <div className="flex items-center gap-2 mt-2">
+                    {recipe.rating > 0 && <StarRating value={recipe.rating} size={18} />}
+                    {recipe.is_favorite && <Heart size={16} className="fill-danger text-danger" />}
+                  </div>
+                )
+              )}
               {recipe.share_source && recipe.owner_name && (
                 <div className="text-xs text-brand-700 mt-1.5 inline-flex items-center gap-1">
                   <Users size={12} />
@@ -163,6 +223,37 @@ export function RecipeDetailPage() {
                 {recipe.cook_time_minutes !== null && <span>Kochen: {recipe.cook_time_minutes} Min</span>}
                 {totalTime > 0 && <span className="font-medium">Gesamt: {totalTime} Min</span>}
               </div>
+              {recipe.cooked_count > 0 && (
+                <div className="text-sm text-muted mt-2">
+                  Zuletzt gekocht:{' '}
+                  {recipe.last_cooked_at ? relativeDe(recipe.last_cooked_at) : '—'}
+                  {' · '}
+                  {recipe.cooked_count}× insgesamt
+                  <button onClick={toggleHistory} className="ml-2 text-xs text-brand hover:underline">
+                    {historyOpen ? 'Verlauf ausblenden' : 'Verlauf'}
+                  </button>
+                </div>
+              )}
+              {historyOpen && (
+                <div className="mt-2 rounded-xl border border-line bg-page/50 p-3 text-sm max-w-md">
+                  {historyLoading ? (
+                    <div className="text-muted">Lade…</div>
+                  ) : history && history.length > 0 ? (
+                    <ul className="space-y-1.5">
+                      {history.map((h) => (
+                        <li key={h.id} className="flex gap-2">
+                          <span className="text-muted tabular-nums shrink-0">
+                            {new Date(h.cooked_at).toLocaleDateString('de-DE')}
+                          </span>
+                          {h.notes && <span className="text-ink">{h.notes}</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className="text-muted">Noch keine Einträge.</div>
+                  )}
+                </div>
+              )}
               {recipe.tags.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-1">
                   {recipe.tags.map((t) => (
@@ -314,7 +405,10 @@ export function RecipeDetailPage() {
           recipe={recipe}
           servings={recipe.servings}
           onClose={() => setCookOpen(false)}
-          onCooked={(updated) => setRecipe(updated)}
+          onCooked={(updated) => {
+            setRecipe(updated);
+            setHistory(null);
+          }}
         />
       )}
     </div>

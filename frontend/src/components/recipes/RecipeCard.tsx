@@ -1,7 +1,8 @@
 import { Link } from 'react-router-dom';
-import { Users } from 'lucide-react';
+import { Heart, Users } from 'lucide-react';
 import type { RecipeSummary } from '@/types';
 import { SharedChip } from '@/components/SharedChip';
+import { StarRating } from '@/components/recipes/StarRating';
 
 /** Recipe summary card. The old fixed `category` enum was migrated into
  *  `tags` in alembic 0011 — the meal-type bucket now renders as the first
@@ -12,8 +13,13 @@ export function RecipeCard({ recipe }: { recipe: RecipeSummary }) {
   return (
     <Link
       to={`/recipes/${recipe.id}`}
-      className="card p-5 hover:shadow-md transition flex flex-col gap-3 group"
+      className="card p-5 hover:shadow-md transition flex flex-col gap-3 group relative"
     >
+      {recipe.is_favorite && (
+        <div className="absolute top-2 right-2 z-[1] size-7 rounded-full bg-surface/90 border border-line flex items-center justify-center shadow-sm">
+          <Heart size={15} className="fill-danger text-danger" />
+        </div>
+      )}
       {recipe.image_url ? (
         <div
           className="-mx-5 -mt-5 mb-1 h-32 bg-cover bg-center rounded-t-2xl"
@@ -45,6 +51,11 @@ export function RecipeCard({ recipe }: { recipe: RecipeSummary }) {
           <span>🍴 {recipe.servings} Pers.</span>
           <span>{recipe.ingredient_count} Zutaten</span>
         </div>
+        {recipe.rating > 0 && (
+          <div className="mt-1.5">
+            <StarRating value={recipe.rating} size={13} />
+          </div>
+        )}
         {recipe.tags.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1">
             {recipe.tags.slice(0, 4).map((t) => (

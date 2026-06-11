@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Download, Plus, Share2, Sparkles } from 'lucide-react';
+import { Download, Heart, Plus, Share2, Sparkles } from 'lucide-react';
 import { RecipesApi } from '@/api/endpoints';
 import type { RecipeSummary } from '@/types';
 import { RecipeCard } from '@/components/recipes/RecipeCard';
@@ -17,7 +17,12 @@ import { MEAL_TYPE_TAGS } from '@/data/recipeTags';
  *  user-defined tags too. 'ALL' is the sentinel for "no tag filter".
  *  'SHARED' is a client-side filter that only shows recipes someone
  *  else shared with the current user (share_source != null). */
-type Filter = 'ALL' | 'SHARED' | string;
+type Filter = 'ALL' | 'SHARED' | 'FAVORITES' | string;
+
+/** Client-side sort over the loaded summaries (the payload already carries
+ *  rating / is_favorite / cooked_count / last_cooked_at). 'recent' mirrors
+ *  the server's default updated_at-desc order. */
+type SortKey = 'recent' | 'alpha' | 'rating' | 'favorites' | 'cooked' | 'frequency';
 
 export function RecipesPage() {
   const nav = useNavigate();
@@ -25,6 +30,7 @@ export function RecipesPage() {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState<Filter>('ALL');
+  const [sort, setSort] = useState<SortKey>('recent');
   const [importOpen, setImportOpen] = useState(false);
   const [suggestOpen, setSuggestOpen] = useState(false);
   const [bookShareOpen, setBookShareOpen] = useState(false);
@@ -36,7 +42,10 @@ export function RecipesPage() {
       // filter below. Tag filters go to the server.
       const r = await RecipesApi.list({
         q: q || undefined,
-        tag: filter === 'ALL' || filter === 'SHARED' ? undefined : filter,
+        tag:
+          filter === 'ALL' || filter === 'SHARED' || filter === 'FAVORITES'
+            ? undefined
+            : filter,
       });
       setRecipes(r);
     } catch (e) {
@@ -57,6 +66,7 @@ export function RecipesPage() {
     () => recipes.some((r) => r.share_source !== null),
     [recipes],
   );
+  const hasFavorites = useMemo(() => recipes.some((r) => r.is_favorite), [recipes]);
 
   // Filter chips: meal-type tags first (matching the old fixed enum's UX),
   // then any other tags actually in use across the user's recipes —
@@ -88,9 +98,8 @@ export function RecipesPage() {
 
   const visible = useMemo(() => {
     let rows = recipes;
-    if (filter === 'SHARED') {
-      rows = rows.filter((r) => r.share_source !== null);
-    }
+    if (filter === 'SHARED') rows = rows.filter((r) => r.share_source !== null);
+    if (filter === 'FAVORITES') rows = rows.filter((r) => r.is_favorite);
     if (q) {
       const needle = q.toLowerCase();
       rows = rows.filter(
@@ -99,8 +108,33 @@ export function RecipesPage() {
           r.tags.some((t) => t.toLowerCase().includes(needle)),
       );
     }
-    return rows;
-  }, [recipes, q, filter]);
+    const recent = (a: RecipeSummary, b: RecipeSummary) =>
+      new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+    const cookedAt = (r: RecipeSummary) =>
+      r.last_cooked_at ? new Date(r.last_cooked_at).getTime() : -Infinity;
+    const sorted = [...rows];
+    switch (sort) {
+      case 'alpha':
+        sorted.sort((a, b) => a.title.localeCompare(b.title, 'de'));
+        break;
+      case 'rating':
+        sorted.sort((a, b) => b.rating - a.rating || recent(a, b));
+        break;
+      case 'favorites':
+        sorted.sort((a, b) => Number(b.is_favorite) - Number(a.is_favorite) || recent(a, b));
+        break;
+      case 'cooked':
+        sorted.sort((a, b) => cookedAt(b) - cookedAt(a) || recent(a, b));
+        break;
+      case 'frequency':
+        sorted.sort((a, b) => b.cooked_count - a.cooked_count || recent(a, b));
+        break;
+      case 'recent':
+      default:
+        sorted.sort(recent);
+    }
+    return sorted;
+  }, [recipes, q, filter, sort]);
 
   return (
     <div>
@@ -138,6 +172,19 @@ export function RecipesPage() {
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && load()}
         />
+        <select
+          className="input w-auto"
+          value={sort}
+          onChange={(e) => setSort(e.target.value as SortKey)}
+          aria-label="Sortierung"
+        >
+          <option value="recent">Neueste</option>
+          <option value="alpha">A–Z</option>
+          <option value="rating">Bewertung</option>
+          <option value="favorites">Favoriten zuerst</option>
+          <option value="cooked">Zuletzt gekocht</option>
+          <option value="frequency">Häufigkeit</option>
+        </select>
         {/* Tag filter chip bar — visually identical to the old fixed-
             category bar but now driven entirely by the recipes' own tags. */}
         <div className="flex gap-1 bg-surface border border-line rounded-xl p-1 overflow-x-auto">
@@ -159,6 +206,19 @@ export function RecipesPage() {
               }`}
             >
               Mit mir geteilt
+            </button>
+          )}
+          {(hasFavorites || filter === 'FAVORITES') && (
+            <button
+              onClick={() => setFilter('FAVORITES')}
+              className={`px-3 py-1.5 rounded-lg text-sm transition whitespace-nowrap inline-flex items-center gap-1 ${
+                filter === 'FAVORITES'
+                  ? 'bg-surface shadow-sm font-medium text-danger'
+                  : 'text-muted'
+              }`}
+            >
+              <Heart size={13} className={filter === 'FAVORITES' ? 'fill-danger' : ''} />
+              Favoriten
             </button>
           )}
           {filterChips.map((tag) => (
