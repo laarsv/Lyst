@@ -9,12 +9,13 @@ import { Modal } from '@/components/Modal';
 import { ShareRecipePanel } from '@/components/recipes/ShareRecipePanel';
 import { NutritionBadge } from '@/components/recipes/NutritionBadge';
 import { RecipesApi } from '@/api/endpoints';
-import type { CookLog, ImportedRecipe, Recipe } from '@/types';
+import type { CookLog, ImportedRecipe, Recipe, RecipeIngredient } from '@/types';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
 import { CopyToListModal } from '@/components/recipes/CopyToListModal';
 import { CookMode } from '@/components/recipes/CookMode';
 import { StarRating } from '@/components/recipes/StarRating';
+import { IngredientSubstituteSheet } from '@/components/recipes/IngredientSubstituteSheet';
 import { relativeDe } from '@/lib/relativeTime';
 import { useConfirm } from '@/components/Dialogs';
 import { BackLink } from '@/components/BackLink';
@@ -35,6 +36,7 @@ export function RecipeDetailPage() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [history, setHistory] = useState<CookLog[] | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [subIngredient, setSubIngredient] = useState<RecipeIngredient | null>(null);
   const confirmDialog = useConfirm();
 
   const fetchRecipe = useCallback(async () => {
@@ -374,6 +376,15 @@ export function RecipeDetailPage() {
                   </span>
                   <span className="text-sm flex-1">{ing.name}</span>
                   <NutritionBadge source={ing.nutrition_source} />
+                  <button
+                    type="button"
+                    onClick={() => setSubIngredient(ing)}
+                    className="text-muted hover:text-brand-700 shrink-0 self-center p-0.5"
+                    title="Alternative finden"
+                    aria-label={`Alternative für ${ing.name} finden`}
+                  >
+                    <ArrowLeftRight size={14} />
+                  </button>
                 </li>
               ))}
             </ul>
@@ -409,6 +420,17 @@ export function RecipeDetailPage() {
             setRecipe(updated);
             setHistory(null);
           }}
+        />
+      )}
+      {subIngredient && (
+        <IngredientSubstituteSheet
+          open
+          onClose={() => setSubIngredient(null)}
+          recipeId={recipe.id}
+          ingredient={subIngredient}
+          description={recipe.description}
+          canEdit={!recipe.share_source || recipe.share_permission === 'EDIT'}
+          onChanged={fetchRecipe}
         />
       )}
     </div>

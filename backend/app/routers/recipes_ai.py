@@ -43,6 +43,9 @@ from app.schemas.recipe import (
     MergePreviewSection,
     MergeSubQuantity,
     MergeToListRequest,
+    SubstitutionItem,
+    SubstitutionRequest,
+    SubstitutionResponse,
     SuggestRequest,
     SuggestResponse,
 )
@@ -433,3 +436,109 @@ async def post_ai_recipe_tags(
         if len(out) >= 5:
             break
     return ok({"tags": out})
+
+
+# ---------- AI ingredient substitutions ----------
+
+_SUBSTITUTION_SYSTEM = (
+    "Du schlägst realistische, im deutschen Supermarkt übliche Alternativen für "
+    "EINE Zutat vor — keine exotischen Vorschläge (kein \"Yak-Milch\"). Antworte "
+    "AUSSCHLIESSLICH mit einem JSON-Objekt, kein Markdown, kein Fließtext:\n"
+    "{\n"
+    '  "substitutions": [\n'
+    '    {"name": "Alternative", "quantity": Zahl oder null, "unit": "Einheit oder null", "rationale": "kurz, max ~20 Wörter, Deutsch"}\n'
+    "  ],\n"
+    '  "note": "kurzer Hinweis oder null"\n'
+    "}\n"
+    "Gib 2 bis 4 sinnvolle Alternativen und passe die Menge an die Ersatzzutat "
+    "an. Gibt es keine sinnvolle Alternative (z. B. Wasser, Salz), liefere eine "
+    "leere Liste und eine freundliche Erklärung in note."
+)
+
+_SUBSTITUTION_CONTEXT_HINT = {
+    "vegan": "Alle Alternativen müssen vegan sein.",
+    "glutenfrei": "Alle Alternativen müssen glutenfrei sein.",
+    "laktosefrei": "Alle Alternativen müssen laktosefrei sein.",
+    "nussfrei": "Alle Alternativen müssen nussfrei sein.",
+    "milder": "Die Alternativen sollen milder im Geschmack sein.",
+    "günstiger": "Die Alternativen sollen günstiger sein.",
+}
+
+
+def _coerce_float(v) -> float | None:
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, str):
+        try:
+            return float(v.replace(",", "."))
+        except ValueError:
+            return None
+    return None
+
+
+@router.post("/{recipe_id}/ingredients/{ingredient_id}/substitutions")
+async def post_substitutions(
+    recipe_id: int,
+    ingredient_id: int,
+    payload: SubstitutionRequest,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Suggest 2-4 realistic German substitutes for one ingredient. Read-only
+    inference (any access); the caller decides whether to apply one."""
+    rec = await recipe_with_any_access(db, recipe_id, user.id)
+    ing = next((i for i in rec.ingredients if i.id == ingredient_id), None)
+    if ing is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Zutat nicht gefunden")
+
+    if ing.quantity is not None:
+        qty_line = f"{ing.quantity:g} {ing.unit or ''}".strip()
+    else:
+        qty_line = ing.unit or "nicht angegeben"
+    lines = [
+        f"Zutat: {ing.name}",
+        f"Menge: {qty_line}",
+        f"Im Rezept: {rec.title}",
+    ]
+    if payload.context:
+        lines.append(_SUBSTITUTION_CONTEXT_HINT[payload.context])
+    lines.append("Schlage passende Alternativen vor.")
+
+    try:
+        parsed = await call_text_json(
+            "\n".join(lines), system=_SUBSTITUTION_SYSTEM, temperature=0.3,
+        )
+    except OllamaError as e:
+        raise HTTPException(status_code=e.status, detail=e.message)
+
+    # Be forgiving — skip malformed entries instead of failing the whole call.
+    subs: list[SubstitutionItem] = []
+    raw = parsed.get("substitutions") if isinstance(parsed, dict) else None
+    if isinstance(raw, list):
+        for entry in raw:
+            if not isinstance(entry, dict):
+                continue
+            name = str(entry.get("name") or "").strip()
+            if not name:
+                continue
+            unit = entry.get("unit")
+            try:
+                subs.append(SubstitutionItem(
+                    name=name[:255],
+                    quantity=_coerce_float(entry.get("quantity")),
+                    unit=(str(unit).strip()[:32] if unit else None),
+                    rationale=str(entry.get("rationale") or "").strip()[:300],
+                ))
+            except Exception:
+                continue
+            if len(subs) >= 4:
+                break
+
+    note = None
+    if isinstance(parsed, dict) and parsed.get("note"):
+        note = str(parsed["note"]).strip()[:500]
+    if not subs and not note:
+        note = "Für diese Zutat gibt es keine sinnvolle Alternative."
+    return ok(SubstitutionResponse(substitutions=subs, note=note).model_dump())

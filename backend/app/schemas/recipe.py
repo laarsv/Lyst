@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -374,6 +375,32 @@ class AiSuggestedStep(BaseModel):
 class AiVariationRequest(BaseModel):
     """The user's desired variation — preset string or free-form."""
     variation: str = Field(min_length=1, max_length=500)
+
+
+# ---------- AI ingredient substitutions ----------
+
+SubstitutionContext = Literal[
+    "vegan", "glutenfrei", "laktosefrei", "nussfrei", "milder", "günstiger"
+]
+
+
+class SubstitutionRequest(BaseModel):
+    """Optional dietary/quality lens. null = just good, common substitutes."""
+    context: SubstitutionContext | None = None
+
+
+class SubstitutionItem(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    quantity: float | None = None
+    unit: str | None = Field(default=None, max_length=32)
+    # Short German rationale (~20 words) — why this swap works.
+    rationale: str = Field(default="", max_length=300)
+
+
+class SubstitutionResponse(BaseModel):
+    substitutions: list[SubstitutionItem] = Field(default_factory=list)
+    # Friendly note when there's no sensible swap (e.g. "Wasser").
+    note: str | None = None
 
 
 # ---------- Nutrition lookup (v1.3.0) ----------

@@ -617,6 +617,28 @@ export interface MergePreviewResponse {
   item_count: number;
 }
 
+// ---------- AI ingredient substitutions ----------
+
+export type SubstitutionContext =
+  | 'vegan'
+  | 'glutenfrei'
+  | 'laktosefrei'
+  | 'nussfrei'
+  | 'milder'
+  | 'günstiger';
+
+export interface SubstitutionItem {
+  name: string;
+  quantity: number | null;
+  unit: string | null;
+  rationale: string;
+}
+
+export interface SubstitutionResponse {
+  substitutions: SubstitutionItem[];
+  note: string | null;
+}
+
 export interface ImportedIngredient {
   name: string;
   quantity: number | null;

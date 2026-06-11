@@ -61,6 +61,8 @@ import type {
   ShareByEmailResponse,
   ShareInfo,
   ShareSuggestion,
+  SubstitutionContext,
+  SubstitutionResponse,
   Tag,
   User,
 } from '@/types';
@@ -712,6 +714,19 @@ export const RecipesApi = {
     new_list_title?: string;
   }) =>
     api.post<{ data: CopyToListResponse }>('/recipes/merge-to-list', payload).then(unwrap),
+
+  /** AI alternatives for one ingredient (read-only — caller applies one). */
+  substitutions: (
+    recipeId: number,
+    ingredientId: number,
+    context?: SubstitutionContext | null,
+  ) =>
+    api
+      .post<{ data: SubstitutionResponse }>(
+        `/recipes/${recipeId}/ingredients/${ingredientId}/substitutions`,
+        { context: context ?? null },
+      )
+      .then(unwrap),
 
   // ----- Nutrition lookup (v1.3.0) -----
   /** Top 5 Open Food Facts candidates for the query. `unavailable=true`
