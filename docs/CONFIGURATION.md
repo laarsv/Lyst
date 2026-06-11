@@ -211,3 +211,56 @@ ANTHROPIC_API_KEY=
 # OLLAMA_BASE_URL pointing at an unreachable host is fine — AI features
 # return a clean error in the UI, nothing else breaks.
 ```
+
+---
+
+## Integration / Automation (n8n Picnic-Mail-Import)
+
+For importing Picnic recipe e-mails (`.eml`) **server-to-server** — e.g. an
+n8n flow that watches a mailbox and forwards each Picnic recipe mail to Lyst.
+This is separate from the in-app upload (which uses the logged-in user); the
+API call has no user, so the owner is configured here.
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `LYST_INTEGRATION_API_KEY` | no | _(empty)_ | Shared secret for the integration API. Sent by the caller as the `X-API-Key` header. **Empty disables the endpoint** (returns `503`). Use a long random value. |
+| `LYST_PICNIC_IMPORT_OWNER_EMAIL` | no | _(empty)_ | E-mail of the existing Lyst account that API-imported recipes are created for. Must match a real user. Required for the endpoint to work (else `503`). |
+
+### Endpoint
+
+```
+POST /api/recipes/import-eml
+Header: X-API-Key: <LYST_INTEGRATION_API_KEY>
+Body:   the raw .eml  (Content-Type: message/rfc822)
+        — or multipart/form-data with a `file` field
+```
+
+Behaviour is identical to the in-app upload: the Picnic parser runs (no AI),
+the hero image is downloaded + stored locally, a duplicate check (image hash →
+title) prevents re-imports, the recipe is created with `source="structured_import"`,
+and nutrition fill runs in the background.
+
+Response JSON:
+
+```json
+{ "status": "created",      "recipe_id": 42, "title": "…", "message": "…" }
+{ "status": "duplicate",    "recipe_id": 42, "title": "…", "message": "…" }
+{ "status": "unrecognized", "recipe_id": null, "title": null, "message": "…" }
+```
+
+`401` on a missing/wrong key, `503` if the key or owner e-mail isn't
+configured, `429` if the light rate limit (30/min) is exceeded.
+
+```ini
+LYST_INTEGRATION_API_KEY=$(openssl rand -hex 32)
+LYST_PICNIC_IMPORT_OWNER_EMAIL=du@example.com
+```
+
+Example call:
+
+```bash
+curl -X POST https://<host>/api/recipes/import-eml \
+  -H "X-API-Key: $LYST_INTEGRATION_API_KEY" \
+  -H "Content-Type: message/rfc822" \
+  --data-binary @rezept.eml
+```

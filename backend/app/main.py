@@ -12,7 +12,8 @@ from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.routers import (
-    admin, auth, fitness_exercises, fitness_sessions, fitness_workouts, items,
+    admin, auth, fitness_exercises, fitness_sessions, fitness_workouts,
+    integration, items,
     lists, me, meal_plans, note_folders, note_tasks, notes, notifications, plants,
     recipes, recipes_ai, recipes_import, recipes_nutrition, recipes_share,
     reminders, search, share, snapshots, tags, tasks, ws,
@@ -99,6 +100,7 @@ app.include_router(recipes_ai.router, prefix=PREFIX)
 app.include_router(recipes_import.router, prefix=PREFIX)
 app.include_router(recipes_nutrition.router, prefix=PREFIX)
 app.include_router(recipes_share.router, prefix=PREFIX)
+app.include_router(integration.router, prefix=PREFIX)
 app.include_router(meal_plans.router, prefix=PREFIX)
 app.include_router(plants.router, prefix=PREFIX)
 app.include_router(fitness_exercises.router, prefix=PREFIX)

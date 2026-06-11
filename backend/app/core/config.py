@@ -80,6 +80,22 @@ class Settings(BaseSettings):
     # table in app/data/ingredient_translations.py is the preferred path.
     NUTRITION_TRANSLATE_FALLBACK: bool = False
 
+    # --- Server-to-server integration (e.g. n8n Picnic .eml import) ---
+    # X-API-Key for POST /api/recipes/import-eml. Empty = endpoint disabled
+    # (503). NOT the user JWT — this is automation. Set LYST_INTEGRATION_API_KEY.
+    INTEGRATION_API_KEY: str = Field(
+        default="",
+        validation_alias=AliasChoices("LYST_INTEGRATION_API_KEY", "INTEGRATION_API_KEY"),
+    )
+    # Which user the API-imported recipes belong to (no logged-in user in an
+    # API call). Set LYST_PICNIC_IMPORT_OWNER_EMAIL to an existing account.
+    PICNIC_IMPORT_OWNER_EMAIL: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "LYST_PICNIC_IMPORT_OWNER_EMAIL", "PICNIC_IMPORT_OWNER_EMAIL"
+        ),
+    )
+
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.BACKEND_CORS_ORIGINS.split(",") if o.strip()]

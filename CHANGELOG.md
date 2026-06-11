@@ -2,6 +2,32 @@
 
 Alle nennenswerten Änderungen pro Release. Datumsangaben sind ISO 8601.
 
+## v1.6.1 — 2026-06-11
+
+Picnic-Rezept-Mail-Import (.eml) — strukturiert, ohne KI, inklusive Bild.
+
+### Highlights
+
+- **Picnic .eml-Import** — Rezept-Mails von Picnic als `.eml` speichern und in
+  Lyst hochladen (Tab „Datei"). Lyst erkennt das Picnic-Format und parst Titel,
+  Portionen, Zeit, Zutaten (Mengen + Einheiten) und Schritte **direkt** (kein
+  Ollama), lädt das Rezeptbild herunter und speichert es lokal (Datenhoheit —
+  nicht nur Picnics Remote-URL). Tipp- und Bewertungs-Blöcke werden nicht zu
+  Schritten. `source="structured_import"` → 📋-Badge; Nährwerte füllen sich im
+  Hintergrund.
+- **Robuste Duplikatsprüfung** — primär über den stabilen Bild-Hash aus der
+  Picnic-Bild-URL (überlebt Tippfehler-Korrekturen/Umbenennungen durch Picnic),
+  Fallback auf den normalisierten Titel. Re-Import → „schon vorhanden"-Dialog
+  statt stillem Duplikat.
+- **Mehrere .eml auf einmal** — Batch-Upload mit Zusammenfassung
+  („5 importiert, 1 Duplikat, 1 nicht erkannt").
+- **Format-Drift fällt laut auf** — passt eine Mail nicht zum Picnic-Format,
+  kommt eine klare Meldung mit Verweis auf den Text-Tab statt eines Müll-Imports.
+- **Automatisierung (n8n)** — `POST /api/recipes/import-eml` mit `X-API-Key`
+  (server-to-server, kein Login); Besitzer per `LYST_PICNIC_IMPORT_OWNER_EMAIL`.
+  Gleicher Parser-/Bild-/Dedup-/Nährwert-Pfad wie der Upload. Siehe
+  `docs/CONFIGURATION.md`.
+
 ## v1.6.0 — 2026-06-11
 
 Strukturierter JSON-Import ohne KI und Herkunfts-Transparenz für Rezepte.
