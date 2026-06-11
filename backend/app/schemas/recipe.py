@@ -173,6 +173,10 @@ class RecipeSummary(RecipeBase):
     # "zuletzt gekocht / Häufigkeit" on these without a join.
     cooked_count: int = 0
     last_cooked_at: datetime | None = None
+    # AI-variant link (alembic 0029) — parent_recipe_id set on variants,
+    # source "ai_variant". Drives the "nur Originale" overview filter.
+    parent_recipe_id: int | None = None
+    source: str | None = None
     # Recipient-perspective fields (alembic 0012). null/empty when the
     # current user owns the row.
     owner_name: str | None = None
@@ -190,6 +194,8 @@ class RecipeOut(RecipeBase):
     updated_at: datetime
     cooked_count: int = 0
     last_cooked_at: datetime | None = None
+    parent_recipe_id: int | None = None
+    source: str | None = None
     ingredients: list[IngredientOut] = Field(default_factory=list)
     steps: list[StepOut] = Field(default_factory=list)
     # Renamed from `nutrition_per_serving` in v1.5. The new aggregate
@@ -401,6 +407,26 @@ class SubstitutionResponse(BaseModel):
     substitutions: list[SubstitutionItem] = Field(default_factory=list)
     # Friendly note when there's no sensible swap (e.g. "Wasser").
     note: str | None = None
+
+
+# ---------- AI recipe variants ----------
+
+VariantTarget = Literal["vegan", "glutenfrei", "laktosefrei", "nussfrei", "light", "schnell"]
+
+
+class VariantRequest(BaseModel):
+    targets: list[VariantTarget] = Field(min_length=1, max_length=6)
+    adjustment: str | None = Field(default=None, max_length=500)
+
+
+class VariantOut(BaseModel):
+    """Compact child-variant row for the detail-page 'Varianten' section."""
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    title: str
+    image_url: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    source: str | None = None
 
 
 # ---------- Nutrition lookup (v1.3.0) ----------

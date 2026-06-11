@@ -64,6 +64,13 @@ class Recipe(Base, TimestampMixin):
     last_cooked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # AI variants (alembic 0029): link a generated variant to its original;
+    # source marks provenance ("ai_variant"). No ORM relationship — children
+    # are queried directly to avoid async self-referential lazy-loads.
+    parent_recipe_id: Mapped[int | None] = mapped_column(
+        ForeignKey("recipes.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    source: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     owner: Mapped["User"] = relationship()
     ingredients: Mapped[list["RecipeIngredient"]] = relationship(

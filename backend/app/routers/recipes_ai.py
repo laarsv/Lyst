@@ -18,14 +18,16 @@ router — single source of truth.
 copy endpoint touches a Recipe, because both are end-of-pipeline
 features that lean on the same suggestion machinery.
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+import logging
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.core.dependencies import require_user
+from app.core.dependencies import get_client_id, require_user
 from app.core.responses import ok
 from app.models.recipe import Recipe
 from app.models.user import User
@@ -48,6 +50,8 @@ from app.schemas.recipe import (
     SubstitutionResponse,
     SuggestRequest,
     SuggestResponse,
+    VariantOut,
+    VariantRequest,
 )
 from app.services.import_service import (
     ImportedRecipe,
@@ -55,10 +59,13 @@ from app.services.import_service import (
     suggest_recipes_from_ingredients,
 )
 from app.services.ollama import OllamaError, call_text_json
-from app.services.recipe_service import copy_to_list
+from app.services.realtime_events import emit_recipe_event
+from app.services.recipe_service import copy_to_list, create_recipe
 from app.services.shopping_merge_service import consolidate, merge_to_list
 
 router = APIRouter(prefix="/recipes", tags=["recipes"])
+
+logger = logging.getLogger(__name__)
 
 
 # ---------- "Was kann ich kochen?" ----------
@@ -542,3 +549,152 @@ async def post_substitutions(
     if not subs and not note:
         note = "Für diese Zutat gibt es keine sinnvolle Alternative."
     return ok(SubstitutionResponse(substitutions=subs, note=note).model_dump())
+
+
+# ---------- AI recipe variants (saved + linked) ----------
+
+_VARIANT_LABELS = {
+    "vegan": "vegan",
+    "glutenfrei": "glutenfrei",
+    "laktosefrei": "laktosefrei",
+    "nussfrei": "nussfrei",
+    "light": "kalorienreduziert (Light)",
+    "schnell": "schnell, unter 30 Minuten",
+}
+_VARIANT_TAGS = {
+    "vegan": "vegan",
+    "glutenfrei": "glutenfrei",
+    "laktosefrei": "laktosefrei",
+    "nussfrei": "nussfrei",
+    "light": "light",
+    "schnell": "schnell",
+}
+_VARIANT_BAD = (
+    "KI konnte keine sinnvolle Variante erzeugen — bitte erneut versuchen "
+    "oder manuell erstellen"
+)
+
+
+async def _fill_variant_nutrition(recipe_id: int, owner_id: int) -> None:
+    """Background: run the existing nutrition fill-all on the freshly-saved
+    variant so its new ingredients pick up values. Uses its own session — the
+    request's session is already closed by the time this runs."""
+    from app.core.database import AsyncSessionLocal
+    from app.routers.recipes_nutrition import post_nutrition_fill_all
+    from app.schemas.recipe import NutritionFillAllRequest
+
+    async with AsyncSessionLocal() as session:
+        owner = await session.get(User, owner_id)
+        if owner is None:
+            return
+        try:
+            await post_nutrition_fill_all(
+                recipe_id=recipe_id,
+                payload=NutritionFillAllRequest(mode="fill_empty", use_ai_fallback=False),
+                user=owner,
+                db=session,
+                client_id=None,
+            )
+        except Exception:
+            logger.exception("Background nutrition fill failed for variant %s", recipe_id)
+
+
+@router.post("/{recipe_id}/variants", status_code=status.HTTP_201_CREATED)
+async def post_variant(
+    recipe_id: int,
+    payload: VariantRequest,
+    background: BackgroundTasks,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
+):
+    """Generate AND save an AI variant linked to the original. Returns the new
+    recipe id; the frontend navigates there for review."""
+    rec = await recipe_with_any_access(db, recipe_id, user.id)
+
+    wish = (
+        "Erstelle eine Variante, die "
+        + " und ".join(_VARIANT_LABELS[t] for t in payload.targets)
+        + " ist."
+    )
+    if payload.adjustment and payload.adjustment.strip():
+        wish += f" Zusätzlich: {payload.adjustment.strip()}"
+
+    user_prompt = (
+        f"Original-Rezept:\n"
+        f"Titel: {rec.title}\n"
+        f"Portionen: {rec.servings}\n"
+        f"Beschreibung: {rec.description or '(keine)'}\n"
+        f"Zutaten:\n{_ingredient_lines(rec)}\n"
+        f"Schritte:\n{_step_lines(rec)}\n\n"
+        f"{wish}\n\n"
+        "Behalte Charakter und Stil des Originals bei und ändere nur so viel "
+        "wie für das Ziel nötig. Antworte auf Deutsch."
+    )
+    try:
+        parsed = await call_text_json(
+            user_prompt, system=_AI_VARIATION_SYSTEM, temperature=0.4,
+        )
+    except OllamaError as e:
+        raise HTTPException(status_code=e.status, detail=e.message)
+
+    if isinstance(parsed, dict) and isinstance(parsed.get("steps"), list):
+        for i, st in enumerate(parsed["steps"], start=1):
+            if isinstance(st, dict):
+                st["position"] = i
+    try:
+        validated = ImportedRecipe.model_validate(parsed)
+    except ValidationError:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=_VARIANT_BAD)
+    if not validated.ingredients or not validated.steps:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=_VARIANT_BAD)
+
+    tag_suffix = ", ".join(_VARIANT_TAGS[t] for t in payload.targets)
+    title = f"{rec.title} ({tag_suffix})"[:255]
+    merged_tags = list(dict.fromkeys([
+        *(rec.tags or []),
+        *(validated.tags or []),
+        *[_VARIANT_TAGS[t] for t in payload.targets],
+    ]))
+    ingredients = [
+        {"name": i.name, "quantity": i.quantity, "unit": i.unit} for i in validated.ingredients
+    ]
+    steps = [{"description": s.description} for s in validated.steps]
+
+    new = await create_recipe(
+        db,
+        user.id,
+        title=title,
+        ingredients=ingredients,
+        steps=steps,
+        description=validated.description,
+        servings=validated.servings or rec.servings,
+        prep_time_minutes=validated.prep_time_minutes,
+        cook_time_minutes=validated.cook_time_minutes,
+        image_url=rec.image_url,  # inherit the original's image; user can replace
+        source_url=None,
+        tags=merged_tags,
+        parent_recipe_id=rec.id,
+        source="ai_variant",
+    )
+    await emit_recipe_event(db, new.id, "recipe.created", actor_id=user.id, client_id=client_id)
+    # Auto-fill nutrition for the new ingredients once the response is sent.
+    background.add_task(_fill_variant_nutrition, new.id, user.id)
+    return ok({"id": new.id, "title": new.title})
+
+
+@router.get("/{recipe_id}/variants")
+async def get_variants(
+    recipe_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """The current user's own variants generated from this recipe."""
+    await recipe_with_any_access(db, recipe_id, user.id)
+    res = await db.execute(
+        select(Recipe)
+        .where(Recipe.parent_recipe_id == recipe_id, Recipe.owner_id == user.id)
+        .order_by(Recipe.created_at.desc())
+    )
+    variants = res.scalars().all()
+    return ok([VariantOut.model_validate(v).model_dump(mode="json") for v in variants])
