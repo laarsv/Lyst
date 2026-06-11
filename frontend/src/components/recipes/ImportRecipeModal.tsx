@@ -22,14 +22,16 @@ import { useNavigate } from 'react-router-dom';
 import { Modal } from '@/components/Modal';
 import { RecipesApi } from '@/api/endpoints';
 import { getApiError } from '@/api/client';
-import { File as FileIcon, FileText, ImagePlus, Link2 } from 'lucide-react';
+import { invalidateOverview } from '@/hooks/useOverviewQuery';
+import { toast } from '@/components/Toast';
+import { File as FileIcon, FileJson, FileText, ImagePlus, Link2 } from 'lucide-react';
 
 interface Props {
   open: boolean;
   onClose: () => void;
 }
 
-type Mode = 'url' | 'photo' | 'file' | 'text';
+type Mode = 'url' | 'photo' | 'file' | 'text' | 'json';
 
 const TEXT_MAX = 10_000;
 const MAX_PHOTOS = 4; // matches the backend's import-photos cap
@@ -45,6 +47,8 @@ export function ImportRecipeModal({ open, onClose }: Props) {
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
   const [anyFile, setAnyFile] = useState<File | null>(null);
   const [text, setText] = useState('');
+  // No-AI JSON bulk import — parsed recipe array from the chosen .json file.
+  const [jsonRecipes, setJsonRecipes] = useState<any[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
@@ -59,6 +63,7 @@ export function ImportRecipeModal({ open, onClose }: Props) {
       setPhotoFiles([]);
       setAnyFile(null);
       setText('');
+      setJsonRecipes(null);
       setError(null);
       setMode('url');
     }
@@ -83,6 +88,27 @@ export function ImportRecipeModal({ open, onClose }: Props) {
 
   const trySubmit = async () => {
     setError(null);
+    if (mode === 'json') {
+      if (!jsonRecipes || jsonRecipes.length === 0) {
+        setError('Bitte eine JSON-Datei mit Rezepten wählen');
+        return;
+      }
+      setLoading(true);
+      try {
+        const r = await RecipesApi.bulkImport(jsonRecipes);
+        invalidateOverview('recipes');
+        onClose();
+        toast.success(
+          `${r.imported} ${r.imported === 1 ? 'Rezept' : 'Rezepte'} importiert`,
+        );
+      } catch (e) {
+        // 422 from the backend names the offending recipe index.
+        setError(getApiError(e, 'Import fehlgeschlagen'));
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
     if (mode === 'url' && !url.trim()) {
       setError('Bitte eine URL eingeben');
       return;
@@ -127,6 +153,25 @@ export function ImportRecipeModal({ open, onClose }: Props) {
     void trySubmit();
   };
 
+  // Parse the chosen .json locally — accepts { "recipes": [...] } or a bare
+  // array — and stash the recipe list so the button can show the count.
+  const onJsonFile = async (f: File | null) => {
+    setJsonRecipes(null);
+    setError(null);
+    if (!f) return;
+    try {
+      const parsed = JSON.parse(await f.text());
+      const recipes = Array.isArray(parsed) ? parsed : parsed?.recipes;
+      if (!Array.isArray(recipes) || recipes.length === 0) {
+        setError('Keine Rezepte gefunden — erwartet { "recipes": [...] } oder ein Array.');
+        return;
+      }
+      setJsonRecipes(recipes);
+    } catch {
+      setError('Die Datei ist kein gültiges JSON.');
+    }
+  };
+
   return (
     <Modal
       open={open}
@@ -136,12 +181,13 @@ export function ImportRecipeModal({ open, onClose }: Props) {
     >
       <div className="space-y-4">
         {/* Tabs */}
-        <div className="grid grid-cols-4 gap-1 bg-surface border border-line rounded-xl p-1">
+        <div className="grid grid-cols-5 gap-1 bg-surface border border-line rounded-xl p-1">
           {([
             ['url', 'URL', Link2],
             ['photo', 'Foto', ImagePlus],
             ['file', 'Datei', FileIcon],
             ['text', 'Text', FileText],
+            ['json', 'JSON', FileJson],
           ] as const).map(([m, label, Icon]) => (
             <button
               key={m}
@@ -247,6 +293,30 @@ export function ImportRecipeModal({ open, onClose }: Props) {
             />
           )}
 
+          {mode === 'json' && (
+            <div>
+              <p className="text-sm text-muted mb-2">
+                Importiere eine JSON-Datei mit bereits strukturierten Rezepten —
+                <span className="font-medium"> ohne KI</span>, direkt in die
+                Datenbank. Erwartet {'{ "recipes": […] }'} oder ein Array von
+                Rezepten.
+              </p>
+              <input
+                type="file"
+                accept="application/json,.json"
+                className="block w-full text-sm text-muted file:mr-3 file:py-2 file:px-4 file:rounded-ctl file:border file:border-line file:text-sm file:font-medium file:bg-surface file:text-ink hover:file:bg-page"
+                onChange={(e) => void onJsonFile(e.target.files?.[0] ?? null)}
+                disabled={loading}
+              />
+              {jsonRecipes && (
+                <p className="mt-2 text-sm text-brand-700">
+                  {jsonRecipes.length}{' '}
+                  {jsonRecipes.length === 1 ? 'Rezept' : 'Rezepte'} gefunden — bereit zum Import.
+                </p>
+              )}
+            </div>
+          )}
+
           {error && (
             <div className="text-sm text-danger bg-danger-50 border border-danger/30 rounded-lg p-3">
               {error}
@@ -262,7 +332,9 @@ export function ImportRecipeModal({ open, onClose }: Props) {
               <span className="flex-1">
                 {mode === 'photo'
                   ? 'KI liest die Fotos… je nach Modell und Anzahl Fotos mehrere Minuten (ein kleineres Vision-Modell wie minicpm-v ist deutlich schneller).'
-                  : 'KI analysiert Rezept… (je nach Hardware bis zu 1–2 Minuten)'}
+                  : mode === 'json'
+                    ? 'Importiere Rezepte… (ohne KI, geht schnell)'
+                    : 'KI analysiert Rezept… (je nach Hardware bis zu 1–2 Minuten)'}
               </span>
               <span className="tabular-nums font-mono text-brand-700/70 shrink-0">
                 {fmtElapsed(elapsed)}
@@ -287,7 +359,8 @@ export function ImportRecipeModal({ open, onClose }: Props) {
                 (mode === 'url' && !url.trim()) ||
                 (mode === 'photo' && photoFiles.length === 0) ||
                 (mode === 'file' && !anyFile) ||
-                (mode === 'text' && !text.trim())
+                (mode === 'text' && !text.trim()) ||
+                (mode === 'json' && (!jsonRecipes || jsonRecipes.length === 0))
               }
             >
               {loading ? 'Importieren…' : 'Importieren'}
