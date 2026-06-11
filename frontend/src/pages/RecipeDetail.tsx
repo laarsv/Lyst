@@ -310,7 +310,12 @@ export function RecipeDetailPage() {
 
       <CopyToListModal open={copyOpen} recipe={recipe} onClose={() => setCopyOpen(false)} />
       {cookOpen && (
-        <CookMode recipe={recipe} servings={recipe.servings} onClose={() => setCookOpen(false)} />
+        <CookMode
+          recipe={recipe}
+          servings={recipe.servings}
+          onClose={() => setCookOpen(false)}
+          onCooked={(updated) => setRecipe(updated)}
+        />
       )}
     </div>
   );
