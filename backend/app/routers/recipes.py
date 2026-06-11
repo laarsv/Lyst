@@ -11,9 +11,11 @@ from app.models.collaborator import CollaboratorPermission
 from app.models.recipe import RecipeBookShare
 from app.models.user import User
 from app.schemas.recipe import (
+    CookLogOut,
     IngredientCreate,
     IngredientOut,
     IngredientUpdate,
+    MarkCookedRequest,
     NutritionAggregate,
     NutritionCoverage,
     NutritionTotalsValues,
@@ -48,7 +50,9 @@ from app.services.recipe_service import (
     get_recipe,
     get_step,
     list_accessible_recipes,
+    list_cook_logs,
     list_recipes,
+    mark_cooked,
     reorder_ingredients,
     reorder_steps,
     update_ingredient,
@@ -366,6 +370,54 @@ async def post_duplicate(
         db, new.id, "recipe.created", actor_id=user.id, client_id=client_id
     )
     return ok(_full(new))
+
+
+# ---------- Cook history ----------
+
+@router.post("/{recipe_id}/cook-log", status_code=status.HTTP_201_CREATED)
+async def post_cook_log(
+    recipe_id: int,
+    payload: MarkCookedRequest,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
+):
+    """Log a cook (the post-cook sheet). Bumps cooked_count/last_cooked_at
+    and optionally sets rating/favorite in the same call. Returns the
+    refreshed recipe so the detail page updates 'Zuletzt gekocht …' and the
+    stars/heart in one round-trip."""
+    rec = await require_recipe_edit(db, recipe_id, user.id)
+    await mark_cooked(
+        db,
+        rec,
+        notes=payload.notes,
+        rating=payload.rating,
+        is_favorite=payload.is_favorite,
+    )
+    await emit_recipe_event(
+        db, recipe_id, "recipe.updated", actor_id=user.id, client_id=client_id
+    )
+    full, share_source, perm = await get_accessible_recipe(db, recipe_id, user.id)
+    owner_name = None
+    if share_source is not None:
+        owner = await db.execute(select(User.name).where(User.id == full.owner_id))
+        owner_name = owner.scalar_one_or_none()
+    return ok(
+        _full(full, share_source=share_source, owner_name=owner_name, share_permission=perm)
+    )
+
+
+@router.get("/{recipe_id}/cook-log")
+async def get_cook_log(
+    recipe_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Last ~10 cook entries + notes for the history panel. Any access
+    (incl. view-only recipients) may read the owner's history."""
+    await recipe_with_any_access(db, recipe_id, user.id)
+    logs = await list_cook_logs(db, recipe_id)
+    return ok([CookLogOut.model_validate(log).model_dump(mode="json") for log in logs])
 
 
 # ---------- Ingredients ----------

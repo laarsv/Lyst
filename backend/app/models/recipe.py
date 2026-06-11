@@ -1,8 +1,9 @@
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 import enum
 
-from sqlalchemy import ARRAY, Boolean, Enum, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import ARRAY, Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -50,6 +51,19 @@ class Recipe(Base, TimestampMixin):
         String(64), unique=True, nullable=True, index=True
     )
     share_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Cooking-experience polish (alembic 0028). Owner-scoped on the recipe
+    # itself (not per-user) — recipients see the owner's values. rating 0 =
+    # "noch nicht bewertet". cooked_count / last_cooked_at are denormalised
+    # caches bumped by mark_cooked() (recipe_cook_logs holds the individual
+    # entries + notes); kept on the row so the overview can sort by
+    # "Bewertung / zuletzt gekocht / Häufigkeit" without joining the log table.
+    rating: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    is_favorite: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    cooked_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_cooked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     owner: Mapped["User"] = relationship()
     ingredients: Mapped[list["RecipeIngredient"]] = relationship(
@@ -209,3 +223,27 @@ class RecipeBookShare(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+# =============================================================================
+#  Cook history — alembic 0028
+# =============================================================================
+#
+# Append-only "ich hab das heute gekocht" log behind the denormalised
+# cooked_count / last_cooked_at caches on Recipe (both bumped together in
+# mark_cooked). Owner-scoped via the recipe — no own owner_id. Rows are
+# removed with the recipe through the FK's ON DELETE CASCADE; there is
+# deliberately NO ORM relationship on Recipe so the async delete path never
+# tries to lazy-load these rows.
+
+class RecipeCookLog(Base):
+    __tablename__ = "recipe_cook_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    recipe_id: Mapped[int] = mapped_column(
+        ForeignKey("recipes.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    cooked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)

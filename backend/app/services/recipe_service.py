@@ -4,7 +4,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.list import List as ListModel, ListType
 from app.models.list_item import ListItem
-from app.models.recipe import NutritionSource, Recipe, RecipeIngredient, RecipeStep
+from app.models.recipe import NutritionSource, Recipe, RecipeCookLog, RecipeIngredient, RecipeStep
 
 
 # ---------- Recipe CRUD ----------
@@ -127,6 +127,46 @@ async def duplicate_recipe(db: AsyncSession, src: Recipe, owner_id: int, title: 
         ))
     await db.commit()
     return await get_recipe(db, new.id, owner_id)
+
+
+# ---------- Cook history (alembic 0028) ----------
+
+async def mark_cooked(
+    db: AsyncSession,
+    rec: Recipe,
+    *,
+    notes: str | None = None,
+    rating: int | None = None,
+    is_favorite: bool | None = None,
+) -> RecipeCookLog:
+    """Append a cook-log entry and bump the denormalised caches on the
+    recipe in one transaction. From the post-cook sheet, rating/favorite
+    ride along so finishing a cook can rate it in the same request. The
+    caller re-loads the recipe for its response — rec's column attributes
+    are expired after the commit."""
+    log = RecipeCookLog(recipe_id=rec.id, notes=notes)
+    db.add(log)
+    rec.cooked_count = (rec.cooked_count or 0) + 1
+    rec.last_cooked_at = func.now()
+    if rating is not None:
+        rec.rating = rating
+    if is_favorite is not None:
+        rec.is_favorite = is_favorite
+    await db.commit()
+    await db.refresh(log)
+    return log
+
+
+async def list_cook_logs(
+    db: AsyncSession, recipe_id: int, *, limit: int = 10
+) -> list[RecipeCookLog]:
+    result = await db.execute(
+        select(RecipeCookLog)
+        .where(RecipeCookLog.recipe_id == recipe_id)
+        .order_by(RecipeCookLog.cooked_at.desc())
+        .limit(limit)
+    )
+    return list(result.scalars().all())
 
 
 # ---------- Ingredients ----------

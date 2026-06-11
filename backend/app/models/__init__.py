@@ -26,6 +26,7 @@ from app.models.task_item import TaskItem
 from app.models.recipe import (
     Recipe,
     RecipeBookShare,
+    RecipeCookLog,
     RecipeIngredient,
     RecipeShare,
     RecipeStep,
@@ -47,6 +48,7 @@ __all__ = [
     "NoteShare",
     "Recipe",
     "RecipeBookShare",
+    "RecipeCookLog",
     "RecipeIngredient",
     "RecipeShare",
     "RecipeStep",

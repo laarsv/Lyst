@@ -137,6 +137,9 @@ class RecipeBase(BaseModel):
     image_url: str | None = Field(default=None, max_length=1024)
     source_url: str | None = Field(default=None, max_length=1024)
     tags: list[str] = Field(default_factory=list)
+    # Owner-set polish — 0 = noch nicht bewertet.
+    rating: int = Field(default=0, ge=0, le=5)
+    is_favorite: bool = False
 
 
 class RecipeCreate(RecipeBase):
@@ -153,6 +156,8 @@ class RecipeUpdate(BaseModel):
     image_url: str | None = Field(default=None, max_length=1024)
     source_url: str | None = Field(default=None, max_length=1024)
     tags: list[str] | None = None
+    rating: int | None = Field(default=None, ge=0, le=5)
+    is_favorite: bool | None = None
 
 
 class RecipeSummary(RecipeBase):
@@ -163,6 +168,10 @@ class RecipeSummary(RecipeBase):
     created_at: datetime
     updated_at: datetime
     ingredient_count: int = 0
+    # Denormalised cook-history caches (alembic 0028) — the overview sorts
+    # "zuletzt gekocht / Häufigkeit" on these without a join.
+    cooked_count: int = 0
+    last_cooked_at: datetime | None = None
     # Recipient-perspective fields (alembic 0012). null/empty when the
     # current user owns the row.
     owner_name: str | None = None
@@ -178,6 +187,8 @@ class RecipeOut(RecipeBase):
     owner_id: int
     created_at: datetime
     updated_at: datetime
+    cooked_count: int = 0
+    last_cooked_at: datetime | None = None
     ingredients: list[IngredientOut] = Field(default_factory=list)
     steps: list[StepOut] = Field(default_factory=list)
     # Renamed from `nutrition_per_serving` in v1.5. The new aggregate
@@ -197,6 +208,25 @@ class RecipeOut(RecipeBase):
     # the viewer doesn't own (a recipient doesn't need to see how
     # many other people have access to the owner's recipe).
     share_state: ShareState | None = None
+
+
+# --- Cook history (alembic 0028) ---
+
+class CookLogOut(BaseModel):
+    """One row of GET /recipes/{id}/cook-log — the last-N entries panel."""
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    recipe_id: int
+    cooked_at: datetime
+    notes: str | None = None
+
+
+class MarkCookedRequest(BaseModel):
+    """POST /recipes/{id}/cook-log — logs a cook and, from the post-cook
+    sheet, optionally sets the rating/favorite in the same call."""
+    notes: str | None = Field(default=None, max_length=2000)
+    rating: int | None = Field(default=None, ge=0, le=5)
+    is_favorite: bool | None = None
 
 
 # --- Public share views (no auth) ---
