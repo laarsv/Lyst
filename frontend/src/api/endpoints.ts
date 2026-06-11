@@ -466,6 +466,25 @@ export const RecipesApi = {
     }>;
     steps?: Array<{ description: string }>;
   }) => api.post<{ data: Recipe }>('/recipes', payload).then(unwrap),
+  /** No-AI bulk import of already-structured recipes (Excel/JSON export). */
+  bulkImport: (
+    recipes: Array<{
+      title: string;
+      description?: string | null;
+      servings?: number;
+      prep_time_minutes?: number | null;
+      cook_time_minutes?: number | null;
+      tags?: string[];
+      source_url?: string | null;
+      ingredients?: Array<{ name: string; quantity?: number | null; unit?: string | null }>;
+      steps?: Array<{ description: string }>;
+    }>,
+  ) =>
+    api
+      .post<{ data: { imported: number; recipe_ids: number[] } }>('/recipes/bulk-import', {
+        recipes,
+      })
+      .then(unwrap),
   update: (
     id: number,
     payload: Partial<{

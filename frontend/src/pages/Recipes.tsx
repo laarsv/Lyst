@@ -48,7 +48,9 @@ export function RecipesPage() {
           filter === 'ALL' ||
           filter === 'SHARED' ||
           filter === 'FAVORITES' ||
-          filter === 'ORIGINALS'
+          filter === 'ORIGINALS' ||
+          filter === 'AI_ONLY' ||
+          filter === 'DIRECT_ONLY'
             ? undefined
             : filter,
       });
@@ -73,6 +75,11 @@ export function RecipesPage() {
   );
   const hasFavorites = useMemo(() => recipes.some((r) => r.is_favorite), [recipes]);
   const hasVariants = useMemo(() => recipes.some((r) => r.source === 'ai_variant'), [recipes]);
+  const hasAi = useMemo(
+    () => recipes.some((r) => r.origin === 'ai_variant' || r.origin === 'ai_import'),
+    [recipes],
+  );
+  const hasDirect = useMemo(() => recipes.some((r) => r.origin === 'structured_import'), [recipes]);
 
   // Filter chips: meal-type tags first (matching the old fixed enum's UX),
   // then any other tags actually in use across the user's recipes —
@@ -107,6 +114,9 @@ export function RecipesPage() {
     if (filter === 'SHARED') rows = rows.filter((r) => r.share_source !== null);
     if (filter === 'FAVORITES') rows = rows.filter((r) => r.is_favorite);
     if (filter === 'ORIGINALS') rows = rows.filter((r) => r.source !== 'ai_variant');
+    if (filter === 'AI_ONLY')
+      rows = rows.filter((r) => r.origin === 'ai_variant' || r.origin === 'ai_import');
+    if (filter === 'DIRECT_ONLY') rows = rows.filter((r) => r.origin === 'structured_import');
     if (q) {
       const needle = q.toLowerCase();
       rows = rows.filter(
@@ -241,6 +251,26 @@ export function RecipesPage() {
               }`}
             >
               Nur Originale
+            </button>
+          )}
+          {(hasAi || filter === 'AI_ONLY') && (
+            <button
+              onClick={() => setFilter('AI_ONLY')}
+              className={`px-3 py-1.5 rounded-lg text-sm transition whitespace-nowrap ${
+                filter === 'AI_ONLY' ? 'bg-surface shadow-sm font-medium' : 'text-muted'
+              }`}
+            >
+              Nur KI
+            </button>
+          )}
+          {(hasDirect || filter === 'DIRECT_ONLY') && (
+            <button
+              onClick={() => setFilter('DIRECT_ONLY')}
+              className={`px-3 py-1.5 rounded-lg text-sm transition whitespace-nowrap ${
+                filter === 'DIRECT_ONLY' ? 'bg-surface shadow-sm font-medium' : 'text-muted'
+              }`}
+            >
+              Nur Direktimport
             </button>
           )}
           {filterChips.map((tag) => (

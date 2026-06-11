@@ -15,6 +15,7 @@ import { getApiError } from '@/api/client';
 import { CopyToListModal } from '@/components/recipes/CopyToListModal';
 import { CookMode } from '@/components/recipes/CookMode';
 import { StarRating } from '@/components/recipes/StarRating';
+import { RecipeOriginBadge } from '@/components/recipes/RecipeOriginBadge';
 import { IngredientSubstituteSheet } from '@/components/recipes/IngredientSubstituteSheet';
 import { relativeDe } from '@/lib/relativeTime';
 import { useConfirm } from '@/components/Dialogs';
@@ -197,6 +198,7 @@ export function RecipeDetailPage() {
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-2xl font-semibold">{recipe.title}</h1>
+                <RecipeOriginBadge origin={recipe.origin} className="text-sm" />
                 {/* Owner-side share badge — same icon/tooltip the
                     overview card uses, surfaced again on the detail
                     page so the owner can confirm at a glance who can

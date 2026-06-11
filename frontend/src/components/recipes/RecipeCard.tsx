@@ -3,6 +3,7 @@ import { Heart, Users } from 'lucide-react';
 import type { RecipeSummary } from '@/types';
 import { SharedChip } from '@/components/SharedChip';
 import { StarRating } from '@/components/recipes/StarRating';
+import { RecipeOriginBadge } from '@/components/recipes/RecipeOriginBadge';
 
 /** Recipe summary card. The old fixed `category` enum was migrated into
  *  `tags` in alembic 0011 — the meal-type bucket now renders as the first
@@ -33,11 +34,7 @@ export function RecipeCard({ recipe }: { recipe: RecipeSummary }) {
       <div className="min-w-0">
         <div className="flex items-center gap-1.5 mb-1">
           <span className="font-semibold text-ink truncate flex-1">{recipe.title}</span>
-          {recipe.source === 'ai_variant' && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-brand-50 text-brand-700 shrink-0">
-              Variante
-            </span>
-          )}
+          <RecipeOriginBadge origin={recipe.origin} />
           {/* Owner-side share chip — internal share recipients + the
               public token rendered as one icon with a combined
               tooltip. Recipient cards (share_source set) hide it. */}

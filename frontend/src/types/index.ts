@@ -393,6 +393,10 @@ export interface RecipeStep {
   position: number;
 }
 
+/** Provenance bucket (computed server-side from source + source_url) — drives
+ *  the source badge and the origin filter. */
+export type RecipeOrigin = 'structured_import' | 'ai_variant' | 'ai_import' | 'manual';
+
 export interface RecipeBase {
   title: string;
   description: string | null;
@@ -420,6 +424,8 @@ export interface RecipeSummary extends RecipeBase {
    *  variants — drives the "nur Originale" overview filter. */
   parent_recipe_id: number | null;
   source: string | null;
+  /** Computed provenance bucket (see RecipeOrigin). */
+  origin: RecipeOrigin;
   /** null when the current user owns the recipe; "individual" or "book"
    *  when the recipe was shared via alembic 0012's internal-share rows. */
   share_source: 'individual' | 'book' | null;
@@ -438,6 +444,7 @@ export interface Recipe extends RecipeBase {
   last_cooked_at: string | null;
   parent_recipe_id: number | null;
   source: string | null;
+  origin: RecipeOrigin;
   ingredients: RecipeIngredient[];
   steps: RecipeStep[];
   /** Per-portion + total + coverage block. Replaces the old
