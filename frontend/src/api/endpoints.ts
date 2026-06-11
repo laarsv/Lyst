@@ -63,6 +63,8 @@ import type {
   ShareSuggestion,
   SubstitutionContext,
   SubstitutionResponse,
+  VariantOut,
+  VariantTarget,
   Tag,
   User,
 } from '@/types';
@@ -514,6 +516,13 @@ export const RecipesApi = {
     api
       .post<{ data: ImportedRecipe }>(`/recipes/${id}/ai/variation`, { variation })
       .then(unwrap),
+  /** Generate + save an AI variant linked to the original; returns its id. */
+  createVariant: (id: number, payload: { targets: VariantTarget[]; adjustment?: string | null }) =>
+    api
+      .post<{ data: { id: number; title: string } }>(`/recipes/${id}/variants`, payload)
+      .then(unwrap),
+  listVariants: (id: number) =>
+    api.get<{ data: VariantOut[] }>(`/recipes/${id}/variants`).then(unwrap),
   aiTags: (id: number) =>
     api.post<{ data: { tags: string[] } }>(`/recipes/${id}/ai/tags`).then(unwrap),
 

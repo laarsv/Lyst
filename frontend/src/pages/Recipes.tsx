@@ -45,7 +45,10 @@ export function RecipesPage() {
       const r = await RecipesApi.list({
         q: q || undefined,
         tag:
-          filter === 'ALL' || filter === 'SHARED' || filter === 'FAVORITES'
+          filter === 'ALL' ||
+          filter === 'SHARED' ||
+          filter === 'FAVORITES' ||
+          filter === 'ORIGINALS'
             ? undefined
             : filter,
       });
@@ -69,6 +72,7 @@ export function RecipesPage() {
     [recipes],
   );
   const hasFavorites = useMemo(() => recipes.some((r) => r.is_favorite), [recipes]);
+  const hasVariants = useMemo(() => recipes.some((r) => r.source === 'ai_variant'), [recipes]);
 
   // Filter chips: meal-type tags first (matching the old fixed enum's UX),
   // then any other tags actually in use across the user's recipes —
@@ -102,6 +106,7 @@ export function RecipesPage() {
     let rows = recipes;
     if (filter === 'SHARED') rows = rows.filter((r) => r.share_source !== null);
     if (filter === 'FAVORITES') rows = rows.filter((r) => r.is_favorite);
+    if (filter === 'ORIGINALS') rows = rows.filter((r) => r.source !== 'ai_variant');
     if (q) {
       const needle = q.toLowerCase();
       rows = rows.filter(
@@ -226,6 +231,16 @@ export function RecipesPage() {
             >
               <Heart size={13} className={filter === 'FAVORITES' ? 'fill-danger' : ''} />
               Favoriten
+            </button>
+          )}
+          {(hasVariants || filter === 'ORIGINALS') && (
+            <button
+              onClick={() => setFilter('ORIGINALS')}
+              className={`px-3 py-1.5 rounded-lg text-sm transition whitespace-nowrap ${
+                filter === 'ORIGINALS' ? 'bg-surface shadow-sm font-medium' : 'text-muted'
+              }`}
+            >
+              Nur Originale
             </button>
           )}
           {filterChips.map((tag) => (

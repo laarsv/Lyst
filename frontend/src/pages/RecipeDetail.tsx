@@ -9,7 +9,7 @@ import { Modal } from '@/components/Modal';
 import { ShareRecipePanel } from '@/components/recipes/ShareRecipePanel';
 import { NutritionBadge } from '@/components/recipes/NutritionBadge';
 import { RecipesApi } from '@/api/endpoints';
-import type { CookLog, ImportedRecipe, Recipe, RecipeIngredient } from '@/types';
+import type { CookLog, Recipe, RecipeIngredient, VariantOut, VariantTarget } from '@/types';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
 import { CopyToListModal } from '@/components/recipes/CopyToListModal';
@@ -37,6 +37,7 @@ export function RecipeDetailPage() {
   const [history, setHistory] = useState<CookLog[] | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [subIngredient, setSubIngredient] = useState<RecipeIngredient | null>(null);
+  const [variants, setVariants] = useState<VariantOut[]>([]);
   const confirmDialog = useConfirm();
 
   const fetchRecipe = useCallback(async () => {
@@ -56,6 +57,18 @@ export function RecipeDetailPage() {
   // reflects edits made on other devices as soon as the user comes
   // back to the tab.
   useResourceQuery(`recipe:${recipeId}`, fetchRecipe);
+
+  // Child variants for the "Varianten" section (lazy, independent of the
+  // recipe fetch). Reloads when navigating between recipes.
+  useEffect(() => {
+    let cancelled = false;
+    RecipesApi.listVariants(recipeId)
+      .then((v) => !cancelled && setVariants(v))
+      .catch(() => !cancelled && setVariants([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [recipeId]);
 
   const remove = async () => {
     if (!recipe) return;
@@ -164,7 +177,17 @@ export function RecipeDetailPage() {
 
   return (
     <div className="space-y-6">
-      <BackLink to="/recipes" label="zu Rezepten" />
+      <div className="flex items-center gap-4 flex-wrap">
+        <BackLink to="/recipes" label="zu Rezepten" />
+        {recipe.parent_recipe_id && (
+          <Link
+            to={`/recipes/${recipe.parent_recipe_id}`}
+            className="text-sm text-brand hover:underline"
+          >
+            ← Original-Rezept
+          </Link>
+        )}
+      </div>
       <div className="card overflow-hidden">
         {recipe.image_url && (
           <div className="h-48 sm:h-64 bg-cover bg-center" style={{ backgroundImage: `url(${recipe.image_url})` }} />
@@ -409,6 +432,40 @@ export function RecipeDetailPage() {
           )}
         </section>
       </div>
+
+      {variants.length > 0 && (
+        <section className="card p-5">
+          <h2 className="font-semibold mb-3">Varianten</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {variants.map((v) => (
+              <Link
+                key={v.id}
+                to={`/recipes/${v.id}`}
+                className="rounded-xl border border-line overflow-hidden hover:shadow-md transition"
+              >
+                <div
+                  className="h-20 bg-cover bg-center bg-brand-50/40 flex items-center justify-center text-2xl"
+                  style={v.image_url ? { backgroundImage: `url(${v.image_url})` } : undefined}
+                >
+                  {!v.image_url && '🍽️'}
+                </div>
+                <div className="p-2">
+                  <div className="text-sm font-medium truncate">{v.title}</div>
+                  {v.tags.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {v.tags.slice(0, 2).map((t) => (
+                        <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-page text-muted">
+                          #{t}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       <CopyToListModal open={copyOpen} recipe={recipe} onClose={() => setCopyOpen(false)} />
       {cookOpen && (
@@ -721,6 +778,15 @@ function NutritionCard({
  *  with "Als neues Rezept speichern". Saving routes to RecipeEdit's create
  *  form with the variation pre-filled via location state — same channel the
  *  URL/photo importer already uses, so the user can tweak before persisting. */
+const VARIANT_TARGETS: { value: VariantTarget; label: string }[] = [
+  { value: 'vegan', label: 'Vegan' },
+  { value: 'glutenfrei', label: 'Glutenfrei' },
+  { value: 'laktosefrei', label: 'Laktosefrei' },
+  { value: 'nussfrei', label: 'Nussfrei' },
+  { value: 'light', label: 'Light' },
+  { value: 'schnell', label: 'Schnell (<30 min)' },
+];
+
 function RecipeVariationModal({
   open,
   onClose,
@@ -730,25 +796,44 @@ function RecipeVariationModal({
   onClose: () => void;
   recipe: Recipe;
 }) {
-  const [request, setRequest] = useState('');
+  const [targets, setTargets] = useState<Set<VariantTarget>>(new Set());
+  const [adjustment, setAdjustment] = useState('');
   const [loading, setLoading] = useState(false);
-  const [variant, setVariant] = useState<ImportedRecipe | null>(null);
   const nav = useNavigate();
 
   useEffect(() => {
     if (!open) {
-      setRequest('');
-      setVariant(null);
+      setTargets(new Set());
+      setAdjustment('');
       setLoading(false);
     }
   }, [open]);
 
-  const run = async (text: string) => {
+  const toggle = (t: VariantTarget) =>
+    setTargets((cur) => {
+      const next = new Set(cur);
+      if (next.has(t)) next.delete(t);
+      else next.add(t);
+      return next;
+    });
+
+  const canRun = targets.size > 0 || adjustment.trim().length > 0;
+
+  const run = async () => {
+    if (!canRun) {
+      toast.error('Mindestens ein Ziel oder eine Beschreibung wählen');
+      return;
+    }
     setLoading(true);
-    setVariant(null);
     try {
-      const v = await RecipesApi.aiVariation(recipe.id, text);
-      setVariant(v);
+      // Saves + links the variant; navigate to it for review/edit.
+      const v = await RecipesApi.createVariant(recipe.id, {
+        targets: Array.from(targets),
+        adjustment: adjustment.trim() || null,
+      });
+      toast.success('Variante erstellt');
+      onClose();
+      nav(`/recipes/${v.id}`);
     } catch (e) {
       toast.error(getApiError(e));
     } finally {
@@ -756,117 +841,59 @@ function RecipeVariationModal({
     }
   };
 
-  const PRESETS = [
-    'Vegetarisch machen',
-    'Für mehr Personen',
-    'Kalorienärmer',
-    'Schneller / einfacher',
-  ];
-
-  const saveAsNew = () => {
-    if (!variant) return;
-    onClose();
-    // RecipeEdit reads `prefill` from location.state — the same channel
-    // ImportRecipeModal uses for URL/photo imports.
-    nav('/recipes/new', { state: { prefill: variant } });
-  };
-
   return (
-    <Modal open={open} onClose={onClose} title="Variante (KI)" className="max-w-lg">
-      <div className="space-y-3">
-        {!variant && !loading && (
-          <>
-            <p className="text-sm text-muted">
-              Wähle eine Vorlage oder beschreibe deine eigene Variante.
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-              {PRESETS.map((p) => (
+    <Modal open={open} onClose={onClose} title="Variante erstellen" className="max-w-lg">
+      <div className="space-y-4">
+        <div>
+          <div className="label">Ziel (mehrere möglich)</div>
+          <div className="flex flex-wrap gap-1.5">
+            {VARIANT_TARGETS.map((t) => {
+              const on = targets.has(t.value);
+              return (
                 <button
-                  key={p}
+                  key={t.value}
                   type="button"
-                  onClick={() => run(p)}
-                  className="text-sm text-left px-3 py-2 rounded-ctl border border-line hover:bg-page transition"
+                  onClick={() => toggle(t.value)}
+                  className={`px-3 py-1.5 rounded-full text-sm border transition ${
+                    on
+                      ? 'bg-brand-50 border-brand-200 text-brand-700 font-medium'
+                      : 'border-line text-muted hover:bg-page'
+                  }`}
                 >
-                  {p}
+                  {t.label}
                 </button>
-              ))}
-            </div>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (request.trim()) void run(request.trim());
-              }}
-              className="space-y-2 pt-1"
-            >
-              <textarea
-                className="input min-h-[64px] text-sm"
-                placeholder="Eigene Variante beschreiben…"
-                value={request}
-                onChange={(e) => setRequest(e.target.value)}
-              />
-              <div className="flex justify-end gap-2">
-                <button type="button" className="btn-secondary" onClick={onClose}>
-                  Abbrechen
-                </button>
-                <button
-                  type="submit"
-                  className="btn-primary inline-flex items-center gap-2"
-                  disabled={!request.trim()}
-                >
-                  <Sparkles size={14} /> Variante erzeugen
-                </button>
-              </div>
-            </form>
-          </>
-        )}
-
-        {loading && (
-          <div className="flex items-center gap-2 text-sm text-muted py-4">
-            <Loader2 size={16} className="animate-spin" />
-            <span>KI denkt nach…</span>
+              );
+            })}
           </div>
-        )}
-
-        {variant && (
-          <>
-            <div className="rounded-ctl border border-line p-3 max-h-72 overflow-auto">
-              <div className="font-semibold">{variant.title}</div>
-              {variant.description && (
-                <p className="text-sm text-muted mt-1">{variant.description}</p>
-              )}
-              <div className="text-xs text-muted mt-2">
-                {variant.servings ?? '?'} Portionen · {variant.ingredients.length} Zutaten
-                · {variant.steps.length} Schritte
-              </div>
-              <div className="mt-3">
-                <div className="text-[11px] uppercase tracking-wider text-muted mb-1">Zutaten</div>
-                <ul className="text-sm space-y-0.5">
-                  {variant.ingredients.slice(0, 12).map((i, idx) => (
-                    <li key={idx}>
-                      • {i.name}
-                      {i.quantity !== null && (
-                        <span className="text-muted">
-                          {' · '}
-                          {i.quantity} {i.unit ?? ''}
-                        </span>
-                      )}
-                    </li>
-                  ))}
-                  {variant.ingredients.length > 12 && (
-                    <li className="text-muted text-xs">… und {variant.ingredients.length - 12} weitere</li>
-                  )}
-                </ul>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2">
-              <button type="button" className="btn-secondary" onClick={onClose}>
-                Verwerfen
-              </button>
-              <button type="button" className="btn-primary" onClick={saveAsNew}>
-                Als neues Rezept speichern
-              </button>
-            </div>
-          </>
+        </div>
+        <div>
+          <label className="label">Sonst noch was? (optional)</label>
+          <textarea
+            className="input min-h-[64px] text-sm"
+            placeholder="z. B. halbiere die Kalorien · schärfer machen · fürs Kind ohne Pilze"
+            value={adjustment}
+            onChange={(e) => setAdjustment(e.target.value)}
+          />
+        </div>
+        {loading ? (
+          <div className="flex items-center gap-2 text-sm text-muted py-2">
+            <Loader2 size={16} className="animate-spin" />
+            <span>KI erstellt die Variante…</span>
+          </div>
+        ) : (
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn-secondary" onClick={onClose}>
+              Abbrechen
+            </button>
+            <button
+              type="button"
+              className="btn-primary inline-flex items-center gap-2"
+              disabled={!canRun}
+              onClick={run}
+            >
+              <Sparkles size={14} /> Variante erzeugen
+            </button>
+          </div>
         )}
       </div>
     </Modal>

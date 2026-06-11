@@ -416,6 +416,10 @@ export interface RecipeSummary extends RecipeBase {
   /** Denormalised cook-history caches (alembic 0028) the overview sorts on. */
   cooked_count: number;
   last_cooked_at: string | null;
+  /** AI-variant link (alembic 0029). source === 'ai_variant' on generated
+   *  variants — drives the "nur Originale" overview filter. */
+  parent_recipe_id: number | null;
+  source: string | null;
   /** null when the current user owns the recipe; "individual" or "book"
    *  when the recipe was shared via alembic 0012's internal-share rows. */
   share_source: 'individual' | 'book' | null;
@@ -432,6 +436,8 @@ export interface Recipe extends RecipeBase {
   updated_at: string;
   cooked_count: number;
   last_cooked_at: string | null;
+  parent_recipe_id: number | null;
+  source: string | null;
   ingredients: RecipeIngredient[];
   steps: RecipeStep[];
   /** Per-portion + total + coverage block. Replaces the old
@@ -637,6 +643,25 @@ export interface SubstitutionItem {
 export interface SubstitutionResponse {
   substitutions: SubstitutionItem[];
   note: string | null;
+}
+
+// ---------- AI recipe variants ----------
+
+export type VariantTarget =
+  | 'vegan'
+  | 'glutenfrei'
+  | 'laktosefrei'
+  | 'nussfrei'
+  | 'light'
+  | 'schnell';
+
+/** Compact child-variant row for the detail "Varianten" section. */
+export interface VariantOut {
+  id: number;
+  title: string;
+  image_url: string | null;
+  tags: string[];
+  source: string | null;
 }
 
 export interface ImportedIngredient {
