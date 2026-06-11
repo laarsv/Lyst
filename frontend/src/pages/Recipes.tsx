@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Download, Heart, Plus, Share2, Sparkles } from 'lucide-react';
+import { Download, Heart, Plus, Share2, ShoppingCart, Sparkles } from 'lucide-react';
 import { RecipesApi } from '@/api/endpoints';
 import type { RecipeSummary } from '@/types';
 import { RecipeCard } from '@/components/recipes/RecipeCard';
 import { ImportRecipeModal } from '@/components/recipes/ImportRecipeModal';
 import { SuggestRecipesModal } from '@/components/recipes/SuggestRecipesModal';
 import { ShareRecipeBookPanel } from '@/components/recipes/ShareRecipeBookPanel';
+import { MergeToListModal } from '@/components/recipes/MergeToListModal';
 import { IconAction } from '@/components/IconAction';
 import { useOverviewQuery } from '@/hooks/useOverviewQuery';
 import { toast } from '@/components/Toast';
@@ -34,6 +35,7 @@ export function RecipesPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [suggestOpen, setSuggestOpen] = useState(false);
   const [bookShareOpen, setBookShareOpen] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -141,6 +143,11 @@ export function RecipesPage() {
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h1 className="text-2xl font-semibold">Rezepte</h1>
         <div className="flex flex-wrap gap-1.5 items-center">
+          <IconAction
+            label="Einkaufsliste aus Rezepten"
+            icon={ShoppingCart}
+            onClick={() => setMergeOpen(true)}
+          />
           <IconAction
             label="Rezeptbuch teilen"
             icon={Share2}
@@ -251,6 +258,7 @@ export function RecipesPage() {
       <ImportRecipeModal open={importOpen} onClose={() => setImportOpen(false)} />
       <SuggestRecipesModal open={suggestOpen} onClose={() => setSuggestOpen(false)} />
       <ShareRecipeBookPanel open={bookShareOpen} onClose={() => setBookShareOpen(false)} />
+      <MergeToListModal open={mergeOpen} onClose={() => setMergeOpen(false)} />
     </div>
   );
 }

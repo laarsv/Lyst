@@ -621,12 +621,14 @@ export function ListDetailPage() {
       <div className="card p-3 sm:p-4">
         {items.length === 0 ? (
           <div className="text-center text-muted/70 py-8">Noch keine Einträge.</div>
-        ) : list.categorization_mode !== 'OFF' && categoryIconMapForType(list.type) ? (
-          // Auto-sorted: group by category, no DnD. Only shown when the
-          // list type has a fixed taxonomy — CHECKLIST/CUSTOM fall
-          // through to the plain DnD-ordered view even if the mode flag
-          // got flipped (defensive: shouldn't normally happen because
-          // the Settings UI hides the toggle for those types).
+        ) : categoryIconMapForType(list.type) &&
+          (list.categorization_mode !== 'OFF' || items.some((i) => i.category)) ? (
+          // Auto-sorted: group by category, no DnD. Shown when the list type
+          // has a fixed taxonomy AND either categorization is enabled OR some
+          // item already carries a category — the latter makes aisle sections
+          // appear automatically on shopping lists built by the recipe merge /
+          // single-recipe copy (which tag each item with its aisle), even on
+          // OFF-mode lists. CHECKLIST/CUSTOM (no icon map) keep the plain view.
           <CategoryGroupedList
             items={items}
             canEdit={canEdit}

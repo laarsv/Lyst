@@ -12,6 +12,7 @@ import type {
   CollaboratorPermission,
   CookLog,
   CopyToListResponse,
+  MergePreviewResponse,
   GenerateListResponse,
   ImportedRecipe,
   ListItem,
@@ -698,6 +699,19 @@ export const RecipesApi = {
     api
       .post<{ data: CopyToListResponse }>(`/recipes/${recipeId}/copy-to-list`, payload)
       .then(unwrap),
+
+  // ----- Multi-recipe shopping merge -----
+  /** Consolidated, aisle-grouped preview (no save) for the merge picker. */
+  mergePreview: (recipes: Array<{ recipe_id: number; servings: number }>) =>
+    api
+      .post<{ data: MergePreviewResponse }>('/recipes/merge-preview', { recipes })
+      .then(unwrap),
+  mergeToList: (payload: {
+    recipes: Array<{ recipe_id: number; servings: number }>;
+    list_id?: number | null;
+    new_list_title?: string;
+  }) =>
+    api.post<{ data: CopyToListResponse }>('/recipes/merge-to-list', payload).then(unwrap),
 
   // ----- Nutrition lookup (v1.3.0) -----
   /** Top 5 Open Food Facts candidates for the query. `unavailable=true`

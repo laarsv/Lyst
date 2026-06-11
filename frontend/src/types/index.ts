@@ -591,6 +591,32 @@ export interface CopyToListResponse {
   items_added: number;
 }
 
+// ---------- Multi-recipe shopping merge ----------
+
+export interface MergeSubQuantity {
+  quantity: number | null;
+  unit: string | null;
+}
+
+export interface MergePreviewItem {
+  name: string;
+  aisle: string;
+  /** One line per distinct unit (compatible units already summed). */
+  lines: MergeSubQuantity[];
+  /** Contributing recipe titles — provenance shown in the preview only. */
+  recipes: string[];
+}
+
+export interface MergePreviewSection {
+  aisle: string;
+  items: MergePreviewItem[];
+}
+
+export interface MergePreviewResponse {
+  sections: MergePreviewSection[];
+  item_count: number;
+}
+
 export interface ImportedIngredient {
   name: string;
   quantity: number | null;
