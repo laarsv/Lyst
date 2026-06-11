@@ -2,6 +2,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.data.aisle_map import aisle_for
 from app.models.list import List as ListModel, ListType
 from app.models.list_item import ListItem
 from app.models.recipe import NutritionSource, Recipe, RecipeCookLog, RecipeIngredient, RecipeStep
@@ -373,6 +374,9 @@ async def copy_to_list(
             text=ing.name,
             quantity=_scale_quantity(ing.quantity, factor),
             unit=ing.unit,
+            # Aisle section, set instantly from the static map (no Ollama).
+            # Leaves category_locked False so a manual re-categorise still wins.
+            category=aisle_for(ing.name),
             position=pos,
             is_checked=False,
         ))

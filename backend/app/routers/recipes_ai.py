@@ -37,6 +37,12 @@ from app.schemas.recipe import (
     AiVariationRequest,
     CopyToListRequest,
     CopyToListResponse,
+    MergePreviewItem,
+    MergePreviewRequest,
+    MergePreviewResponse,
+    MergePreviewSection,
+    MergeSubQuantity,
+    MergeToListRequest,
     SuggestRequest,
     SuggestResponse,
 )
@@ -47,6 +53,7 @@ from app.services.import_service import (
 )
 from app.services.ollama import OllamaError, call_text_json
 from app.services.recipe_service import copy_to_list
+from app.services.shopping_merge_service import consolidate, merge_to_list
 
 router = APIRouter(prefix="/recipes", tags=["recipes"])
 
@@ -109,6 +116,79 @@ async def post_copy_to_list(
             new_list_title=payload.new_list_title,
             servings=payload.servings,
             ingredient_ids=payload.ingredient_ids,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return ok(
+        CopyToListResponse(
+            list_id=target.id, list_title=target.title, items_added=added
+        ).model_dump()
+    )
+
+
+# ---------- Multi-recipe shopping merge ----------
+
+async def _load_selected_recipes(db, user_id, selections):
+    """Access-check + load each selected recipe (ingredients eager-loaded by
+    recipe_with_any_access). Surfaces the helper's 404/403 as-is."""
+    pairs = []
+    for sel in selections:
+        rec = await recipe_with_any_access(db, sel.recipe_id, user_id)
+        pairs.append((rec, sel.servings))
+    return pairs
+
+
+def _to_sections(items) -> list[MergePreviewSection]:
+    """Group the (already aisle-sorted) consolidated items into preview
+    sections, preserving the aisle order consolidate() produced."""
+    by_aisle: dict[str, list[MergePreviewItem]] = {}
+    order: list[str] = []
+    for it in items:
+        if it.aisle not in by_aisle:
+            by_aisle[it.aisle] = []
+            order.append(it.aisle)
+        by_aisle[it.aisle].append(
+            MergePreviewItem(
+                name=it.name,
+                aisle=it.aisle,
+                lines=[MergeSubQuantity(quantity=ln.quantity, unit=ln.unit) for ln in it.lines],
+                recipes=it.recipes,
+            )
+        )
+    return [MergePreviewSection(aisle=a, items=by_aisle[a]) for a in order]
+
+
+@router.post("/merge-preview")
+async def post_merge_preview(
+    payload: MergePreviewRequest,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Consolidate the selected recipes (no save) so the picker can show the
+    deduped, aisle-grouped list with per-item provenance before confirming."""
+    pairs = await _load_selected_recipes(db, user.id, payload.recipes)
+    items = consolidate(pairs)
+    sections = _to_sections(items)
+    count = sum(len(it.lines) for it in items)
+    return ok(MergePreviewResponse(sections=sections, item_count=count).model_dump())
+
+
+@router.post("/merge-to-list", status_code=status.HTTP_201_CREATED)
+async def post_merge_to_list(
+    payload: MergeToListRequest,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    pairs = await _load_selected_recipes(db, user.id, payload.recipes)
+    items = consolidate(pairs)
+    default_title = " + ".join(rec.title for rec, _ in pairs)[:255]
+    try:
+        target, added = await merge_to_list(
+            db,
+            user.id,
+            items,
+            list_id=payload.list_id,
+            new_list_title=payload.new_list_title or default_title,
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

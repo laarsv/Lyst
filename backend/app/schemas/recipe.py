@@ -289,6 +289,46 @@ class CopyToListResponse(BaseModel):
     items_added: int
 
 
+# --- Multi-recipe shopping merge ---
+
+class MergeRecipeSelection(BaseModel):
+    recipe_id: int
+    servings: int = Field(ge=1, le=999)
+
+
+class MergePreviewRequest(BaseModel):
+    recipes: list[MergeRecipeSelection] = Field(min_length=1, max_length=20)
+
+
+class MergeToListRequest(MergePreviewRequest):
+    list_id: int | None = None
+    new_list_title: str | None = Field(default=None, max_length=255)
+
+
+class MergeSubQuantity(BaseModel):
+    quantity: float | None = None
+    unit: str | None = None
+
+
+class MergePreviewItem(BaseModel):
+    name: str
+    aisle: str
+    lines: list[MergeSubQuantity] = Field(default_factory=list)
+    # Contributing recipe titles — shown as provenance in the preview only
+    # (not persisted on the saved list items).
+    recipes: list[str] = Field(default_factory=list)
+
+
+class MergePreviewSection(BaseModel):
+    aisle: str
+    items: list[MergePreviewItem] = Field(default_factory=list)
+
+
+class MergePreviewResponse(BaseModel):
+    sections: list[MergePreviewSection] = Field(default_factory=list)
+    item_count: int = 0
+
+
 # --- URL import ---
 
 class ImportUrlRequest(BaseModel):
