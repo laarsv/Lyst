@@ -129,9 +129,10 @@ def _parse_loose(piece: str) -> PicnicIngredient | None:
 
 
 def _clean_step(raw: str) -> str:
-    txt = re.sub(r"<[^>]+>", " ", raw)  # strip any stray HTML
+    txt = re.sub(r"<[^>]+>", " ", raw)  # strip any stray HTML (Picnic uses <strong>)
     txt = unescape(txt)
     txt = re.sub(r"[ \t]+", " ", txt)
+    txt = re.sub(r" +([,.;:!?])", r"\1", txt)  # tag-strip leaves "Salz ," → "Salz,"
     txt = re.sub(r"\n{3,}", "\n\n", txt)
     return txt.strip()
 
