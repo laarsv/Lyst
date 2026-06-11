@@ -2,6 +2,31 @@
 
 Alle nennenswerten Änderungen pro Release. Datumsangaben sind ISO 8601.
 
+## v1.6.0 — 2026-06-11
+
+Strukturierter JSON-Import ohne KI und Herkunfts-Transparenz für Rezepte.
+
+### Highlights
+
+- **Direktimport ohne KI** — neuer Endpoint `POST /recipes/bulk-import`
+  schreibt bereits strukturierte Rezepte (z. B. ein Excel-/JSON-Export)
+  direkt in die Datenbank, ohne Ollama. Body: `{ "recipes": [ … ] }` mit
+  je einem `RecipeCreate` (Titel, Portionen, Zutaten mit Menge/Einheit,
+  Schritte, Tags). Die ganze Liste wird vorab validiert — ist ein Eintrag
+  fehlerhaft, wird der **komplette** Batch mit Nennung des Index abgelehnt,
+  nichts wird halb importiert. Antwort: `{ imported, recipe_ids }`.
+- **Nährwerte im Hintergrund** — nach dem Import läuft die bestehende
+  Nährwert-Befüllung (USDA/OFF, ohne KI-Schätzung) als Background-Task pro
+  Rezept, ohne die Antwort zu blockieren.
+- **Herkunfts-Badges** — jedes Rezept zeigt jetzt eine kleine, gedämpfte
+  Markierung, woher es stammt: 📋 Direktimport (ohne KI), 🔀 KI-Variante,
+  🤖 KI-Import (aus URL/Datei/Text), ✏️ manuell erstellt. Die Logik liegt
+  als berechnetes Feld `origin` auf `RecipeOut`/`RecipeSummary`, das Frontend
+  rendert nur. Badges erscheinen auf den Übersichts-Karten und im Detail-Kopf.
+- **Herkunfts-Filter** — neue Pills auf der Rezepte-Übersicht: „Nur KI" /
+  „Nur Direktimport", um saubere strukturierte Rezepte von potenziell
+  KI-fehlerbehafteten zu trennen.
+
 ## v1.5.1 — 2026-05-21
 
 Folge-Release auf v1.5.0 mit zwei UX-Schritten: kompakte Nährwert-

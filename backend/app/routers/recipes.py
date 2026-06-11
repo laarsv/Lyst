@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +11,8 @@ from app.models.collaborator import CollaboratorPermission
 from app.models.recipe import RecipeBookShare
 from app.models.user import User
 from app.schemas.recipe import (
+    BulkImportRequest,
+    BulkImportResponse,
     CookLogOut,
     IngredientCreate,
     IngredientOut,
@@ -252,6 +254,68 @@ async def post_recipe(
         db, rec.id, "recipe.created", actor_id=user.id, client_id=client_id
     )
     return ok(_full(rec))
+
+
+# ---------- Bulk structured import (no AI) ----------
+
+async def _bulk_fill_nutrition(recipe_ids: list[int], owner_id: int) -> None:
+    """Background: run nutrition fill-all (USDA/OFF, no AI fallback) on each
+    freshly bulk-imported recipe. Own session — the request session is already
+    closed by the time this runs."""
+    from app.core.database import AsyncSessionLocal
+    from app.routers.recipes_nutrition import post_nutrition_fill_all
+    from app.schemas.recipe import NutritionFillAllRequest
+
+    async with AsyncSessionLocal() as session:
+        owner = await session.get(User, owner_id)
+        if owner is None:
+            return
+        for rid in recipe_ids:
+            try:
+                await post_nutrition_fill_all(
+                    recipe_id=rid,
+                    payload=NutritionFillAllRequest(mode="fill_empty", use_ai_fallback=False),
+                    user=owner,
+                    db=session,
+                    client_id=None,
+                )
+            except Exception:
+                logger.exception("Bulk nutrition fill failed for recipe %s", rid)
+
+
+@router.post("/bulk-import", status_code=status.HTTP_201_CREATED)
+async def post_bulk_import(
+    payload: BulkImportRequest,
+    background: BackgroundTasks,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
+):
+    """Write already-structured recipes straight to the DB — no Ollama. FastAPI
+    validates the whole list before this runs, so a malformed entry rejects the
+    batch (422 names the index) and nothing is imported. source="structured_import"
+    marks the provenance; nutrition fill runs afterward in the background."""
+    recipe_ids: list[int] = []
+    for rc in payload.recipes:
+        data = rc.model_dump()
+        ingredients = data.pop("ingredients", [])
+        steps = data.pop("steps", [])
+        rec = await create_recipe(
+            db,
+            user.id,
+            ingredients=ingredients,
+            steps=steps,
+            source="structured_import",
+            **data,
+        )
+        recipe_ids.append(rec.id)
+        await emit_recipe_event(
+            db, rec.id, "recipe.created", actor_id=user.id, client_id=client_id
+        )
+    background.add_task(_bulk_fill_nutrition, recipe_ids, user.id)
+    return ok(
+        BulkImportResponse(imported=len(recipe_ids), recipe_ids=recipe_ids).model_dump()
+    )
 
 
 @router.get("/{recipe_id}")

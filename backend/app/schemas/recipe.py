@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 from app.models.recipe import NutritionSource
 from app.schemas.share import ShareState
@@ -148,6 +148,37 @@ class RecipeCreate(RecipeBase):
     steps: list[StepCreate] = Field(default_factory=list)
 
 
+# --- Bulk structured import (no AI) ---
+
+class BulkImportRequest(BaseModel):
+    """POST /recipes/bulk-import — already-structured recipes written straight
+    to the DB (no Ollama). Reuses RecipeCreate per item; FastAPI validates the
+    whole list before the handler runs, so a malformed entry rejects the batch
+    (422 names the offending index) and nothing is imported."""
+    recipes: list[RecipeCreate] = Field(min_length=1, max_length=500)
+
+
+class BulkImportResponse(BaseModel):
+    imported: int
+    recipe_ids: list[int] = Field(default_factory=list)
+
+
+def recipe_origin(source: str | None, source_url: str | None) -> str:
+    """Provenance bucket driving the origin badge:
+      structured_import — POST /recipes/bulk-import (no AI)
+      ai_variant        — generated variant (source="ai_variant")
+      ai_import         — came through the AI import flow (has a source_url)
+      manual            — typed in by hand
+    """
+    if source == "structured_import":
+        return "structured_import"
+    if source == "ai_variant":
+        return "ai_variant"
+    if source_url:
+        return "ai_import"
+    return "manual"
+
+
 class RecipeUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
@@ -184,6 +215,11 @@ class RecipeSummary(RecipeBase):
     # Owner-side share summary. None on shared-with-me rows.
     share_state: ShareState | None = None
 
+    @computed_field
+    @property
+    def origin(self) -> str:
+        return recipe_origin(self.source, self.source_url)
+
 
 class RecipeOut(RecipeBase):
     """Detail view — with ingredients, steps, and per-serving nutrition totals."""
@@ -215,6 +251,11 @@ class RecipeOut(RecipeBase):
     # the viewer doesn't own (a recipient doesn't need to see how
     # many other people have access to the owner's recipe).
     share_state: ShareState | None = None
+
+    @computed_field
+    @property
+    def origin(self) -> str:
+        return recipe_origin(self.source, self.source_url)
 
 
 # --- Cook history (alembic 0028) ---
