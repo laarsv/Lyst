@@ -10,6 +10,7 @@ import type {
   CategorizationMode,
   Collaborator,
   CollaboratorPermission,
+  CookLog,
   CopyToListResponse,
   GenerateListResponse,
   ImportedRecipe,
@@ -471,11 +472,28 @@ export const RecipesApi = {
       image_url: string | null;
       source_url: string | null;
       tags: string[];
+      rating: number;
+      is_favorite: boolean;
     }>,
   ) => api.patch<{ data: Recipe }>(`/recipes/${id}`, payload).then(unwrap),
   remove: (id: number) => api.delete(`/recipes/${id}`),
   duplicate: (id: number, title?: string) =>
     api.post<{ data: Recipe }>(`/recipes/${id}/duplicate`, { title }).then(unwrap),
+
+  // ----- Cook history (alembic 0028) -----
+  /** Log a cook; optionally set rating/favorite in the same call (post-cook
+   *  sheet). Returns the refreshed recipe with bumped cooked_count etc. */
+  markCooked: (
+    id: number,
+    payload: {
+      notes?: string | null;
+      rating?: number | null;
+      is_favorite?: boolean | null;
+    } = {},
+  ) => api.post<{ data: Recipe }>(`/recipes/${id}/cook-log`, payload).then(unwrap),
+  /** Last ~10 cook entries + notes for the history panel. */
+  cookLog: (id: number) =>
+    api.get<{ data: CookLog[] }>(`/recipes/${id}/cook-log`).then(unwrap),
 
   // ----- AI assist (Features 1, 3) -----
   aiSuggestIngredients: (id: number, request: string) =>

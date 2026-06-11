@@ -402,6 +402,9 @@ export interface RecipeBase {
   image_url: string | null;
   source_url: string | null;
   tags: string[];
+  /** Owner-set polish (alembic 0028). 0 = noch nicht bewertet, 1–5 = stars. */
+  rating: number;
+  is_favorite: boolean;
 }
 
 export interface RecipeSummary extends RecipeBase {
@@ -410,6 +413,9 @@ export interface RecipeSummary extends RecipeBase {
   created_at: string;
   updated_at: string;
   ingredient_count: number;
+  /** Denormalised cook-history caches (alembic 0028) the overview sorts on. */
+  cooked_count: number;
+  last_cooked_at: string | null;
   /** null when the current user owns the recipe; "individual" or "book"
    *  when the recipe was shared via alembic 0012's internal-share rows. */
   share_source: 'individual' | 'book' | null;
@@ -424,6 +430,8 @@ export interface Recipe extends RecipeBase {
   owner_id: number;
   created_at: string;
   updated_at: string;
+  cooked_count: number;
+  last_cooked_at: string | null;
   ingredients: RecipeIngredient[];
   steps: RecipeStep[];
   /** Per-portion + total + coverage block. Replaces the old
@@ -441,6 +449,14 @@ export interface Recipe extends RecipeBase {
   share_permission: CollaboratorPermission | null;
   /** Owner-side share summary. Null on shared-with-me rows. */
   share_state: ShareState | null;
+}
+
+/** One cook-history entry (alembic 0028) — GET /recipes/{id}/cook-log. */
+export interface CookLog {
+  id: number;
+  recipe_id: number;
+  cooked_at: string;
+  notes: string | null;
 }
 
 // ---------- Plants (Pflanzen module, alembic 0023) ----------
