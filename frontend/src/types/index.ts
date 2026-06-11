@@ -671,6 +671,27 @@ export interface VariantOut {
   source: string | null;
 }
 
+// ---------- Picnic .eml import ----------
+
+export interface EmlImportResult {
+  status: 'created' | 'duplicate' | 'unrecognized' | 'error';
+  recipe_id: number | null;
+  title: string | null;
+  message: string;
+}
+
+export interface EmlBatchItem extends EmlImportResult {
+  filename: string | null;
+}
+
+export interface EmlBatchResponse {
+  results: EmlBatchItem[];
+  imported: number;
+  duplicates: number;
+  unrecognized: number;
+  errors: number;
+}
+
 export interface ImportedIngredient {
   name: string;
   quantity: number | null;

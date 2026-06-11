@@ -24,6 +24,7 @@ import { RecipesApi } from '@/api/endpoints';
 import { getApiError } from '@/api/client';
 import { invalidateOverview } from '@/hooks/useOverviewQuery';
 import { toast } from '@/components/Toast';
+import { useConfirm } from '@/components/Dialogs';
 import { File as FileIcon, FileJson, FileText, ImagePlus, Link2 } from 'lucide-react';
 
 interface Props {
@@ -45,7 +46,9 @@ export function ImportRecipeModal({ open, onClose }: Props) {
   const [mode, setMode] = useState<Mode>('url');
   const [url, setUrl] = useState('');
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
-  const [anyFile, setAnyFile] = useState<File | null>(null);
+  // Datei tab is multi-file: a single non-.eml goes through the AI import, any
+  // .eml files go through the no-AI Picnic import (batch).
+  const [anyFiles, setAnyFiles] = useState<File[]>([]);
   const [text, setText] = useState('');
   // No-AI JSON bulk import — parsed recipe array from the chosen .json file.
   const [jsonRecipes, setJsonRecipes] = useState<any[] | null>(null);
@@ -56,12 +59,13 @@ export function ImportRecipeModal({ open, onClose }: Props) {
   const photoInputRef = useRef<HTMLInputElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const nav = useNavigate();
+  const confirmDialog = useConfirm();
 
   useEffect(() => {
     if (!open) {
       setUrl('');
       setPhotoFiles([]);
-      setAnyFile(null);
+      setAnyFiles([]);
       setText('');
       setJsonRecipes(null);
       setError(null);
@@ -86,6 +90,51 @@ export function ImportRecipeModal({ open, onClose }: Props) {
   );
   const charsOver = Math.max(0, text.length - TEXT_MAX);
 
+  // Picnic .eml import (no AI). One file → navigate to the created recipe, or a
+  // "schon vorhanden" confirm on a duplicate. Several → a batch summary.
+  const submitEml = async (files: File[], force = false) => {
+    setError(null);
+    setLoading(true);
+    let r;
+    try {
+      r = await RecipesApi.importEmail(files, force);
+    } catch (e) {
+      setError(getApiError(e, 'Import fehlgeschlagen'));
+      setLoading(false);
+      return;
+    }
+    if (files.length > 1) {
+      setLoading(false);
+      invalidateOverview('recipes');
+      onClose();
+      toast.success(
+        `${r.imported} importiert · ${r.duplicates} Duplikat(e) übersprungen · ${
+          r.unrecognized + r.errors
+        } nicht erkannt`,
+      );
+      return;
+    }
+    const res = r.results[0];
+    if (res?.status === 'created' && res.recipe_id) {
+      setLoading(false);
+      invalidateOverview('recipes');
+      onClose();
+      toast.success(`„${res.title}" importiert`);
+      nav(`/recipes/${res.recipe_id}`);
+    } else if (res?.status === 'duplicate') {
+      setLoading(false);
+      const yes = await confirmDialog({
+        title: `„${res.title}" ist schon in deinen Rezepten.`,
+        message: 'Trotzdem importieren?',
+        confirmLabel: 'Trotzdem importieren',
+      });
+      if (yes) await submitEml(files, true);
+    } else {
+      setLoading(false);
+      setError(`${res?.message ?? 'Nicht erkannt.'} Tipp: Versuch den Text-Tab.`);
+    }
+  };
+
   const trySubmit = async () => {
     setError(null);
     if (mode === 'json') {
@@ -109,16 +158,42 @@ export function ImportRecipeModal({ open, onClose }: Props) {
       }
       return;
     }
+    if (mode === 'file') {
+      if (anyFiles.length === 0) {
+        setError('Bitte eine Datei auswählen');
+        return;
+      }
+      const isEml = (f: File) =>
+        f.name.toLowerCase().endsWith('.eml') || f.type === 'message/rfc822';
+      const eml = anyFiles.filter(isEml);
+      const other = anyFiles.filter((f) => !isEml(f));
+      if (eml.length > 0) {
+        await submitEml(eml);
+        return;
+      }
+      if (other.length > 1) {
+        setError('Mehrere Dateien gleichzeitig werden nur für .eml unterstützt.');
+        return;
+      }
+      // Single non-.eml → existing AI import (HTML / PDF / image).
+      setLoading(true);
+      try {
+        const data = await RecipesApi.importFromFile(other[0]);
+        onClose();
+        nav('/recipes/new', { state: { prefill: data } });
+      } catch (e) {
+        setError(getApiError(e, 'Import fehlgeschlagen'));
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
     if (mode === 'url' && !url.trim()) {
       setError('Bitte eine URL eingeben');
       return;
     }
     if (mode === 'photo' && photoFiles.length === 0) {
       setError('Bitte mindestens ein Bild auswählen');
-      return;
-    }
-    if (mode === 'file' && !anyFile) {
-      setError('Bitte eine Datei auswählen');
       return;
     }
     if (mode === 'text' && !text.trim()) {
@@ -136,9 +211,7 @@ export function ImportRecipeModal({ open, onClose }: Props) {
               photoFiles.length === 1
               ? await RecipesApi.importFromPhoto(photoFiles[0])
               : await RecipesApi.importFromPhotos(photoFiles)
-            : mode === 'file'
-              ? await RecipesApi.importFromFile(anyFile!)
-              : await RecipesApi.importFromText(text.trim().slice(0, TEXT_MAX));
+            : await RecipesApi.importFromText(text.trim().slice(0, TEXT_MAX));
       onClose();
       nav('/recipes/new', { state: { prefill: data } });
     } catch (e) {
@@ -274,8 +347,8 @@ export function ImportRecipeModal({ open, onClose }: Props) {
 
           {mode === 'file' && (
             <DropZone
-              file={anyFile}
-              onFile={setAnyFile}
+              files={anyFiles}
+              onFiles={setAnyFiles}
               disabled={loading}
               inputRef={fileInputRef}
             />
@@ -358,7 +431,7 @@ export function ImportRecipeModal({ open, onClose }: Props) {
                 loading ||
                 (mode === 'url' && !url.trim()) ||
                 (mode === 'photo' && photoFiles.length === 0) ||
-                (mode === 'file' && !anyFile) ||
+                (mode === 'file' && anyFiles.length === 0) ||
                 (mode === 'text' && !text.trim()) ||
                 (mode === 'json' && (!jsonRecipes || jsonRecipes.length === 0))
               }
@@ -377,16 +450,16 @@ export function ImportRecipeModal({ open, onClose }: Props) {
 // ---------------------------------------------------------------------------
 
 const FILE_ACCEPT =
-  'image/jpeg,image/png,image/webp,text/html,application/pdf,.html,.htm,.pdf,.jpg,.jpeg,.png,.webp';
+  'image/jpeg,image/png,image/webp,text/html,application/pdf,message/rfc822,.html,.htm,.pdf,.jpg,.jpeg,.png,.webp,.eml';
 
 function DropZone({
-  file,
-  onFile,
+  files,
+  onFiles,
   disabled,
   inputRef,
 }: {
-  file: File | null;
-  onFile: (f: File | null) => void;
+  files: File[];
+  onFiles: (f: File[]) => void;
   disabled: boolean;
   inputRef: React.RefObject<HTMLInputElement>;
 }) {
@@ -394,7 +467,9 @@ function DropZone({
   return (
     <>
       <p className="text-sm text-muted">
-        Ziehe eine Datei hier rein oder klicke, um auszuwählen.
+        Ziehe Dateien hier rein oder klicke, um auszuwählen. Eine Datei (HTML /
+        PDF / Bild) wird per KI ausgelesen; <span className="font-medium">.eml</span>
+        {' '}von Picnic werden direkt (ohne KI) importiert — auch mehrere auf einmal.
       </p>
       <label
         className={`block border-2 border-dashed rounded-ctl p-6 text-center cursor-pointer transition ${
@@ -411,31 +486,36 @@ function DropZone({
           e.preventDefault();
           setDragOver(false);
           if (disabled) return;
-          const f = e.dataTransfer.files?.[0];
-          if (f) onFile(f);
+          const dropped = Array.from(e.dataTransfer.files ?? []);
+          if (dropped.length) onFiles(dropped);
         }}
       >
         <input
           ref={inputRef}
           type="file"
           accept={FILE_ACCEPT}
+          multiple
           className="hidden"
-          onChange={(e) => onFile(e.target.files?.[0] ?? null)}
+          onChange={(e) => onFiles(Array.from(e.target.files ?? []))}
           disabled={disabled}
         />
         <FileIcon size={20} className="mx-auto text-muted mb-1.5" />
-        {file ? (
-          <div className="text-sm text-ink">
-            <div className="font-medium truncate">{file.name}</div>
-            <div className="text-xs text-muted mt-0.5">
-              {(file.size / 1024 / 1024).toFixed(2)} MB
-            </div>
-          </div>
+        {files.length > 0 ? (
+          <ul className="text-sm text-ink space-y-0.5">
+            {files.map((f, i) => (
+              <li key={`${f.name}-${i}`} className="flex items-center justify-between gap-2">
+                <span className="truncate">{f.name}</span>
+                <span className="shrink-0 text-xs text-muted tabular-nums">
+                  {(f.size / 1024 / 1024).toFixed(2)} MB
+                </span>
+              </li>
+            ))}
+          </ul>
         ) : (
           <>
             <div className="text-sm text-ink">Datei auswählen</div>
             <div className="text-xs text-muted mt-1">
-              HTML, PDF, JPG, PNG, WebP – max 10 MB
+              HTML, PDF, EML, JPG, PNG, WebP – max 10 MB
             </div>
           </>
         )}

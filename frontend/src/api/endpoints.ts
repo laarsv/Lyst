@@ -12,6 +12,7 @@ import type {
   CollaboratorPermission,
   CookLog,
   CopyToListResponse,
+  EmlBatchResponse,
   MergePreviewResponse,
   GenerateListResponse,
   ImportedRecipe,
@@ -696,6 +697,17 @@ export const RecipesApi = {
     fd.append('file', file);
     return api
       .post<{ data: ImportedRecipe }>('/recipes/import', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      .then(unwrap);
+  },
+  /** No-AI Picnic .eml import — one or more files, optional force (skip dedup). */
+  importEmail: (files: File[], force = false) => {
+    const fd = new FormData();
+    files.forEach((f) => fd.append('files', f));
+    fd.append('force', String(force));
+    return api
+      .post<{ data: EmlBatchResponse }>('/recipes/import-email', fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
       .then(unwrap);
