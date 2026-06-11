@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.data.aisle_map import AISLE_ORDER, aisle_for
 from app.data.ingredient_translations import normalize
-from app.models.list import List as ListModel, ListType
+from app.models.list import CategorizationMode, List as ListModel, ListType
 from app.models.list_item import ListItem
 from app.models.recipe import Recipe
 
@@ -66,7 +66,9 @@ def _unit_key(unit: str | None) -> str:
 
 # Plural folding for the GROUPING key — `normalize()` keeps plurals ("zwiebeln"),
 # so without this "Zwiebeln" and "Zwiebel" would land in separate groups.
-_PLURAL_ENDINGS = ("nen", "en", "er", "n", "e", "s")
+# NB: no "nen" — it over-strips "-ne" nouns ("Bananen" -> "bana") so they'd no
+# longer match their singular ("Banane" -> "banan"); "en" folds both to "banan".
+_PLURAL_ENDINGS = ("en", "er", "n", "e", "s")
 
 
 def _singular(word: str) -> str:
@@ -87,6 +89,9 @@ def _merge_key(name: str) -> str:
     return " ".join(tokens)
 
 
+# Mirror of recipe_service._scale_quantity — kept local (not imported) so this
+# service doesn't pull recipe_service's config/qrcode dependency chain for a
+# trivial helper. Keep the rounding rule in sync if it ever changes there.
 def _scale(qty: float | None, factor: float) -> float | None:
     if qty is None:
         return None
@@ -171,6 +176,9 @@ async def merge_to_list(
             type=ListType.SHOPPING,
             icon="🛒",
             color="#10b981",
+            # MANUAL (not OFF) so the existing grouped view renders the aisle
+            # sections from persisted state — no item-content sniffing needed.
+            categorization_mode=CategorizationMode.MANUAL,
         )
         db.add(target)
         await db.flush()

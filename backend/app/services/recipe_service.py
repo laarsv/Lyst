@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.data.aisle_map import aisle_for
-from app.models.list import List as ListModel, ListType
+from app.models.list import CategorizationMode, List as ListModel, ListType
 from app.models.list_item import ListItem
 from app.models.recipe import NutritionSource, Recipe, RecipeCookLog, RecipeIngredient, RecipeStep
 
@@ -346,6 +346,9 @@ async def copy_to_list(
             type=ListType.SHOPPING,
             icon="🛒",
             color="#10b981",
+            # MANUAL so the aisle-tagged items render in sections (grouped view)
+            # straight away, driven by persisted state.
+            categorization_mode=CategorizationMode.MANUAL,
         )
         db.add(target)
         await db.flush()

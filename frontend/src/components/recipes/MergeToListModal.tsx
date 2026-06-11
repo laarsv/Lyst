@@ -76,6 +76,15 @@ export function MergeToListModal({ open, onClose }: Props) {
       return next;
     });
 
+  // Functional delta so rapid +/- clicks don't read a stale render-closure count.
+  const bump = (id: number, delta: number) =>
+    setSel((cur) => {
+      if (!cur.has(id)) return cur;
+      const next = new Map(cur);
+      next.set(id, Math.min(999, Math.max(1, (cur.get(id) ?? 2) + delta)));
+      return next;
+    });
+
   const payload = () =>
     Array.from(sel.entries()).map(([recipe_id, servings]) => ({ recipe_id, servings }));
 
@@ -156,7 +165,7 @@ export function MergeToListModal({ open, onClose }: Props) {
                       <span className="text-xs text-muted">Portionen</span>
                       <button
                         type="button"
-                        onClick={() => setServings(r.id, (sel.get(r.id) ?? 2) - 1)}
+                        onClick={() => bump(r.id, -1)}
                         className="size-7 rounded-lg border border-line hover:bg-page"
                       >
                         −
@@ -171,7 +180,7 @@ export function MergeToListModal({ open, onClose }: Props) {
                       />
                       <button
                         type="button"
-                        onClick={() => setServings(r.id, (sel.get(r.id) ?? 2) + 1)}
+                        onClick={() => bump(r.id, 1)}
                         className="size-7 rounded-lg border border-line hover:bg-page"
                       >
                         +

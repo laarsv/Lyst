@@ -565,11 +565,14 @@ async def post_variant(
     recipe id; the frontend navigates there for review."""
     rec = await recipe_with_any_access(db, recipe_id, user.id)
 
-    wish = (
-        "Erstelle eine Variante, die "
-        + " und ".join(_VARIANT_LABELS[t] for t in payload.targets)
-        + " ist."
-    )
+    if payload.targets:
+        wish = (
+            "Erstelle eine Variante, die "
+            + " und ".join(_VARIANT_LABELS[t] for t in payload.targets)
+            + " ist."
+        )
+    else:
+        wish = "Erstelle eine angepasste Variante dieses Rezepts."
     if payload.adjustment and payload.adjustment.strip():
         wish += f" Zusätzlich: {payload.adjustment.strip()}"
 
@@ -602,12 +605,13 @@ async def post_variant(
     if not validated.ingredients or not validated.steps:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=_VARIANT_BAD)
 
-    tag_suffix = ", ".join(_VARIANT_TAGS[t] for t in payload.targets)
+    target_tags = [_VARIANT_TAGS[t] for t in payload.targets]
+    tag_suffix = ", ".join(target_tags) or "Variante"
     title = f"{rec.title} ({tag_suffix})"[:255]
     merged_tags = list(dict.fromkeys([
         *(rec.tags or []),
         *(validated.tags or []),
-        *[_VARIANT_TAGS[t] for t in payload.targets],
+        *(target_tags or ["variante"]),
     ]))
     ingredients = [
         {"name": i.name, "quantity": i.quantity, "unit": i.unit} for i in validated.ingredients

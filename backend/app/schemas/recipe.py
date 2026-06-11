@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.recipe import NutritionSource
 from app.schemas.share import ShareState
@@ -410,8 +410,16 @@ VariantTarget = Literal["vegan", "glutenfrei", "laktosefrei", "nussfrei", "light
 
 
 class VariantRequest(BaseModel):
-    targets: list[VariantTarget] = Field(min_length=1, max_length=6)
+    targets: list[VariantTarget] = Field(default_factory=list, max_length=6)
     adjustment: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def _need_target_or_adjustment(self):
+        # The free-text "Sonst noch was?" alone is a valid request, but an
+        # entirely empty one isn't.
+        if not self.targets and not (self.adjustment and self.adjustment.strip()):
+            raise ValueError("Mindestens ein Ziel oder eine Beschreibung angeben")
+        return self
 
 
 class VariantOut(BaseModel):
