@@ -163,6 +163,27 @@ class BulkImportResponse(BaseModel):
     recipe_ids: list[int] = Field(default_factory=list)
 
 
+# --- Picnic .eml import (frontend batch + n8n single) ---
+
+class EmlImportResult(BaseModel):
+    status: str  # "created" | "duplicate" | "unrecognized" | "error"
+    recipe_id: int | None = None
+    title: str | None = None
+    message: str = ""
+
+
+class EmlBatchItem(EmlImportResult):
+    filename: str | None = None
+
+
+class EmlBatchResponse(BaseModel):
+    results: list[EmlBatchItem] = Field(default_factory=list)
+    imported: int = 0
+    duplicates: int = 0
+    unrecognized: int = 0
+    errors: int = 0
+
+
 def recipe_origin(source: str | None, source_url: str | None) -> str:
     """Provenance bucket driving the origin badge:
       structured_import — POST /recipes/bulk-import (no AI)

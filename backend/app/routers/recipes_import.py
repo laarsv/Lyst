@@ -11,10 +11,14 @@ None of these touch an existing recipe (the parsed result is returned
 to the client, which then POSTs to /recipes to create), so there's no
 permission gate here — only `require_user`.
 """
+import logging
+
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     File,
+    Form,
     HTTPException,
     Request,
     UploadFile,
@@ -26,7 +30,7 @@ from app.core.database import get_db
 from app.core.dependencies import require_user
 from app.core.responses import ok
 from app.models.user import User
-from app.schemas.recipe import ImportUrlRequest
+from app.schemas.recipe import EmlBatchItem, EmlBatchResponse, ImportUrlRequest
 from app.services.import_service import (
     RecipeImportError,
     import_recipe_from_html_bytes,
@@ -36,8 +40,11 @@ from app.services.import_service import (
     import_recipe_from_text,
     import_recipe_from_url,
 )
+from app.services.picnic_import_service import import_one_eml
 
 router = APIRouter(prefix="/recipes", tags=["recipes"])
+
+logger = logging.getLogger(__name__)
 
 
 # ---------- Import from URL via Ollama ----------
@@ -250,3 +257,71 @@ async def post_import(
     except RecipeImportError as e:
         raise HTTPException(status_code=e.status, detail=e.message)
     return ok(result.model_dump(mode="json"))
+
+
+# ---------- Picnic recipe .eml import (no AI, creates recipes directly) ----------
+
+@router.post("/import-email")
+async def post_import_email(
+    background: BackgroundTasks,
+    files: list[UploadFile] = File(...),
+    force: bool = Form(False),
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload one or more Picnic recipe .eml files. Each is parsed (no Ollama),
+    deduped (image hash → title), and created with source="structured_import";
+    the hero image is downloaded + stored locally. Returns a per-file batch
+    summary. `force` skips the duplicate check ("trotzdem importieren")."""
+    results: list[EmlBatchItem] = []
+    created_ids: list[int] = []
+    counts = {"created": 0, "duplicate": 0, "unrecognized": 0, "error": 0}
+    for f in files:
+        data = await f.read()
+        if not data:
+            results.append(EmlBatchItem(filename=f.filename, status="error", message="Leere Datei"))
+            counts["error"] += 1
+            continue
+        if len(data) > _IMPORT_MAX_BYTES:
+            results.append(
+                EmlBatchItem(filename=f.filename, status="error", message="Datei zu groß (max 10 MB)")
+            )
+            counts["error"] += 1
+            continue
+        try:
+            outcome = await import_one_eml(db, owner_id=user.id, raw=data, force=force)
+        except Exception:
+            logger.exception("Picnic .eml import failed for %s", f.filename)
+            results.append(
+                EmlBatchItem(filename=f.filename, status="error", message="Import fehlgeschlagen")
+            )
+            counts["error"] += 1
+            continue
+        results.append(
+            EmlBatchItem(
+                filename=f.filename,
+                status=outcome.status,
+                recipe_id=outcome.recipe_id,
+                title=outcome.title,
+                message=outcome.message,
+            )
+        )
+        counts[outcome.status] = counts.get(outcome.status, 0) + 1
+        if outcome.status == "created" and outcome.recipe_id:
+            created_ids.append(outcome.recipe_id)
+
+    if created_ids:
+        # Same background nutrition fill as the bulk import.
+        from app.routers.recipes import _bulk_fill_nutrition
+
+        background.add_task(_bulk_fill_nutrition, created_ids, user.id)
+
+    return ok(
+        EmlBatchResponse(
+            results=results,
+            imported=counts["created"],
+            duplicates=counts["duplicate"],
+            unrecognized=counts["unrecognized"],
+            errors=counts["error"],
+        ).model_dump()
+    )

@@ -71,6 +71,11 @@ class Recipe(Base, TimestampMixin):
         ForeignKey("recipes.id", ondelete="SET NULL"), nullable=True, index=True
     )
     source: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Stable per-recipe hash from a Picnic image URL (alembic 0030) — primary
+    # dedup key for the Picnic .eml import; NULL for everything else.
+    picnic_image_hash: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, index=True
+    )
 
     owner: Mapped["User"] = relationship()
     ingredients: Mapped[list["RecipeIngredient"]] = relationship(
