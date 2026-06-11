@@ -4,10 +4,14 @@ All endpoints mount under /recipes so URLs stay unchanged:
 
   POST /recipes/suggest                          — "Was kann ich kochen?"
   POST /recipes/{id}/copy-to-list                — copy ingredients to a list
-  POST /recipes/{id}/ai/suggest-ingredients      — Feature 1: extend ingredients
-  POST /recipes/{id}/ai/suggest-steps            — Feature 1: extend steps
-  POST /recipes/{id}/ai/variation                — Feature 3: alternate recipe
-  POST /recipes/{id}/ai/tags                     — Feature 8: auto-tag
+  POST /recipes/merge-preview                    — consolidate recipes (no save)
+  POST /recipes/merge-to-list                    — merge recipes → shopping list
+  POST /recipes/{id}/ai/suggest-ingredients      — extend ingredients
+  POST /recipes/{id}/ai/suggest-steps            — extend steps
+  POST /recipes/{id}/ai/tags                     — auto-tag
+  POST /recipes/{id}/ingredients/{iid}/substitutions — ingredient alternatives
+  POST /recipes/{id}/variants                    — generate + save linked variant
+  GET  /recipes/{id}/variants                    — list child variants
 
 All Ollama calls go through `app.services.ollama` so model/keep_alive/
 timeouts stay consistent. Permission gates (require_recipe_edit /
@@ -36,7 +40,6 @@ from app.schemas.recipe import (
     AiAssistRequest,
     AiSuggestedIngredient,
     AiSuggestedStep,
-    AiVariationRequest,
     CopyToListRequest,
     CopyToListResponse,
     MergePreviewItem,
@@ -340,56 +343,6 @@ _AI_VARIATION_SYSTEM = (
     '  "steps": [{"description": "...", "position": 1-basierte Zahl}]\n'
     "}"
 )
-
-
-@router.post("/{recipe_id}/ai/variation")
-async def post_ai_variation(
-    recipe_id: int,
-    payload: AiVariationRequest,
-    user: User = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
-):
-    # Variation generates a new payload but is essentially read+inference;
-    # the caller decides whether to persist it as a duplicate.
-    rec = await recipe_with_any_access(db, recipe_id, user.id)
-
-    user_prompt = (
-        f"Original-Rezept:\n"
-        f"Titel: {rec.title}\n"
-        f"Portionen: {rec.servings}\n"
-        f"Beschreibung: {rec.description or '(keine)'}\n"
-        f"Zutaten:\n{_ingredient_lines(rec)}\n"
-        f"Schritte:\n{_step_lines(rec)}\n\n"
-        f"Wunsch: {payload.variation}\n\n"
-        f"Erstelle ein angepasstes Rezept."
-    )
-    try:
-        parsed = await call_text_json(
-            user_prompt, system=_AI_VARIATION_SYSTEM, temperature=0.4,
-        )
-    except OllamaError as e:
-        raise HTTPException(status_code=e.status, detail=e.message)
-    if not isinstance(parsed, dict):
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="KI-Antwort hat unerwartetes Format",
-        )
-
-    # Renumber steps so client doesn't have to.
-    if isinstance(parsed.get("steps"), list):
-        for i, st in enumerate(parsed["steps"], start=1):
-            if isinstance(st, dict):
-                st["position"] = i
-
-    # Reuse the URL-importer's Pydantic validator — same JSON contract.
-    try:
-        validated = ImportedRecipe.model_validate(parsed)
-    except ValidationError:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Variante hat unerwartetes Format",
-        )
-    return ok(validated.model_dump(mode="json"))
 
 
 # ---------- Feature 8: Auto-tag (recipes) ----------

@@ -378,11 +378,6 @@ class AiSuggestedStep(BaseModel):
 
 # ---------- AI variation (Feature 3) ----------
 
-class AiVariationRequest(BaseModel):
-    """The user's desired variation — preset string or free-form."""
-    variation: str = Field(min_length=1, max_length=500)
-
-
 # ---------- AI ingredient substitutions ----------
 
 SubstitutionContext = Literal[

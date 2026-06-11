@@ -512,10 +512,6 @@ export const RecipesApi = {
     api
       .post<{ data: AiSuggestedStep[] }>(`/recipes/${id}/ai/suggest-steps`, { request })
       .then(unwrap),
-  aiVariation: (id: number, variation: string) =>
-    api
-      .post<{ data: ImportedRecipe }>(`/recipes/${id}/ai/variation`, { variation })
-      .then(unwrap),
   /** Generate + save an AI variant linked to the original; returns its id. */
   createVariant: (id: number, payload: { targets: VariantTarget[]; adjustment?: string | null }) =>
     api
