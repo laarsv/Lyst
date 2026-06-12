@@ -389,7 +389,7 @@ export function CookMode({ recipe, servings, onClose, onCooked }: Props) {
         onTouchEnd={onTouchEnd}
       >
         <div className="max-w-2xl w-full text-center">
-          <div className="text-sm text-muted mb-3 tabular-nums">
+          <div className="text-sm text-muted mb-3 tabular-nums font-cookmono">
             Schritt {safeStep + 1} von {steps.length}
           </div>
 
@@ -403,7 +403,7 @@ export function CookMode({ recipe, servings, onClose, onCooked }: Props) {
             </button>
           )}
 
-          <p className="text-2xl sm:text-3xl leading-relaxed">
+          <p className="text-2xl sm:text-3xl leading-relaxed font-display">
             {segments.map((seg, i) =>
               seg.kind === 'text' ? (
                 <span key={i} className="whitespace-pre-wrap">{seg.text}</span>
@@ -580,7 +580,7 @@ function TimerChip({
         <span className="font-medium">Fertig · {timer.label}</span>
       ) : (
         <>
-          <span className="tabular-nums font-semibold">{formatClock(remaining)}</span>
+          <span className="tabular-nums font-semibold font-cookmono">{formatClock(remaining)}</span>
           <span className="text-xs opacity-70">{timer.label}</span>
           {timer.maxSeconds && (
             <span className="text-xs opacity-70">· bis {formatDuration(timer.maxSeconds)}</span>
@@ -616,7 +616,12 @@ function FullscreenShell({
   banner?: string | null;
 }) {
   return (
-    <div className="fixed inset-0 z-50 bg-page text-ink flex flex-col" role="dialog" aria-modal="true">
+    <div
+      className="fixed inset-0 z-50 bg-page text-ink flex flex-col cookbook cookbook-cook"
+      data-theme="dark"
+      role="dialog"
+      aria-modal="true"
+    >
       <header className="px-4 sm:px-6 py-3 border-b border-line flex items-center gap-3">
         <div className="flex-1 min-w-0">
           <div className="text-xs text-muted">Kochansicht</div>

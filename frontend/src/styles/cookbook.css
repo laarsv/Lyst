@@ -44,3 +44,16 @@
   opacity: 0.85;
   margin: 0.25rem 4px;
 }
+
+/* ============================================================
+   Cook mode — always-dark, full-bleed (data-theme="dark")
+   ============================================================ */
+.cookbook-cook {
+  color-scheme: dark;
+  /* The data-theme="dark" wrapper already flips the tokens (bg-page → #141414,
+     text-ink → light); add a faint mint glow + grain for the cookbook mood.
+     bg-page supplies the base color; we only layer a background-image. */
+  background-image:
+    radial-gradient(130% 90% at 50% -10%, rgba(0, 200, 150, 0.07), transparent 60%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.05'/%3E%3C/svg%3E");
+}
