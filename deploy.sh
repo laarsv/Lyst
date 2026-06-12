@@ -11,6 +11,9 @@
 #    ./deploy.sh --prune        # also docker image prune at the end
 #    ./deploy.sh --yes          # don't ask for confirmation before recreating
 #
+#  The confirmation prompt is interactive-only: runs without a TTY (n8n / cron /
+#  piped) proceed automatically and never block.
+#
 #  Designed for a Mini-PC / NAS where Lyst lives in this directory and is
 #  invoked manually over SSH (or via cron / systemd-timer for auto-updates).
 #  Bails early if the working tree is dirty so a local edit is never silently
@@ -89,7 +92,10 @@ else
 fi
 
 # --- confirmation gate -------------------------------------------------------
-if [[ "$ASSUME_YES" -eq 0 ]]; then
+# Only prompt on an interactive terminal. Non-interactive runs (n8n / cron /
+# piped) and --yes proceed automatically so an automated deploy never blocks
+# waiting on a y/N that nobody can answer.
+if [[ "$ASSUME_YES" -eq 0 && -t 0 ]]; then
     echo
     read -r -p "Rebuild + recreate containers now? [y/N] " reply
     [[ "$reply" =~ ^[Yy]$ ]] || { echo "Aborted."; exit 0; }
