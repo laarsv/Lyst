@@ -3,8 +3,12 @@
 @tailwind utilities;
 
 /* Theme tokens — used by the Tailwind palette via rgb(var(--…) / <alpha>).
-   Switching the theme just flips these custom properties. */
-:root {
+   Switching the theme just flips these custom properties. The
+   `[data-theme="light"]` alias lets a nested wrapper (the cookbook recipe
+   detail) re-assert the light tokens in its subtree even when the app is on
+   dark — see src/styles/cookbook.css. */
+:root,
+[data-theme="light"] {
   --color-page:    245 245 240;  /* #f5f5f0 */
   --color-surface: 255 255 255;
   --color-line:    229 229 227;  /* #e5e5e3 */

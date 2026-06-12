@@ -1,0 +1,46 @@
+/* MorphCook cookbook look — STRICTLY scoped under .cookbook* wrappers.
+
+   No global selectors here: no body / h1 / h2 / * / .card. Every rule is
+   prefixed with .cookbook-detail or .cookbook-cook, and those wrapper classes
+   live ONLY on the RecipeDetail page root and the CookMode FullscreenShell
+   root — so nothing can leak into the rest of Lyst (lists, notes, tasks,
+   fitness, the recipe LIST / RecipeCard, AppShell, nav).
+
+   Fonts are applied via the font-display / font-hand / font-cookmono Tailwind
+   utility classes in those two views — not here. (cookmono, not the built-in
+   mono, so existing font-mono usages elsewhere stay the default stack.) */
+
+/* ============================================================
+   Recipe detail — always-light warm paper (data-theme="light")
+   ============================================================ */
+.cookbook-detail {
+  color-scheme: light;
+  background-color: rgb(var(--color-page));
+  /* very subtle paper grain (inline SVG noise, ~4% opacity) */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.04'/%3E%3C/svg%3E");
+  border-radius: 16px;
+  padding: clamp(10px, 2vw, 20px);
+}
+
+/* Slightly tilted "Polaroid" sections sitting on the paper. The two-class
+   selector outranks .card, so it overrides the flat card shadow/border. */
+.cookbook-detail .polaroid {
+  background: rgb(var(--color-surface));
+  border: 1px solid rgb(var(--color-line));
+  box-shadow:
+    0 8px 22px -8px rgba(40, 30, 20, 0.18),
+    0 1px 2px rgba(0, 0, 0, 0.05);
+  transition: transform 0.18s ease;
+}
+.cookbook-detail .polaroid.tilt-l { transform: rotate(-0.8deg); }
+.cookbook-detail .polaroid.tilt-r { transform: rotate(0.8deg); }
+.cookbook-detail .polaroid:hover { transform: rotate(0deg); }
+
+/* Hand-drawn dashed section divider. */
+.cookbook-detail .cookbook-divider {
+  height: 0;
+  border: none;
+  border-top: 2px dashed rgb(var(--color-line));
+  opacity: 0.85;
+  margin: 0.25rem 4px;
+}

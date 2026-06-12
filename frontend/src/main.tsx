@@ -13,6 +13,7 @@ import '@fontsource-variable/caveat';
 import '@fontsource-variable/jetbrains-mono';
 import App from './App';
 import './index.css';
+import './styles/cookbook.css';
 import { setupAutoFlush, setToaster } from './offline/syncQueue';
 import { toast } from './components/Toast';
 

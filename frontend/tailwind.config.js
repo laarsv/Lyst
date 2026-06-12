@@ -29,10 +29,13 @@ export default {
       fontFamily: {
         sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
         // Cookbook-only families (self-hosted @fontsource), used solely in the
-        // RecipeDetail + CookMode views. Default `sans` (Inter) is unchanged.
+        // RecipeDetail + CookMode views via font-display / font-hand /
+        // font-cookmono. NB: the mono family is `cookmono`, NOT `mono` — Tailwind's
+        // built-in `font-mono` is used elsewhere (timers, textareas, code) and
+        // must stay the default stack, so we don't override `mono`.
         display: ['"Playfair Display Variable"', 'Georgia', 'serif'],
         hand: ['"Caveat Variable"', 'cursive'],
-        mono: ['"JetBrains Mono Variable"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+        cookmono: ['"JetBrains Mono Variable"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
       },
       letterSpacing: {
         tight: '-0.01em',

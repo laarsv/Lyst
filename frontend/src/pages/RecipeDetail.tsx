@@ -177,7 +177,7 @@ export function RecipeDetailPage() {
   const totalTime = (recipe.prep_time_minutes ?? 0) + (recipe.cook_time_minutes ?? 0);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 cookbook cookbook-detail" data-theme="light">
       <div className="flex items-center gap-4 flex-wrap">
         <BackLink to="/recipes" label="zu Rezepten" />
         {recipe.parent_recipe_id && (
@@ -189,7 +189,7 @@ export function RecipeDetailPage() {
           </Link>
         )}
       </div>
-      <div className="card overflow-hidden">
+      <div className="card overflow-hidden polaroid">
         {recipe.image_url && (
           <div className="h-48 sm:h-64 bg-cover bg-center" style={{ backgroundImage: `url(${recipe.image_url})` }} />
         )}
@@ -197,7 +197,7 @@ export function RecipeDetailPage() {
           <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-2xl font-semibold">{recipe.title}</h1>
+                <h1 className="text-3xl font-display italic font-medium tracking-tight">{recipe.title}</h1>
                 <RecipeOriginBadge origin={recipe.origin} className="text-sm" />
                 {/* Owner-side share badge — same icon/tooltip the
                     overview card uses, surfaced again on the detail
@@ -243,7 +243,9 @@ export function RecipeDetailPage() {
                   </span>
                 </div>
               )}
-              {recipe.description && <p className="text-muted mt-2">{recipe.description}</p>}
+              {recipe.description && (
+                <p className="font-hand text-xl text-muted mt-2 leading-snug">{recipe.description}</p>
+              )}
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted mt-3">
                 <span>🍴 {recipe.servings} Pers.</span>
                 {recipe.prep_time_minutes !== null && <span>Vorbereitung: {recipe.prep_time_minutes} Min</span>}
@@ -387,8 +389,9 @@ export function RecipeDetailPage() {
         </div>
       </div>
 
+      <hr className="cookbook-divider" />
       <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4">
-        <section className="card p-5">
+        <section className="card p-5 polaroid tilt-l">
           <h2 className="font-semibold mb-3">Zutaten</h2>
           {recipe.ingredients.length === 0 ? (
             <div className="text-sm text-muted/70">Keine Zutaten erfasst.</div>
@@ -396,7 +399,7 @@ export function RecipeDetailPage() {
             <ul className="divide-y divide-line">
               {recipe.ingredients.map((ing) => (
                 <li key={ing.id} className="py-2 flex items-baseline gap-2">
-                  <span className="text-sm text-muted tabular-nums w-20 shrink-0">
+                  <span className="text-sm text-muted tabular-nums w-20 shrink-0 font-cookmono">
                     {fmtQty(ing.quantity)} {ing.unit ?? ''}
                   </span>
                   <span className="text-sm flex-1">{ing.name}</span>
@@ -416,7 +419,7 @@ export function RecipeDetailPage() {
           )}
         </section>
 
-        <section className="card p-5">
+        <section className="card p-5 polaroid tilt-r">
           <h2 className="font-semibold mb-3">Zubereitung</h2>
           {recipe.steps.length === 0 ? (
             <div className="text-sm text-muted/70">Keine Schritte erfasst.</div>
@@ -436,7 +439,7 @@ export function RecipeDetailPage() {
       </div>
 
       {variants.length > 0 && (
-        <section className="card p-5">
+        <section className="card p-5 polaroid tilt-l">
           <h2 className="font-semibold mb-3">Varianten</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
             {variants.map((v) => (
