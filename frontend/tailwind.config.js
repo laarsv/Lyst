@@ -28,6 +28,11 @@ export default {
       },
       fontFamily: {
         sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        // Cookbook-only families (self-hosted @fontsource), used solely in the
+        // RecipeDetail + CookMode views. Default `sans` (Inter) is unchanged.
+        display: ['"Playfair Display Variable"', 'Georgia', 'serif'],
+        hand: ['"Caveat Variable"', 'cursive'],
+        mono: ['"JetBrains Mono Variable"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
       },
       letterSpacing: {
         tight: '-0.01em',
