@@ -45,6 +45,37 @@
   margin: 0.25rem 4px;
 }
 
+/* Hero image as a real Polaroid: thick white frame (wider at the bottom),
+   nearly square corners, soft shadow, gentle tilt — a photo laid on the paper.
+   The inner .cookbook-polaroid-photo keeps the existing h-48/sm:h-64 + bg-cover. */
+.cookbook-detail .cookbook-polaroid {
+  width: min(100%, 440px);
+  margin: 0.25rem auto 0.5rem;
+  background: rgb(var(--color-surface));
+  padding: 12px 12px 40px;
+  border-radius: 3px;
+  box-shadow:
+    0 12px 30px -10px rgba(40, 30, 20, 0.30),
+    0 2px 5px rgba(0, 0, 0, 0.08);
+  transform: rotate(-2deg);
+  transition: transform 0.2s ease;
+}
+.cookbook-detail .cookbook-polaroid:hover {
+  transform: rotate(0deg);
+}
+.cookbook-detail .cookbook-polaroid-photo {
+  width: 100%;
+  border-radius: 1px;
+}
+/* Mobile: gentler tilt + slimmer frame so a -2° corner can't cause h-scroll. */
+@media (max-width: 640px) {
+  .cookbook-detail .cookbook-polaroid {
+    max-width: 100%;
+    padding: 8px 8px 28px;
+    transform: rotate(-1deg);
+  }
+}
+
 /* ============================================================
    Cook mode — always-dark, full-bleed (data-theme="dark")
    ============================================================ */

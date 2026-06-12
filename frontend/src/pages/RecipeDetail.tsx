@@ -189,10 +189,15 @@ export function RecipeDetailPage() {
           </Link>
         )}
       </div>
+      {recipe.image_url && (
+        <div className="cookbook-polaroid">
+          <div
+            className="cookbook-polaroid-photo h-48 sm:h-64 bg-cover bg-center"
+            style={{ backgroundImage: `url(${recipe.image_url})` }}
+          />
+        </div>
+      )}
       <div className="card overflow-hidden polaroid">
-        {recipe.image_url && (
-          <div className="h-48 sm:h-64 bg-cover bg-center" style={{ backgroundImage: `url(${recipe.image_url})` }} />
-        )}
         <div className="p-6">
           <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
             <div className="min-w-0">
