@@ -400,7 +400,7 @@ export function RecipeDetailPage() {
 
       <hr className="cookbook-divider" />
       <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4">
-        <section className="card p-5 polaroid tilt-l">
+        <section className="card p-5 polaroid">
           <h2 className="font-semibold mb-3">Zutaten</h2>
           {recipe.ingredients.length === 0 ? (
             <div className="text-sm text-muted/70">Keine Zutaten erfasst.</div>
@@ -428,7 +428,7 @@ export function RecipeDetailPage() {
           )}
         </section>
 
-        <section className="card p-5 polaroid tilt-r">
+        <section className="card p-5 polaroid">
           <h2 className="font-semibold mb-3">Zubereitung</h2>
           {recipe.steps.length === 0 ? (
             <div className="text-sm text-muted/70">Keine Schritte erfasst.</div>
