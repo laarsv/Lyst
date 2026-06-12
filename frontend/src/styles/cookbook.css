@@ -45,19 +45,22 @@
   margin: 0.25rem 4px;
 }
 
-/* Hero image as a real Polaroid: thick white frame (wider at the bottom),
-   nearly square corners, soft shadow, gentle tilt — a photo laid on the paper.
-   The inner .cookbook-polaroid-photo keeps the existing h-48/sm:h-64 + bg-cover. */
+/* Square free-standing Polaroid beside the title (magazine layout): thick white
+   frame (~11px sides/top, ~36px bottom — empty, no caption), nearly square
+   corners, soft shadow, +2° tilt. flex-shrink:0 so the title column can't
+   squeeze it. The inner photo is 1:1 with bg-cover. */
 .cookbook-detail .cookbook-polaroid {
-  width: min(100%, 440px);
-  margin: 0.25rem auto 0.5rem;
+  flex-shrink: 0;
+  width: 190px;
+  max-width: 100%;
+  margin: 0 auto;          /* centered when stacked on mobile */
   background: rgb(var(--color-surface));
-  padding: 12px 12px 40px;
+  padding: 11px 11px 36px;
   border-radius: 3px;
   box-shadow:
     0 12px 30px -10px rgba(40, 30, 20, 0.30),
     0 2px 5px rgba(0, 0, 0, 0.08);
-  transform: rotate(-2deg);
+  transform: rotate(2deg);
   transition: transform 0.2s ease;
 }
 .cookbook-detail .cookbook-polaroid:hover {
@@ -65,13 +68,15 @@
 }
 .cookbook-detail .cookbook-polaroid-photo {
   width: 100%;
-  border-radius: 1px;
+  aspect-ratio: 1 / 1;
+  border-radius: 2px;
 }
-/* Mobile: gentler tilt + slimmer frame so a -2° corner can't cause h-scroll. */
+/* Mobile: stacked on top, a touch larger, gentle counter-tilt; the fixed 200px
+   width sits well under the viewport so a rotated corner can't cause h-scroll. */
 @media (max-width: 640px) {
   .cookbook-detail .cookbook-polaroid {
-    max-width: 100%;
-    padding: 8px 8px 28px;
+    width: 200px;
+    padding: 9px 9px 30px;
     transform: rotate(-1deg);
   }
 }

@@ -189,17 +189,20 @@ export function RecipeDetailPage() {
           </Link>
         )}
       </div>
-      {recipe.image_url && (
-        <div className="cookbook-polaroid">
-          <div
-            className="cookbook-polaroid-photo h-48 sm:h-64 bg-cover bg-center"
-            style={{ backgroundImage: `url(${recipe.image_url})` }}
-          />
-        </div>
-      )}
-      <div className="card overflow-hidden polaroid">
+      <div className="card polaroid">
         <div className="p-6">
-          <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+          {/* Magazine layout: title column (left) + square polaroid (right on
+              desktop, on top on mobile — DOM-first so it stacks above). */}
+          <div className="flex flex-col sm:flex-row gap-5 sm:gap-6 sm:items-start">
+            {recipe.image_url && (
+              <div className="cookbook-polaroid sm:order-2">
+                <div
+                  className="cookbook-polaroid-photo bg-cover bg-center"
+                  style={{ backgroundImage: `url(${recipe.image_url})` }}
+                />
+              </div>
+            )}
+            <div className="flex-1 min-w-0 space-y-4 sm:order-1">
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-3xl font-display italic font-medium tracking-tight">{recipe.title}</h1>
@@ -390,6 +393,7 @@ export function RecipeDetailPage() {
               onClose={() => setVariationOpen(false)}
               recipe={recipe}
             />
+            </div>
           </div>
         </div>
       </div>
