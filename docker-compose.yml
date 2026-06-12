@@ -63,6 +63,9 @@ services:
       OLLAMA_VISION_KEEP_ALIVE: ${OLLAMA_VISION_KEEP_ALIVE:-1h}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-4-5}
+      FDC_API_KEY: ${FDC_API_KEY:-}
+      LYST_PICNIC_IMPORT_OWNER_EMAIL: ${LYST_PICNIC_IMPORT_OWNER_EMAIL:-}
+      LYST_INTEGRATION_API_KEY: ${LYST_INTEGRATION_API_KEY:-}
     # Lets the backend reach services that are exposed on the host's published
     # ports (e.g. an Ollama instance running on the host) via the hostname
     # `host.docker.internal`. Required on Linux/Proxmox-LXC; Docker Desktop
