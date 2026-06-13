@@ -36,6 +36,8 @@ import {
   Sparkles,
   MoreHorizontal,
   Loader2,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { AiSuggestionModal } from '@/components/AiSuggestionModal';
 import { MergeDuplicatesModal } from '@/components/lists/MergeDuplicatesModal';
@@ -72,6 +74,36 @@ export function ListDetailPage() {
   const canEdit = useMemo(
     () => !!list && (list.is_owner || list.permission === 'EDIT'),
     [list],
+  );
+
+  // "Erledigte ausblenden" — hide checked items from the list body.
+  // Persisted per-list to localStorage (same pattern as the collapsed
+  // category sections) so the choice survives navigation + reload.
+  const hideStorageKey = `lyst:list:${listId}:hide-checked`;
+  const [hideChecked, setHideChecked] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(hideStorageKey) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const toggleHideChecked = () => {
+    setHideChecked((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(hideStorageKey, next ? '1' : '0');
+      } catch {
+        // localStorage disabled — toggle stays ephemeral this session.
+      }
+      return next;
+    });
+  };
+  // Items actually rendered. Reordering still runs against the full
+  // `items` array (onDragEnd looks items up by id), so hiding checked
+  // rows never disturbs positions.
+  const visibleItems = useMemo(
+    () => (hideChecked ? items.filter((i) => !i.is_checked) : items),
+    [hideChecked, items],
   );
 
   // Users we can assign a task to (owner + collaborators). Loaded
@@ -621,6 +653,9 @@ export function ListDetailPage() {
       <div className="card p-3 sm:p-4">
         {items.length === 0 ? (
           <div className="text-center text-muted/70 py-8">Noch keine Einträge.</div>
+        ) : visibleItems.length === 0 ? (
+          // Every item is checked and the user has hidden the done ones.
+          <div className="text-center text-muted/70 py-6">Alles erledigt 🎉</div>
         ) : list.categorization_mode !== 'OFF' && categoryIconMapForType(list.type) ? (
           // Auto-sorted: group by category, no DnD. Only shown when the
           // list type has a fixed taxonomy — CHECKLIST/CUSTOM fall
@@ -630,7 +665,7 @@ export function ListDetailPage() {
           // by the recipe merge / single-recipe copy are created with
           // categorization_mode=MANUAL, so their aisle sections render here.
           <CategoryGroupedList
-            items={items}
+            items={visibleItems}
             canEdit={canEdit}
             listType={list.type}
             listId={list.id}
@@ -642,9 +677,9 @@ export function ListDetailPage() {
           />
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-            <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
+            <SortableContext items={visibleItems.map((i) => i.id)} strategy={verticalListSortingStrategy}>
               <div className="space-y-1.5">
-                {items.map((it) => (
+                {visibleItems.map((it) => (
                   <SortableItem
                     key={it.id}
                     item={it}
@@ -660,6 +695,22 @@ export function ListDetailPage() {
               </div>
             </SortableContext>
           </DndContext>
+        )}
+
+        {/* Subtle footer toggle — only when there's something checked to
+            hide. Tap to collapse/expand the done items. */}
+        {checkedCount > 0 && (
+          <button
+            type="button"
+            onClick={toggleHideChecked}
+            className="mt-3 w-full flex items-center justify-center gap-1.5 text-xs text-muted/70 hover:text-ink transition"
+          >
+            {hideChecked ? <Eye size={13} /> : <EyeOff size={13} />}
+            <span>
+              {checkedCount} erledigte{' '}
+              {hideChecked ? 'anzeigen' : 'ausblenden'}
+            </span>
+          </button>
         )}
       </div>
 
