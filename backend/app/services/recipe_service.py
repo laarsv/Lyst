@@ -74,7 +74,7 @@ async def create_recipe(
 
 async def update_recipe(db: AsyncSession, rec: Recipe, **fields) -> Recipe:
     for k, v in fields.items():
-        if v is not None or k in {"description", "image_url", "source_url",
+        if v is not None or k in {"description", "tips", "image_url", "source_url",
                                   "prep_time_minutes", "cook_time_minutes"}:
             setattr(rec, k, v)
     await db.commit()

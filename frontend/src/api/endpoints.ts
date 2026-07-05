@@ -444,6 +444,7 @@ export const RecipesApi = {
   create: (payload: {
     title: string;
     description?: string | null;
+    tips?: string | null;
     servings: number;
     prep_time_minutes?: number | null;
     cook_time_minutes?: number | null;
@@ -491,6 +492,7 @@ export const RecipesApi = {
     payload: Partial<{
       title: string;
       description: string | null;
+      tips: string | null;
       servings: number;
       prep_time_minutes: number | null;
       cook_time_minutes: number | null;

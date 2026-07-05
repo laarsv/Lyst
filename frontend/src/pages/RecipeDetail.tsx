@@ -447,6 +447,13 @@ export function RecipeDetailPage() {
         </section>
       </div>
 
+      {recipe.tips && (
+        <section className="cookbook-tip">
+          <h2 className="cookbook-tip-label font-display italic">Tipp</h2>
+          <p className="cookbook-tip-body">{recipe.tips}</p>
+        </section>
+      )}
+
       {variants.length > 0 && (
         <section className="card p-5 polaroid tilt-l">
           <h2 className="font-semibold mb-3">Varianten</h2>

@@ -40,6 +40,8 @@ class PicnicParsed:
     prep_time_minutes: int | None = None
     ingredients: list[PicnicIngredient] = field(default_factory=list)
     steps: list[str] = field(default_factory=list)
+    # Cook's tip from the mail's "Tipp" block (rating/ad block always discarded).
+    tips: str | None = None
     image_url: str | None = None
     # Stable per-recipe id from the image URL (…/recipes/<HASH>/1000x1000.png) —
     # the primary dedup key, robust to Picnic title typo-fixes/renames.
@@ -60,7 +62,18 @@ _UNIT_MAP = {
 }
 
 _STEPS_MARKER = re.compile(r"so\s+wird'?s\s+gemacht", re.I)
+# Where the STEPS region ends: at the tip heading OR the rating/appetit block,
+# whichever comes first (unchanged — steps never include the tip).
 _STOP_MARKER = re.compile(r"^\s*\*?\s*(tipp|wie findest du|guten appetit)\b", re.I)
+# The tip heading itself (e.g. "Tipp", "* Tipp *", "Tipp:").
+_TIP_MARKER = re.compile(r"^\s*\*?\s*tipp\b", re.I)
+# The rating / "guten Appetit" block that must ALWAYS be discarded — it holds
+# the :( / :) voting rows and click.picnic.de tracking links. Bounds the tip
+# on its lower end and is never kept.
+_DISCARD_MARKER = re.compile(r"^\s*\*?\s*(wie findest du|guten appetit)\b", re.I)
+# Strips the "Tipp" heading (optionally starred / colon-terminated) off the
+# front of the collected tip text, leaving just the advice.
+_TIP_LABEL = re.compile(r"^\*?\s*tipp\b\s*\*?\s*[:.\-–]?\s*", re.I)
 _STEP_SPLIT = re.compile(r"Schritt\s*\d+\s*[:.)]?\s*", re.I)
 _STAR_LINE = re.compile(r"^\s*\*\s*(.+?)\s*\*\s*$")
 _BRACKET_LINE = re.compile(r"^\s*\[(.*?)\]\s*(.+?)\s*$")
@@ -135,6 +148,27 @@ def _clean_step(raw: str) -> str:
     txt = re.sub(r" +([,.;:!?])", r"\1", txt)  # tag-strip leaves "Salz ," → "Salz,"
     txt = re.sub(r"\n{3,}", "\n\n", txt)
     return txt.strip()
+
+
+def _extract_tip(region_lines: list[str]) -> str | None:
+    """Pull the tip out of the post-steps region: from the "Tipp" heading down
+    to (but excluding) the rating/"guten Appetit" block, which is discarded
+    along with everything after it. Returns just the advice, heading stripped,
+    paragraph breaks preserved — or None when there's no tip."""
+    tip_idx = None
+    for i, ln in enumerate(region_lines):
+        if _TIP_MARKER.match(ln):
+            tip_idx = i
+            break
+    if tip_idx is None:
+        return None
+    collected: list[str] = []
+    for ln in region_lines[tip_idx:]:
+        if _DISCARD_MARKER.match(ln):
+            break
+        collected.append(ln)
+    text = _TIP_LABEL.sub("", "\n".join(collected).strip())
+    return _clean_step(text) or None
 
 
 def parse_picnic_eml(raw: bytes) -> PicnicParsed | None:
@@ -214,6 +248,7 @@ def parse_picnic_eml(raw: bytes) -> PicnicParsed | None:
 
     # ---- steps: region after the marker, cut before Tipp / rating ----
     steps: list[str] = []
+    tips: str | None = None
     if steps_idx is not None:
         region_lines = lines[steps_idx + 1:]
         cut = len(region_lines)
@@ -227,6 +262,9 @@ def parse_picnic_eml(raw: bytes) -> PicnicParsed | None:
             s = _clean_step(chunk)
             if s:
                 steps.append(s)
+        # Tip lives in the same region, between the cut (Tipp heading) and the
+        # rating block — extracted into its own field, not folded into steps.
+        tips = _extract_tip(region_lines)
 
     # ---- image URL + stable hash from the html part ----
     image_url = None
@@ -245,6 +283,7 @@ def parse_picnic_eml(raw: bytes) -> PicnicParsed | None:
         prep_time_minutes=prep,
         ingredients=ingredients,
         steps=steps,
+        tips=tips,
         image_url=image_url,
         image_hash=image_hash,
     )

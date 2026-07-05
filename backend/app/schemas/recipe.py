@@ -1,7 +1,16 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
+
+
+def _blank_to_none(v: str | None) -> str | None:
+    """Coerce empty/whitespace-only strings to None so clearing a free-text
+    field in the UI (which sends "") stores a clean NULL, not an empty string."""
+    if v is None:
+        return None
+    v = v.strip()
+    return v or None
 
 from app.models.recipe import NutritionSource
 from app.schemas.share import ShareState
@@ -144,8 +153,13 @@ class RecipeBase(BaseModel):
 
 
 class RecipeCreate(RecipeBase):
+    # Free-form cook's tip (optional). Highlighted at the end of the detail
+    # view; the Picnic .eml importer fills it from the mail's "Tipp" block.
+    tips: str | None = None
     ingredients: list[IngredientCreate] = Field(default_factory=list)
     steps: list[StepCreate] = Field(default_factory=list)
+
+    _normalise_tips = field_validator("tips")(_blank_to_none)
 
 
 # --- Bulk structured import (no AI) ---
@@ -203,6 +217,7 @@ def recipe_origin(source: str | None, source_url: str | None) -> str:
 class RecipeUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
+    tips: str | None = None
     servings: int | None = Field(default=None, ge=1, le=999)
     prep_time_minutes: int | None = Field(default=None, ge=0)
     cook_time_minutes: int | None = Field(default=None, ge=0)
@@ -211,6 +226,9 @@ class RecipeUpdate(BaseModel):
     tags: list[str] | None = None
     rating: int | None = Field(default=None, ge=0, le=5)
     is_favorite: bool | None = None
+
+    # "" → None so clearing the tip in the edit form stores a clean NULL.
+    _normalise_tips = field_validator("tips")(_blank_to_none)
 
 
 class RecipeSummary(RecipeBase):
@@ -249,6 +267,7 @@ class RecipeOut(RecipeBase):
     owner_id: int
     created_at: datetime
     updated_at: datetime
+    tips: str | None = None
     cooked_count: int = 0
     last_cooked_at: datetime | None = None
     parent_recipe_id: int | None = None

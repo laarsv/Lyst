@@ -129,6 +129,7 @@ async def import_one_eml(
         title=parsed.title,
         ingredients=ingredients,
         steps=steps,
+        tips=parsed.tips,
         servings=parsed.servings or 2,
         prep_time_minutes=parsed.prep_time_minutes,
         tags=["Picnic"],

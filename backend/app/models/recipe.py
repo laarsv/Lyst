@@ -38,6 +38,10 @@ class Recipe(Base, TimestampMixin):
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Free-form cook's tip shown as a highlighted box at the end of the
+    # cookbook detail view (alembic 0031). NULL = no tip; the Picnic .eml
+    # importer fills it from the mail's "Tipp" block (rating block discarded).
+    tips: Mapped[str | None] = mapped_column(Text, nullable=True)
     servings: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
     prep_time_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     cook_time_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)

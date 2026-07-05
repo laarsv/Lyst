@@ -2,6 +2,28 @@
 
 Alle nennenswerten Änderungen pro Release. Datumsangaben sind ISO 8601.
 
+## v1.7.0 — 2026-07-05
+
+Freitext-Tipp-Feld für Rezepte.
+
+### Highlights
+
+- **Tipp-Feld** — Rezepte haben jetzt ein optionales Freitext-Tippfeld (`tips`,
+  additive Migration `0031`, nullable). Im Rezept-Bearbeiten-Formular als
+  mehrzeiliges „Tipp (optional)"-Feld — leer lassen speichert sauber NULL.
+- **Hervorgehoben auf der Detailseite** — ist ein Tipp gesetzt, erscheint am
+  Ende der Rezept-Detailseite (nach Zutaten/Zubereitung) eine ruhige,
+  mint-getönte Tipp-Box im Cookbook-Stil („Tipp"-Label in Playfair-Kursiv,
+  Fließtext gut lesbar, Absätze bleiben erhalten). Ohne Tipp: keine Box.
+- **Picnic-.eml-Import füllt den Tipp** — der „Tipp"-Block der Picnic-Mail
+  wandert jetzt ins eigene Feld, statt verworfen zu werden. Der
+  „Wie findest du dieses Rezept?"-Bewertungsblock (inkl. der :( / :)-Zeilen und
+  aller `click.picnic.de`-Tracking-Links) wird weiterhin komplett verworfen und
+  landet weder im Tipp noch in den Schritten; die Schritte enden unverändert vor
+  dem Tipp. Gilt für Upload- und n8n-Importpfad gleichermaßen.
+- **Bulk-JSON-Import** — `tips` wird aus dem `RecipeCreate`-JSON übernommen,
+  wenn vorhanden.
+
 ## v1.6.1 — 2026-06-11
 
 Picnic-Rezept-Mail-Import (.eml) — strukturiert, ohne KI, inklusive Bild.

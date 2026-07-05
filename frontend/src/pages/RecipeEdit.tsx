@@ -125,6 +125,7 @@ export function RecipeEditPage() {
 
   const [title, setTitle] = useState(prefill?.title ?? '');
   const [description, setDescription] = useState(prefill?.description ?? '');
+  const [tips, setTips] = useState('');
   const [servings, setServings] = useState(prefill?.servings ?? 2);
   const [prep, setPrep] = useState<number | ''>(prefill?.prep_time_minutes ?? '');
   const [cook, setCook] = useState<number | ''>(prefill?.cook_time_minutes ?? '');
@@ -194,6 +195,7 @@ export function RecipeEditPage() {
         const r = await RecipesApi.get(recipeId!);
         setTitle(r.title);
         setDescription(r.description ?? '');
+        setTips(r.tips ?? '');
         setServings(r.servings);
         setPrep(r.prep_time_minutes ?? '');
         setCook(r.cook_time_minutes ?? '');
@@ -350,6 +352,7 @@ export function RecipeEditPage() {
     const baseFields = {
       title: title.trim(),
       description: description.trim() || null,
+      tips: tips.trim() || null,
       servings,
       prep_time_minutes: prep === '' ? null : Number(prep),
       cook_time_minutes: cook === '' ? null : Number(cook),
@@ -554,6 +557,15 @@ export function RecipeEditPage() {
             className="input min-h-[80px]"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="label">Tipp (optional)</label>
+          <textarea
+            className="input min-h-[80px]"
+            value={tips}
+            onChange={(e) => setTips(e.target.value)}
+            placeholder="z. B. Extra lecker mit einer scharfen Salsa und Guacamole."
           />
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">

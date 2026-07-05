@@ -440,6 +440,9 @@ export interface Recipe extends RecipeBase {
   owner_id: number;
   created_at: string;
   updated_at: string;
+  /** Free-form cook's tip (alembic 0031). null = none; shown as a
+   *  highlighted box at the end of the cookbook detail view. */
+  tips: string | null;
   cooked_count: number;
   last_cooked_at: string | null;
   parent_recipe_id: number | null;

@@ -81,6 +81,29 @@
   }
 }
 
+/* Cook's tip — quiet mint card at the end of the detail view ("Ruhige Karte",
+   Variante 2). Highlighted but calm: soft mint tint, no tilt, no handwriting
+   for the body (tips can run long → readability before decoration). Only the
+   "Tipp" label borrows the Playfair-italic cookbook display face. */
+.cookbook-detail .cookbook-tip {
+  background: rgb(var(--color-brand-50));
+  border: 1px solid rgb(var(--color-brand-100));
+  border-radius: 16px;
+  padding: clamp(16px, 3vw, 24px);
+}
+.cookbook-detail .cookbook-tip-label {
+  color: rgb(var(--color-brand-700));
+  font-size: 1.5rem;
+  line-height: 1.15;
+  margin-bottom: 0.35rem;
+}
+.cookbook-detail .cookbook-tip-body {
+  color: rgb(var(--color-ink));
+  line-height: 1.65;
+  /* preserve author's paragraph breaks; collapse incidental spaces */
+  white-space: pre-line;
+}
+
 /* ============================================================
    Cook mode — always-dark, full-bleed (data-theme="dark")
    ============================================================ */
