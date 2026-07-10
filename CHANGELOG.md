@@ -2,6 +2,20 @@
 
 Alle nennenswerten Änderungen pro Release. Datumsangaben sind ISO 8601.
 
+## v1.7.1 — 2026-07-10
+
+Länger eingeloggt bleiben — rollende Sitzung.
+
+### Highlights
+
+- **Sliding-Session** — der Refresh-Cookie wird jetzt bei jedem erfolgreichen
+  Refresh mit frischer Laufzeit neu gesetzt (`POST /auth/refresh`), statt eine
+  harte Grenze ab Login zu sein. Wer regelmäßig aktiv ist, bleibt dauerhaft
+  eingeloggt; erst echte Inaktivität länger als die Frist meldet ab.
+- **Frist auf 30 Tage** — `REFRESH_TOKEN_EXPIRE_DAYS` von 7 → 30 (env-
+  überschreibbar). Der 15-Minuten-Access-Token bleibt (kurzlebig + still
+  erneuert), nur das „eingeloggt bleiben"-Fenster ist länger und rollend.
+
 ## v1.7.0 — 2026-07-05
 
 Freitext-Tipp-Feld für Rezepte.

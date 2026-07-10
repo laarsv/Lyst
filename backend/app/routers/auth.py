@@ -93,6 +93,11 @@ async def refresh_token(
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not available")
     access = create_access_token(str(user.id), user.role.value)
+    # Sliding session: re-issue the refresh cookie with a fresh expiry on every
+    # successful refresh so an active user's window rolls forward and never hits
+    # a hard cap N days after login. Idle past REFRESH_TOKEN_EXPIRE_DAYS (the
+    # cookie's max-age) still expires and logs the user out.
+    _set_refresh_cookie(response, create_refresh_token(str(user.id)))
     return ok({"access_token": access, "token_type": "bearer"})
 
 

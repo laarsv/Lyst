@@ -12,7 +12,11 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "change-me-in-production"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    # Refresh-token / "stay logged in" window. The refresh cookie is a SLIDING
+    # session: refresh_token() re-issues it on every successful refresh, so an
+    # actively-used session rolls this window forward instead of hitting a hard
+    # wall N days after login. Only idle longer than this logs the user out.
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     RESET_TOKEN_EXPIRE_HOURS: int = 1
     INVITE_TOKEN_EXPIRE_HOURS: int = 48
 
