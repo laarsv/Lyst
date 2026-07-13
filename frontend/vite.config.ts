@@ -16,7 +16,7 @@ export default defineConfig({
         name: 'lyst',
         short_name: 'lyst',
         description: 'Listen, Rezepte und Notizen — minimal und schnell.',
-        theme_color: '#00c896',
+        theme_color: '#2947c9',
         background_color: '#f5f5f0',
         display: 'standalone',
         start_url: '/',
