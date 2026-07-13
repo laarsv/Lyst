@@ -13,7 +13,7 @@ export default {
           50:  themed('--color-brand-50'),
           100: themed('--color-brand-100'),
           500: themed('--color-brand'),
-          600: '#00b386',
+          600: '#233ba8',
           700: themed('--color-brand-700'),
         },
         page: themed('--color-page'),

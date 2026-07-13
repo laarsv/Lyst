@@ -14,10 +14,11 @@
   --color-line:    229 229 227;  /* #e5e5e3 */
   --color-ink:     26 26 26;     /* #1a1a1a */
   --color-muted:   136 136 132;  /* #888884 */
-  --color-brand:   0 200 150;    /* #00c896 */
-  --color-brand-50: 230 250 245; /* #e6faf5 */
-  --color-brand-100: 204 245 234;
-  --color-brand-700: 0 144 112;
+  /* Royal-blue brand (dark accent — white foreground on brand fills). */
+  --color-brand:   41 71 201;    /* #2947c9 */
+  --color-brand-50: 235 239 252; /* #ebeffc — light blue tint (chips/cards) */
+  --color-brand-100: 213 221 248;/* #d5ddf8 */
+  --color-brand-700: 34 58 168;  /* #223aa8 — dark blue text on light bg */
   --color-danger:  224 82 82;    /* #e05252 */
   --color-danger-50: 253 240 240;
 }
@@ -28,10 +29,12 @@
   --color-line:    46 46 46;     /* #2e2e2e */
   --color-ink:     240 240 238;  /* #f0f0ee */
   --color-muted:   136 136 132;  /* unchanged */
-  --color-brand:   0 200 150;
-  --color-brand-50: 10 46 37;    /* #0a2e25 — dark mint tint */
-  --color-brand-100: 14 64 51;
-  --color-brand-700: 110 230 196; /* readable on dark surface */
+  /* Lighter royal in dark mode so text-brand (wordmark/links/active nav)
+     stays readable on the dark surface; fills keep white foreground. */
+  --color-brand:   107 134 238;  /* #6b86ee */
+  --color-brand-50: 22 30 58;    /* #161e3a — dark blue tint */
+  --color-brand-100: 28 40 78;   /* #1c284e */
+  --color-brand-700: 174 185 238;/* #aeb9ee — light blue text on dark */
   --color-danger:  224 82 82;
   --color-danger-50: 60 30 30;
 }

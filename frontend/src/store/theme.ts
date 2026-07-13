@@ -16,7 +16,7 @@ function apply(theme: Theme) {
   // Also nudge the browser theme-color so the address bar matches
   const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
   if (meta) {
-    meta.content = theme === 'dark' ? '#141414' : '#00c896';
+    meta.content = theme === 'dark' ? '#141414' : '#2947c9';
   }
 }
 

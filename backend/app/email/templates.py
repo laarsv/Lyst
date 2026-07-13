@@ -1,8 +1,8 @@
 """HTML email templates. Plain string formatting; trivially extendable."""
 
-# Brand tokens kept in sync with the frontend tailwind config.
-_BRAND = "#00c896"
-_BRAND_HOVER = "#00b386"
+# Brand tokens kept in sync with the frontend tailwind config (royal blue).
+_BRAND = "#2947c9"
+_BRAND_HOVER = "#233ba8"
 _BG = "#f5f5f0"
 _INK = "#1a1a1a"
 _MUTED = "#888884"
