@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
+import { consumeStartRedirect } from '@/store/startPage';
 import { LoginPage } from '@/pages/Login';
 import { ForgotPasswordPage } from '@/pages/ForgotPassword';
 import { ResetPasswordPage } from '@/pages/ResetPassword';
@@ -35,6 +37,19 @@ import { InstallPrompt } from '@/components/InstallPrompt';
 import { AuthBootstrap } from '@/components/AuthBootstrap';
 import { DialogProvider } from '@/components/Dialogs';
 
+/**
+ * `/` is the Listen view. On a FRESH app start we honour the user's chosen
+ * start page instead (see store/startPage.ts) — the flag is consumed once per
+ * session, so clicking "Listen" in the nav afterwards works normally.
+ * useState's initialiser makes sure we consume the flag exactly once, not on
+ * every re-render.
+ */
+function StartGate() {
+  const [dest] = useState(consumeStartRedirect);
+  if (dest) return <Navigate to={dest} replace />;
+  return <DashboardPage />;
+}
+
 export default function App() {
   return (
     <AuthBootstrap>
@@ -58,7 +73,7 @@ export default function App() {
             </RequireAuth>
           }
         >
-          <Route path="/" element={<DashboardPage />} />
+          <Route path="/" element={<StartGate />} />
           <Route path="/lists/:id" element={<ListDetailPage />} />
           <Route path="/notes" element={<NotesPage />} />
           <Route path="/recipes" element={<RecipesPage />} />

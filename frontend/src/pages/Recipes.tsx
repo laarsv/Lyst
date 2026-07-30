@@ -187,12 +187,21 @@ export function RecipesPage() {
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2 mb-6">
+        {/* `q` filtert rein client-seitig in `visible` — Enter braucht keinen
+            Server-Roundtrip. Ein load() hier leerte die Liste kurz und riss auf
+            iOS (Tastatur schließt, Layout springt) die Ansicht weg. Enter
+            schließt jetzt nur die Tastatur. */}
         <input
           className="input flex-1 min-w-[200px]"
           placeholder="Rezept oder Tag suchen…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && load()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              e.currentTarget.blur();
+            }
+          }}
         />
         <select
           className="input w-auto"

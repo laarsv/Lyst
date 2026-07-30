@@ -2,6 +2,12 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { MeApi } from '@/api/endpoints';
 import { useAuthStore } from '@/store/auth';
 import { useInstallStore } from '@/store/install';
+import {
+  START_PAGE_OPTIONS,
+  getStartPage,
+  setStartPage,
+  type StartPage,
+} from '@/store/startPage';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
 
@@ -71,6 +77,7 @@ export function SettingsPage() {
           <button type="submit" className="btn-primary" disabled={loading}>Speichern</button>
         </div>
       </form>
+      <StartPageSection />
       <InstallSection />
       <form onSubmit={savePassword} className="card p-6 space-y-4">
         <h2 className="font-semibold">Passwort ändern</h2>
@@ -87,6 +94,38 @@ export function SettingsPage() {
         </div>
       </form>
     </div>
+  );
+}
+
+function StartPageSection() {
+  const [page, setPage] = useState<StartPage>(getStartPage);
+
+  const change = (p: StartPage) => {
+    setPage(p);
+    setStartPage(p);
+    toast.success('Startseite gespeichert');
+  };
+
+  return (
+    <section className="card p-6 space-y-3">
+      <div>
+        <h2 className="font-semibold">Startseite</h2>
+        <p className="text-sm text-muted">
+          Welche Ansicht beim Öffnen der App erscheint. Gilt für dieses Gerät.
+        </p>
+      </div>
+      <select
+        className="input"
+        value={page}
+        onChange={(e) => change(e.target.value as StartPage)}
+      >
+        {START_PAGE_OPTIONS.map(([value, label]) => (
+          <option key={value} value={value}>
+            {label}
+          </option>
+        ))}
+      </select>
+    </section>
   );
 }
 
