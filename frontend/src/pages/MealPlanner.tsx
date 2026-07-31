@@ -22,14 +22,9 @@ import {
   isoWeekNumber,
   mondayOf,
 } from '@/lib/week';
+import { MEAL_LABEL } from '@/lib/meals';
 
 const MEAL_TYPES: MealType[] = ['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK'];
-const MEAL_LABEL: Record<MealType, string> = {
-  BREAKFAST: 'Frühstück',
-  LUNCH: 'Mittag',
-  DINNER: 'Abend',
-  SNACK: 'Snack',
-};
 
 export function MealPlannerPage() {
   const [weekStart, setWeekStart] = useState<Date>(() => mondayOf(new Date()));

@@ -16,6 +16,7 @@ import {
 } from '@/api/endpoints';
 import type { Dashboard, DashboardDueTask } from '@/types';
 import { useOverviewQuery } from '@/hooks/useOverviewQuery';
+import { mealLabel } from '@/lib/meals';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
 
@@ -171,7 +172,7 @@ export function TodayPage() {
               <Link to={`/recipes/${m.recipe_id}`} className="min-w-0 flex-1">
                 <span className="block truncate">{m.recipe_title}</span>
                 <span className="block text-xs text-muted">
-                  {m.meal_type} · {m.servings} Portionen
+                  {mealLabel(m.meal_type)} · {m.servings} Portionen
                 </span>
               </Link>
             </Row>
