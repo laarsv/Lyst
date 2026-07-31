@@ -15,6 +15,11 @@
    ============================================================ */
 .cookbook-detail {
   color-scheme: light;
+  /* Re-assert the text colour, don't just rely on data-theme flipping the
+     tokens: `color` inherits as a COMPUTED value, so anything without its own
+     text-* class would keep the dark-mode ink from <body> and end up
+     near-white on this white paper. */
+  color: rgb(var(--color-ink));
   background-color: rgb(var(--color-page));
   /* very subtle paper grain (inline SVG noise, ~4% opacity) */
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.04'/%3E%3C/svg%3E");
@@ -109,6 +114,9 @@
    ============================================================ */
 .cookbook-cook {
   color-scheme: dark;
+  /* Same reason as .cookbook-detail, mirrored: without this, opening cook mode
+     from a LIGHT app theme leaves inherited dark ink on the dark backdrop. */
+  color: rgb(var(--color-ink));
   /* The data-theme="dark" wrapper already flips the tokens (bg-page → #141414,
      text-ink → light); add a faint mint glow + grain for the cookbook mood.
      bg-page supplies the base color; we only layer a background-image. */
