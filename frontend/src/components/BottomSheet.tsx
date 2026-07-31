@@ -4,8 +4,16 @@
  *  unless `open` is true so callers can mount it conditionally without
  *  worrying about animation timing — the slide-in transition fires off a
  *  one-frame delay inside, and `onClose` is invoked when the user taps the
- *  backdrop or presses Escape. */
+ *  backdrop or presses Escape.
+ *
+ *  Rendered through a PORTAL to document.body: `backdrop-filter` (and
+ *  transform/filter/perspective) on any ancestor makes it the containing block
+ *  for `position: fixed`, so an in-tree sheet would be clipped to that box
+ *  instead of covering the viewport. The AppShell header uses `backdrop-blur`,
+ *  which broke the account menu's sheet on Android exactly that way —
+ *  NotificationBell already portals its own sheet for the same reason. */
 import { useEffect, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 
 interface Props {
   open: boolean;
@@ -48,7 +56,7 @@ export function BottomSheet({
 
   if (!open) return null;
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-[60] flex items-end justify-center"
       role="dialog"
@@ -73,6 +81,7 @@ export function BottomSheet({
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
