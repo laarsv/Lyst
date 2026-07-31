@@ -12,6 +12,7 @@
 
 export type StartPage =
   | '/'
+  | '/heute'
   | '/tasks'
   | '/recipes'
   | '/plants'
@@ -22,6 +23,7 @@ export type StartPage =
 /** Label pairs for the settings dropdown — order matches the nav. */
 export const START_PAGE_OPTIONS: [StartPage, string][] = [
   ['/', 'Listen'],
+  ['/heute', 'Heute'],
   ['/tasks', 'Aufgaben'],
   ['/recipes', 'Rezepte'],
   ['/plants', 'Pflanzen'],

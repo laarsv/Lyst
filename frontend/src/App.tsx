@@ -6,6 +6,7 @@ import { ForgotPasswordPage } from '@/pages/ForgotPassword';
 import { ResetPasswordPage } from '@/pages/ResetPassword';
 import { AcceptInvitePage } from '@/pages/AcceptInvite';
 import { DashboardPage } from '@/pages/Dashboard';
+import { TodayPage } from '@/pages/Today';
 import { ListDetailPage } from '@/pages/ListDetail';
 import { NotesPage } from '@/pages/Notes';
 import { RecipesPage } from '@/pages/Recipes';
@@ -74,6 +75,7 @@ export default function App() {
           }
         >
           <Route path="/" element={<StartGate />} />
+          <Route path="/heute" element={<TodayPage />} />
           <Route path="/lists/:id" element={<ListDetailPage />} />
           <Route path="/notes" element={<NotesPage />} />
           <Route path="/recipes" element={<RecipesPage />} />

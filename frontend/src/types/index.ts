@@ -1001,3 +1001,61 @@ export interface ImportedRecipe {
    *  source had no usable image (typical free-text path). */
   extracted_image: ExtractedImage | null;
 }
+
+// ---------------------------------------------------------------------------
+// Dashboard ("Heute") — GET /dashboard. Every block is optional; the page
+// hides blocks that come back empty rather than showing placeholders.
+// ---------------------------------------------------------------------------
+
+export interface DashboardOpenSession {
+  id: number;
+  workout_id: number | null;
+  workout_name: string | null;
+  started_at: string;
+  logged_sets: number;
+}
+
+export interface DashboardDuePlant {
+  id: number;
+  name: string;
+  image_url: string | null;
+  next_water_due: string;
+  /** 0 = due today, >0 = that many days late. */
+  days_overdue: number;
+}
+
+export interface DashboardDueTask {
+  id: number;
+  /** Which table backs this row — decides where a click navigates. */
+  source: 'list' | 'note';
+  text: string;
+  due_at: string | null;
+  is_overdue: boolean;
+  parent_id: number;
+  parent_title: string;
+}
+
+export interface DashboardTodayMeal {
+  entry_id: number;
+  recipe_id: number;
+  recipe_title: string;
+  meal_type: string;
+  servings: number;
+  image_url: string | null;
+}
+
+export interface DashboardReminder {
+  id: number;
+  list_id: number;
+  list_title: string;
+  remind_at: string;
+  message: string | null;
+}
+
+export interface Dashboard {
+  open_session: DashboardOpenSession | null;
+  due_plants: DashboardDuePlant[];
+  due_tasks: DashboardDueTask[];
+  today_meals: DashboardTodayMeal[];
+  upcoming_reminders: DashboardReminder[];
+}

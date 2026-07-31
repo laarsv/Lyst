@@ -12,7 +12,7 @@ from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.routers import (
-    admin, auth, fitness_exercises, fitness_sessions, fitness_workouts,
+    admin, auth, dashboard, fitness_exercises, fitness_sessions, fitness_workouts,
     integration, items,
     lists, me, meal_plans, note_folders, note_tasks, notes, notifications, plants,
     recipes, recipes_ai, recipes_import, recipes_nutrition, recipes_share,
@@ -108,6 +108,7 @@ app.include_router(fitness_workouts.router, prefix=PREFIX)
 app.include_router(fitness_sessions.router, prefix=PREFIX)
 app.include_router(snapshots.router, prefix=PREFIX)
 app.include_router(search.router, prefix=PREFIX)
+app.include_router(dashboard.router, prefix=PREFIX)
 # WebSocket router is intentionally NOT prefixed with /api so the
 # spec-compliant URL `ws://.../ws/lists/{id}` works.
 app.include_router(ws.router)

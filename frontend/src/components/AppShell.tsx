@@ -13,6 +13,7 @@ import clsx from 'clsx';
 
 const USER_LINKS: [string, string][] = [
   ['/', 'Listen'],
+  ['/heute', 'Heute'],
   ['/tasks', 'Aufgaben'],
   ['/recipes', 'Rezepte'],
   ['/plants', 'Pflanzen'],

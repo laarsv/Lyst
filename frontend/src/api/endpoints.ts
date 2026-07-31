@@ -12,6 +12,7 @@ import type {
   CollaboratorPermission,
   CookLog,
   CopyToListResponse,
+  Dashboard,
   EmlBatchResponse,
   MergePreviewResponse,
   GenerateListResponse,
@@ -1031,4 +1032,10 @@ export const NotificationsApi = {
     api.patch<{ data: { message: string } }>(`/notifications/${id}/read`).then(unwrap),
   markAllRead: () =>
     api.post<{ data: { updated: number } }>('/notifications/mark-all-read').then(unwrap),
+};
+
+/** The "Heute" overview — one request for all five blocks (see
+ *  backend routers/dashboard.py for why it isn't split up). */
+export const DashboardApi = {
+  get: () => api.get<{ data: Dashboard }>('/dashboard').then(unwrap),
 };
