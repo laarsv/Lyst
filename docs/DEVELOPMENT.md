@@ -198,7 +198,7 @@ backend/
     schemas/        Pydantic models for request/response
     routers/        FastAPI APIRouters — one per resource
     services/       business logic, db queries, ws manager
-    email/          Resend wrapper + HTML templates
+    email/          Brevo wrapper + HTML templates
     main.py         FastAPI app, lifespan, scheduler
   alembic/          migrations
   Dockerfile

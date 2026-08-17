@@ -492,7 +492,7 @@ function TestEmailSection() {
       <div className="mb-4">
         <h2 className="font-semibold">E-Mail-Versand testen</h2>
         <p className="text-sm text-muted">
-          Sendet eine kurze Test-Mail über Resend. Prüft API-Key, Absender-Domain und DNS auf einen Schlag.
+          Sendet eine kurze Test-Mail über Brevo. Prüft API-Key, Absender-Domain und DNS auf einen Schlag.
         </p>
       </div>
       <div className="flex flex-wrap gap-2">

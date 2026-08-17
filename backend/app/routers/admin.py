@@ -278,11 +278,11 @@ async def post_test_email(
     payload: TestEmailRequest,
     current: User = Depends(require_admin),
 ):
-    """Send a Resend test email — verifies API key, sender, and DNS in one shot."""
-    if not env_settings.RESEND_API_KEY:
+    """Send a Brevo test email — verifies API key, sender, and DNS in one shot."""
+    if not env_settings.BREVO_API_KEY:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="RESEND_API_KEY ist nicht gesetzt — siehe .env",
+            detail="BREVO_API_KEY ist nicht gesetzt — siehe .env",
         )
     target = str(payload.to) if payload.to else current.email
     subject, html = test_email(current.name, target)
@@ -290,6 +290,6 @@ async def post_test_email(
     if not sent:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Resend hat den Versand abgelehnt — Backend-Log prüfen",
+            detail="Brevo hat den Versand abgelehnt — Backend-Log prüfen",
         )
     return ok({"to": target, "message": "Test-E-Mail gesendet"})

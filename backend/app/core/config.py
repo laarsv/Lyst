@@ -20,8 +20,9 @@ class Settings(BaseSettings):
     RESET_TOKEN_EXPIRE_HOURS: int = 1
     INVITE_TOKEN_EXPIRE_HOURS: int = 48
 
-    RESEND_API_KEY: str = ""
-    RESEND_FROM_EMAIL: str = "Lyst <noreply@lyst.app>"
+    BREVO_API_KEY: str = ""
+    BREVO_FROM_EMAIL: str = "info@vrwb.de"
+    BREVO_FROM_NAME: str = "Lyst"
 
     FRONTEND_URL: str = "http://localhost:5173"
     BACKEND_CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"

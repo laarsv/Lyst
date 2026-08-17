@@ -47,7 +47,7 @@ Variables are grouped the same way as in `.env.example`: **Database**,
 
 ---
 
-## Email — Resend (optional)
+## Email — Brevo (optional)
 
 If left blank, all email features degrade gracefully: invitation links and
 password-reset links are printed to the backend log instead of sent. See
@@ -55,8 +55,9 @@ password-reset links are printed to the backend log instead of sent. See
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `RESEND_API_KEY` | no | empty (mail disabled) | Resend API key from <https://resend.com/api-keys>. |
-| `RESEND_FROM_EMAIL` | no | empty | Verified sender, e.g. `Lyst <noreply@your-domain.app>`. The domain must be verified in your Resend dashboard. |
+| `BREVO_API_KEY` | no | empty (mail disabled) | Brevo API key from <https://app.brevo.com/settings/keys/api>. |
+| `BREVO_FROM_EMAIL` | no | `info@vrwb.de` | Sender address, e.g. `info@your-domain.app`. Must be a verified sender/domain in your Brevo account. |
+| `BREVO_FROM_NAME` | no | `Lyst` | Display name shown as the sender in the inbox. |
 
 ---
 
@@ -158,8 +159,9 @@ INITIAL_ADMIN_EMAIL=admin@your-domain.app
 INITIAL_ADMIN_PASSWORD=<a strong password>
 FRONTEND_URL=https://lyst.your-domain.app
 BACKEND_CORS_ORIGINS=https://lyst.your-domain.app
-RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxxxxxxxx
-RESEND_FROM_EMAIL=Lyst <noreply@your-domain.app>
+BREVO_API_KEY=xkeysib-xxxxxxxxxxxxxxxxxxxxxxxx
+BREVO_FROM_EMAIL=info@your-domain.app
+BREVO_FROM_NAME=Lyst
 ```
 
 ### External Postgres (e.g. managed)
@@ -206,7 +208,7 @@ OLLAMA_BASE_URL=http://ollama:11434
 Just leave the optional sections empty:
 
 ```ini
-RESEND_API_KEY=
+BREVO_API_KEY=
 ANTHROPIC_API_KEY=
 # OLLAMA_BASE_URL pointing at an unreachable host is fine — AI features
 # return a clean error in the UI, nothing else breaks.

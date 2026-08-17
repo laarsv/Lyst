@@ -66,12 +66,12 @@ async def invite_user(db: AsyncSession, email: str, name: str, role: UserRole) -
     if existing.scalar_one_or_none():
         raise ValueError("Email already registered")
     # Pre-flight: refuse before touching the DB if mail can't physically go out.
-    if not settings.RESEND_API_KEY:
-        raise MailDeliveryError("RESEND_API_KEY ist nicht gesetzt — Einladung kann nicht versendet werden")
+    if not settings.BREVO_API_KEY:
+        raise MailDeliveryError("BREVO_API_KEY ist nicht gesetzt — Einladung kann nicht versendet werden")
 
     # Stub user that will be activated when the invite is accepted. We commit
     # it *before* sending so the JWT can resolve to a user row when clicked,
-    # but we roll it back if Resend rejects the send — otherwise we'd leave a
+    # but we roll it back if Brevo rejects the send — otherwise we'd leave a
     # dead inactive account that the admin thinks they invited.
     user = User(
         email=email.lower(),
@@ -93,7 +93,7 @@ async def invite_user(db: AsyncSession, email: str, name: str, role: UserRole) -
         await db.delete(user)
         await db.commit()
         raise MailDeliveryError(
-            "Resend hat den Versand abgelehnt — Backend-Log prüfen. Einladung wurde nicht gespeichert."
+            "Brevo hat den Versand abgelehnt — Backend-Log prüfen. Einladung wurde nicht gespeichert."
         )
     return user
 
@@ -138,11 +138,11 @@ async def admin_reset_password(db: AsyncSession, user_id: int) -> None:
     user = result.scalar_one_or_none()
     if not user:
         raise ValueError("User not found")
-    if not settings.RESEND_API_KEY:
-        raise MailDeliveryError("RESEND_API_KEY ist nicht gesetzt — Reset-Mail kann nicht versendet werden")
+    if not settings.BREVO_API_KEY:
+        raise MailDeliveryError("BREVO_API_KEY ist nicht gesetzt — Reset-Mail kann nicht versendet werden")
     token = create_reset_token(str(user.id))
     reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token}"
     subject, html = password_reset_email(user.name, reset_url)
     sent = await send_email(user.email, subject, html)
     if not sent:
-        raise MailDeliveryError("Resend hat den Versand abgelehnt — Backend-Log prüfen")
+        raise MailDeliveryError("Brevo hat den Versand abgelehnt — Backend-Log prüfen")

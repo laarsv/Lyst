@@ -155,7 +155,7 @@ async def post_share_recipe_by_email(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     if kind == "external":
-        # Send the public link via Resend. share_token is now guaranteed
+        # Send the public link via Brevo. share_token is now guaranteed
         # to exist because the service ensures it.
         url = f"{settings.FRONTEND_URL}/share/recipe/{rec.share_token}"
         subject, html = recipe_share_email(user.name, rec.title, url)

@@ -119,7 +119,7 @@ def welcome_email(name: str, app_url: str) -> tuple[str, str]:
 def test_email(triggered_by: str, recipient: str) -> tuple[str, str]:
     body = (
         f"<p>Das ist eine Test-E-Mail von <strong>lyst</strong>.</p>"
-        f"<p>Wenn du diese Nachricht erhältst, ist der Mailversand über Resend "
+        f"<p>Wenn du diese Nachricht erhältst, ist der Mailversand über Brevo "
         f"korrekt konfiguriert und lyst kann Einladungen, Passwort-Resets und "
         f"Erinnerungen verschicken.</p>"
         f"<p style='color:{_MUTED};font-size:14px;margin-top:32px;'>"

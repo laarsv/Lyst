@@ -70,7 +70,7 @@ household or small group running on a Mini PC, NAS, or any cheap VPS.
 | Database | PostgreSQL 16 |
 | Frontend | React 18 · TypeScript · Vite · Tailwind · Zustand · dnd-kit |
 | AI       | Ollama (local) · optional Anthropic Claude (cloud) |
-| Email    | Resend (optional — graceful degradation when disabled) |
+| Email    | Brevo (optional — graceful degradation when disabled) |
 | Container| Docker · Docker Compose v2 · multi-arch (amd64 + arm64) |
 
 ## Quick Start
@@ -103,7 +103,7 @@ Every setting is an environment variable in `.env`. The most important:
 - `POSTGRES_PASSWORD`, `SECRET_KEY`, `INITIAL_ADMIN_*` — required.
 - `FRONTEND_URL`, `BACKEND_CORS_ORIGINS` — must point at the public URL
   users see.
-- `OLLAMA_*`, `RESEND_*`, `ANTHROPIC_*` — optional feature areas.
+- `OLLAMA_*`, `BREVO_*`, `ANTHROPIC_*` — optional feature areas.
 
 Full reference with defaults and example scenarios:
 **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)**.
@@ -117,13 +117,13 @@ working. See **[docs/OLLAMA.md](docs/OLLAMA.md)** for setup options
 (BYO Ollama vs Ollama in the same compose stack), model recommendations,
 and hardware notes.
 
-## Optional: Resend for emails
+## Optional: Brevo for emails
 
-Lyst uses [Resend](https://resend.com) to send invitations, password
+Lyst uses [Brevo](https://www.brevo.com) to send invitations, password
 resets, and reminders. Leave the API key empty to disable mail entirely —
 the affected flows print their links to the backend log instead, so the
 app still works air-gapped. See **[docs/EMAIL.md](docs/EMAIL.md)** for
-setup, domain verification, and how to swap Resend for another provider.
+setup, domain verification, and how to swap Brevo for another provider.
 
 ## Screenshots
 

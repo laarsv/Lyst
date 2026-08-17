@@ -12,7 +12,7 @@ Flow when a note is saved:
      a notification.
   3. We diff against the `note_mentions` table to find users that have
      never been notified about this note before, insert one row per
-     new mention, and fire an email per user via Resend.
+     new mention, and fire an email per user via Brevo.
 
 The dedup keeps a re-save of an already-mentioned-once note from
 spamming the recipient. If the user wants a fresh notification, they
@@ -144,7 +144,7 @@ async def dispatch_new_mentions(
     NoteMention rows here.
 
     Errors during email send are logged and swallowed: the user has
-    already saved their note, so a Resend outage shouldn't crash
+    already saved their note, so a Brevo outage shouldn't crash
     PATCH /notes."""
     mentioned_ids = extract_mention_ids(new_html)
     if not mentioned_ids:

@@ -1,12 +1,12 @@
 """Email notifications for the tasks layer (TASK_ASSIGNED + TASK_REMINDER).
 
-Same channel as mentions: a single Resend email per event. There is
+Same channel as mentions: a single Brevo email per event. There is
 no in-app notification CENTER yet — only emails go out — so we
 deliberately don't persist a notifications row beyond the dedup that
 already lives in the relevant model column (`reminder_sent`).
 
 Both calls are best-effort: failures are logged and swallowed so a
-flaky Resend doesn't crash a save / scheduler tick. The caller is
+flaky Brevo doesn't crash a save / scheduler tick. The caller is
 expected to have committed any state change BEFORE invoking us.
 """
 from __future__ import annotations

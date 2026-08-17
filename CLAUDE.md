@@ -68,7 +68,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ## Project notes — Lyst
 
-FastAPI + PostgreSQL/asyncpg + Alembic backend, React + TS + Vite + Tailwind frontend, Docker, Resend for email. The app runs in Docker; there is no local venv — verify the backend by building `./backend` and running `import app.main` / `alembic` against a throwaway Postgres.
+FastAPI + PostgreSQL/asyncpg + Alembic backend, React + TS + Vite + Tailwind frontend, Docker, Brevo for email. The app runs in Docker; there is no local venv — verify the backend by building `./backend` and running `import app.main` / `alembic` against a throwaway Postgres.
 
 **Resource modules** follow a 4-file shape: `app/models/<x>.py`, `app/schemas/<x>.py`, `app/routers/<x>.py`, `app/services/<x>_service.py`. Register the router in `app/main.py` (`app.include_router(..., prefix="/api")`) and the model in `app/models/__init__.py` (so Alembic's metadata sees it). The **Recipes** module is the reference implementation; **Pflanzen/Plants** (`models/plant.py`, alembic `0023`) and **Fitness** (`models/fitness.py`, alembic `0027`) mirror it.
 

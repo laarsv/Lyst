@@ -1,6 +1,6 @@
-# Email (Resend)
+# Email (Brevo)
 
-Lyst uses [Resend](https://resend.com) to send three kinds of transactional
+Lyst uses [Brevo](https://www.brevo.com) to send three kinds of transactional
 mail:
 
 - **User invitations** — when an admin invites someone, the link in the
@@ -16,28 +16,27 @@ graceful degradation (see below).
 
 ## Setup
 
-### 1. Get a Resend API key
+### 1. Get a Brevo API key
 
-1. Sign up at <https://resend.com> (free tier covers small self-hosted
-   instances comfortably — 100 emails/day, 3 000/month at time of writing).
-2. **Verify the domain** you want to send from at *Domains → Add Domain*.
-   You'll add three DNS records (SPF, DKIM, MX-style return-path). Resend
-   walks you through it.
-3. Generate an API key at *API Keys → Create API Key* with **Sending
-   Access** scope.
+1. Sign up at <https://www.brevo.com> (free tier covers small self-hosted
+   instances comfortably — 300 emails/day at time of writing).
+2. **Verify the sender** you want to send from at *Senders, Domains &
+   Dedicated IPs*. Verify the whole domain (SPF + DKIM + DMARC records)
+   rather than a single address — that's what keeps mail out of spam.
+3. Generate an API key at *SMTP & API → API Keys → Generate a new API key*.
 
 ### 2. Set the env vars
 
 In your `.env`:
 
 ```ini
-RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxxxxxxxx
-RESEND_FROM_EMAIL=Lyst <noreply@your-domain.app>
+BREVO_API_KEY=xkeysib-xxxxxxxxxxxxxxxxxxxxxxxx
+BREVO_FROM_EMAIL=info@your-domain.app
+BREVO_FROM_NAME=Lyst
 ```
 
-The `noreply@your-domain.app` part **must** belong to the domain you
-verified above. Sending from an unverified domain returns a 403 from
-Resend.
+`BREVO_FROM_EMAIL` **must** be a verified sender (or belong to a verified
+domain). Sending from an unverified address returns a 400 from Brevo.
 
 ### 3. Restart and test
 
@@ -58,8 +57,8 @@ If you don't want email — air-gapped instance, single-user, "I'll just
 share invite links by hand" — leave the variables empty:
 
 ```ini
-RESEND_API_KEY=
-# RESEND_FROM_EMAIL can stay empty too
+BREVO_API_KEY=
+# BREVO_FROM_EMAIL / BREVO_FROM_NAME can stay empty too
 ```
 
 Behaviour with email disabled:
@@ -83,40 +82,40 @@ is the convenience of links arriving in inboxes by themselves.
 
 ---
 
-## Alternatives to Resend
+## Alternatives to Brevo
 
-The only Resend-specific code is in
+The only Brevo-specific code is in
 [`backend/app/email/sender.py`](../backend/app/email/sender.py). It's a
-thin wrapper around the [`resend`](https://pypi.org/project/resend/)
-Python SDK and roughly 30 lines.
+thin `httpx` wrapper around Brevo's transactional endpoint
+(`POST https://api.brevo.com/v3/smtp/email`) and roughly 40 lines.
 
 If you'd rather use SES, Mailgun, Postmark, or plain SMTP, swap that
 module for one of those SDKs (or `aiosmtplib` for SMTP). The rest of the
 codebase only calls `await send_email(to, subject, html)` — no
-Resend-specific assumptions leak elsewhere.
+Brevo-specific assumptions leak elsewhere.
 
-A PR to make the provider pluggable via env (`MAIL_PROVIDER=resend|smtp`)
+A PR to make the provider pluggable via env (`MAIL_PROVIDER=brevo|smtp`)
 would be very welcome — see [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ---
 
 ## Troubleshooting
 
-### Test email returns 502 "Resend hat den Versand abgelehnt"
+### Test email returns 502 "Brevo hat den Versand abgelehnt"
 
-The Resend API itself rejected the send. Check:
+The Brevo API itself rejected the send. Check:
 
 1. The API key is valid (regenerate if you're not sure).
-2. The sender domain in `RESEND_FROM_EMAIL` is verified (status: green in
-   the Resend dashboard).
+2. The address in `BREVO_FROM_EMAIL` is a verified sender (or on a
+   verified domain) in the Brevo dashboard.
 3. You're not over the daily limit on the free tier.
 
-The exact Resend error is in the backend log — `docker compose logs
+The exact Brevo error is in the backend log — `docker compose logs
 backend | tail -50`.
 
-### Test email returns 503 "RESEND_API_KEY ist nicht gesetzt"
+### Test email returns 503 "BREVO_API_KEY ist nicht gesetzt"
 
-Self-explanatory — `RESEND_API_KEY` is empty in the running backend.
+Self-explanatory — `BREVO_API_KEY` is empty in the running backend.
 Confirm that `.env` has the value and restart with `docker compose up -d`
 (restart, not just running, so the new env var is picked up).
 
@@ -124,11 +123,11 @@ Confirm that `.env` has the value and restart with `docker compose up -d`
 
 Almost always a DNS issue:
 
-- SPF record present and includes Resend's sending IPs (Resend's domain
+- SPF record present and includes Brevo's sending servers (Brevo's domain
   setup wizard handles this).
 - DKIM record published and active.
 - DMARC record published with at least `p=none` so receivers know to
   evaluate SPF/DKIM at all.
 
-The Resend dashboard's *Domains* page shows live verification status of
-all three.
+The Brevo dashboard's *Senders, Domains & Dedicated IPs* page shows live
+verification status of all three.

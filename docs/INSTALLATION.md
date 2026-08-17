@@ -18,7 +18,7 @@ For AI features see [OLLAMA.md](./OLLAMA.md). For email see [EMAIL.md](./EMAIL.m
     <https://docs.docker.com/engine/install/>.
 - About **1 GB RAM free** for the bundled Postgres + backend + frontend
   (more if you run Ollama on the same box).
-- **Outbound HTTPS** if you plan to use Resend for email.
+- **Outbound HTTPS** if you plan to use Brevo for email.
 
 That's it. No Python, no Node, no Postgres on the host — everything runs
 inside containers.

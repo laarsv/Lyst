@@ -719,7 +719,7 @@ async def share_recipe_with_email(
     or "external" and recipient_id is the User.id of the recipient on
     the internal path (so the caller can fan out a share.created
     user-WS event). External path returns recipient_id=None and leaves
-    the caller responsible for sending the Resend email; this just
+    the caller responsible for sending the Brevo email; this just
     ensures share_token is provisioned. Re-sharing with the same
     address updates the permission rather than 409-ing."""
     target_email = email.strip().lower()
