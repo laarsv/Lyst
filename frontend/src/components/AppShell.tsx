@@ -103,9 +103,9 @@ export function AppShell() {
             <img
               src="/logo.png"
               alt=""
-              width="32"
-              height="32"
-              className="size-8 rounded-md"
+              width="40"
+              height="40"
+              className="size-10"
             />
             <span className="wordmark text-xl">lyst</span>
           </Link>
