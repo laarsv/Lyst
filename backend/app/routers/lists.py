@@ -9,6 +9,8 @@ from app.models.list_item import ListItem
 from app.models.user import User
 from app.schemas.list import ListCreate, ListDuplicate, ListOut, ListUpdate
 from app.services.list_service import (
+    pinned_list_ids,
+    set_pinned,
     create_list,
     delete_list,
     duplicate_list,
@@ -33,6 +35,7 @@ def _list_out(
     is_owner: bool,
     permission: str | None,
     internal_share_count: int | None = None,
+    is_pinned: bool = False,
 ) -> dict:
     from app.schemas.share import ShareState
     share_state = None
@@ -47,6 +50,7 @@ def _list_out(
             "checked_count": checked_count,
             "is_owner": is_owner,
             "permission": permission,
+            "is_pinned": is_pinned,
             "share_state": share_state,
         },
     ).model_dump(mode="json")
@@ -68,6 +72,7 @@ async def get_lists(
 ):
     rows = await list_for_user(db, user.id, include_templates=False)
     share_counts = await _share_state_map_for_lists(db, rows)
+    pinned = await pinned_list_ids(db, user.id)
     return ok(
         [
             _list_out(
@@ -77,6 +82,7 @@ async def get_lists(
                 owner,
                 perm,
                 internal_share_count=share_counts.get(l.id, 0) if owner else None,
+                is_pinned=l.id in pinned,
             )
             for l, ic, cc, owner, perm in rows
         ]
@@ -135,6 +141,7 @@ async def get_list(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     total, checked = await list_stats(db, list_id)
     counts = await list_internal_share_counts(db, [lst.id]) if is_owner else {}
+    pinned = await pinned_list_ids(db, user.id)
     return ok(
         _list_out(
             lst,
@@ -143,8 +150,39 @@ async def get_list(
             is_owner,
             perm,
             internal_share_count=counts.get(lst.id, 0) if is_owner else None,
+            is_pinned=lst.id in pinned,
         )
     )
+
+
+@router.post("/{list_id}/pin")
+async def post_pin(
+    list_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Pin the list onto the caller's "Heute" screen. Read access is enough —
+    the pin only affects the caller's own dashboard."""
+    try:
+        await get_list_for_user(db, list_id, user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    await set_pinned(db, list_id, user.id, True)
+    return ok({"pinned": True})
+
+
+@router.delete("/{list_id}/pin")
+async def delete_pin(
+    list_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        await get_list_for_user(db, list_id, user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    await set_pinned(db, list_id, user.id, False)
+    return ok({"pinned": False})
 
 
 @router.patch("/{list_id}")

@@ -60,7 +60,20 @@ class UpcomingReminderOut(BaseModel):
     message: str | None = None
 
 
+class PinnedListOut(BaseModel):
+    """A list the user pinned themselves — the one block that is not
+    time-critical (see the note in dashboard_service)."""
+
+    id: int
+    title: str
+    color: str | None = None
+    icon: str | None = None
+    item_count: int = 0
+    checked_count: int = 0
+
+
 class DashboardOut(BaseModel):
+    pinned_lists: list[PinnedListOut] = []
     open_session: OpenSessionOut | None = None
     due_plants: list[DuePlantOut] = []
     due_tasks: list[DueTaskOut] = []

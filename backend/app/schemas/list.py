@@ -50,6 +50,9 @@ class ListOut(ListBase):
     checked_count: int = 0
     is_owner: bool = True
     permission: str | None = None
+    # Per-user, wie is_owner/permission: eine geteilte Liste kann auf genau
+    # einem Dashboard angeheftet sein.
+    is_pinned: bool = False
     # Owner-side share summary. None on shared-with-me rows (we don't
     # expose collaborators of someone else's list).
     share_state: ShareState | None = None

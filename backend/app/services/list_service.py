@@ -5,6 +5,7 @@ from sqlalchemy.orm import selectinload
 from app.models.collaborator import CollaboratorPermission, ListCollaborator
 from app.models.list import CategorizationMode, List as ListModel, ListType
 from app.models.list_item import ListItem
+from app.models.list_pin import ListPin
 from app.models.user import User
 
 
@@ -46,6 +47,30 @@ async def list_for_user(
     rows = own_rows + shared_rows
     rows.sort(key=lambda r: r[0].updated_at, reverse=True)
     return rows
+
+
+async def set_pinned(db: AsyncSession, list_id: int, user_id: int, pinned: bool) -> bool:
+    """Pin/unpin a list onto the user's "Heute" screen. Returns the new state.
+
+    The caller has already proved the user may SEE the list (get_list_for_user);
+    pinning needs no edit permission — it only touches the pinner's own view.
+    Idempotent in both directions so a double tap can't 500.
+    """
+    existing = await db.execute(
+        select(ListPin).where(and_(ListPin.list_id == list_id, ListPin.user_id == user_id))
+    )
+    pin = existing.scalar_one_or_none()
+    if pinned and pin is None:
+        db.add(ListPin(list_id=list_id, user_id=user_id))
+    elif not pinned and pin is not None:
+        await db.delete(pin)
+    await db.commit()
+    return pinned
+
+
+async def pinned_list_ids(db: AsyncSession, user_id: int) -> set[int]:
+    result = await db.execute(select(ListPin.list_id).where(ListPin.user_id == user_id))
+    return set(result.scalars().all())
 
 
 async def get_list_for_user(

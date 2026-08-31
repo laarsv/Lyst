@@ -3,6 +3,9 @@
 Design rules for what belongs here (see also schemas/dashboard.py):
   * Only time-critical, actionable things — stuff the user would MISS.
     No counters ("42 recipes"), no "recently edited".
+  * ONE deliberate exception: pinned lists. They are not time-critical, but
+    they are not system-derived either — the user pinned them by hand and
+    wants them on this screen. Everything else here stays automatic.
   * Every block is independent and may come back empty; the frontend hides
     empty blocks rather than rendering placeholders.
 
@@ -12,7 +15,7 @@ uses `now.date()` in UTC too). For CET/CEST "today" therefore rolls over at
 """
 from datetime import datetime, time, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -20,6 +23,7 @@ from app.models.collaborator import ListCollaborator
 from app.models.fitness import Workout, WorkoutSession
 from app.models.list import List as ListModel
 from app.models.list_item import ListItem
+from app.models.list_pin import ListPin
 from app.models.meal_plan import MealPlan, MealPlanEntry
 from app.models.note import Note, NoteShare
 from app.models.plant import Plant
@@ -308,9 +312,54 @@ async def _upcoming_reminders(
 
 # ---------- entry point ------------------------------------------------------
 
+async def _pinned_lists(db: AsyncSession, user_id: int) -> list[dict]:
+    """Lists the user pinned, oldest pin first.
+
+    Re-checks visibility instead of trusting the pin: a pin outlives a
+    revoked share (its FK hangs off the list, not the share row), and a list
+    can be turned into a template later. Either way it drops off the board
+    quietly rather than showing a list the user can no longer open.
+    """
+    item_count = func.count(ListItem.id).label("item_count")
+    checked_count = func.coalesce(
+        func.sum(case((ListItem.is_checked.is_(True), 1), else_=0)), 0
+    ).label("checked_count")
+    rows = await db.execute(
+        select(ListModel, item_count, checked_count)
+        .join(ListPin, ListPin.list_id == ListModel.id)
+        .outerjoin(ListItem, ListItem.list_id == ListModel.id)
+        .where(ListPin.user_id == user_id)
+        .where(ListModel.is_template.is_(False))
+        .where(
+            or_(
+                ListModel.owner_id == user_id,
+                ListModel.id.in_(
+                    select(ListCollaborator.list_id).where(
+                        ListCollaborator.user_id == user_id
+                    )
+                ),
+            )
+        )
+        .group_by(ListModel.id, ListPin.created_at)
+        .order_by(ListPin.created_at)
+    )
+    return [
+        {
+            "id": lst.id,
+            "title": lst.title,
+            "color": lst.color,
+            "icon": lst.icon,
+            "item_count": total,
+            "checked_count": checked,
+        }
+        for lst, total, checked in rows.all()
+    ]
+
+
 async def build_dashboard(db: AsyncSession, user_id: int) -> dict:
     now = _utcnow()
     return {
+        "pinned_lists": await _pinned_lists(db, user_id),
         "open_session": await _open_session(db, user_id),
         "due_plants": await _due_plants(db, user_id, now),
         "due_tasks": await _due_tasks(db, user_id, now),
