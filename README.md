@@ -12,9 +12,9 @@
 [![Last commit](https://img.shields.io/github/last-commit/laarsv/Lyst)](https://github.com/laarsv/Lyst/commits/main)
 
 <p>
+  <img src="docs/assets/screenshots/heute.png" alt="Today view" width="22%" />
   <img src="docs/assets/screenshots/lists.png" alt="Lists view" width="22%" />
   <img src="docs/assets/screenshots/recipe.png" alt="Recipe view" width="22%" />
-  <img src="docs/assets/screenshots/notes.png" alt="Notes view" width="22%" />
   <img src="docs/assets/screenshots/mobile.png" alt="Mobile view" width="22%" />
 </p>
 
@@ -128,16 +128,22 @@ setup, domain verification, and how to swap Brevo for another provider.
 ## Screenshots
 
 <p align="center">
-  <img src="docs/assets/screenshots/lists.png" alt="Categorised shopping list" width="80%" />
+  <img src="docs/assets/screenshots/heute.png" alt="Today view: pinned lists, due tasks, watering, meal plan" width="80%" />
 </p>
 <p align="center">
-  <img src="docs/assets/screenshots/recipe.png" alt="Recipe detail with cook mode" width="80%" />
+  <img src="docs/assets/screenshots/lists.png" alt="List overview with type filters" width="80%" />
 </p>
 <p align="center">
-  <img src="docs/assets/screenshots/notes.png" alt="Markdown notes with version history" width="80%" />
+  <img src="docs/assets/screenshots/recipes-overview.png" alt="Recipe library with tag filters and sorting" width="80%" />
 </p>
 <p align="center">
-  <img src="docs/assets/screenshots/mobile.png" alt="Mobile note editor" width="40%" />
+  <img src="docs/assets/screenshots/recipe.png" alt="Recipe detail in the cookbook look" width="80%" />
+</p>
+<p align="center">
+  <img src="docs/assets/screenshots/notes.png" alt="Rich-text notes with task lists, folders and tags" width="80%" />
+</p>
+<p align="center">
+  <img src="docs/assets/screenshots/mobile.png" alt="Today view on a phone" width="40%" />
 </p>
 
 ## Contributing
