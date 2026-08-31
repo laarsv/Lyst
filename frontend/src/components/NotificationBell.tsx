@@ -225,7 +225,7 @@ export function NotificationBell() {
         aria-label="Benachrichtigungen"
         aria-haspopup="dialog"
         aria-expanded={open}
-        className="relative p-2 rounded-lg text-muted hover:bg-page hover:text-ink transition"
+        className="relative size-10 inline-flex items-center justify-center rounded-lg text-muted hover:bg-page hover:text-ink transition"
       >
         <Bell size={18} />
         {unreadCount > 0 && (

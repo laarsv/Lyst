@@ -13,7 +13,7 @@
   --color-surface: 255 255 255;
   --color-line:    229 229 227;  /* #e5e5e3 */
   --color-ink:     26 26 26;     /* #1a1a1a */
-  --color-muted:   136 136 132;  /* #888884 */
+  --color-muted:   107 107 103;  /* #6b6b67 — 4,9:1 auf bg-page, 5,4:1 auf weiss (WCAG AA) */
   /* Royal-blue brand (dark accent — white foreground on brand fills). */
   --color-brand:   41 71 201;    /* #2947c9 */
   --color-brand-50: 235 239 252; /* #ebeffc — light blue tint (chips/cards) */
@@ -28,7 +28,7 @@
   --color-surface: 30 30 30;     /* #1e1e1e */
   --color-line:    46 46 46;     /* #2e2e2e */
   --color-ink:     240 240 238;  /* #f0f0ee */
-  --color-muted:   136 136 132;  /* unchanged */
+  --color-muted:   136 136 132;  /* dark mode: 4,7:1 auf bg-surface — bleibt heller */
   /* Lighter royal in dark mode so text-brand (wordmark/links/active nav)
      stays readable on the dark surface; fills keep white foreground. */
   --color-brand:   107 134 238;  /* #6b86ee */
@@ -75,7 +75,7 @@ html[data-theme="dark"] { color-scheme: dark; }
 
   .input {
     @apply w-full rounded-ctl border border-line bg-surface px-4 py-2.5
-           text-ink outline-none transition placeholder:text-muted/70
+           text-ink outline-none transition placeholder:text-muted
            focus:border-brand focus:ring-2 focus:ring-brand/20;
   }
   .label { @apply block text-sm font-medium text-ink mb-1.5; }
@@ -592,7 +592,7 @@ html[data-theme="dark"] { color-scheme: dark; }
    to the first node and the data-placeholder attribute. */
 .note-editor-surface p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
-  color: rgb(var(--color-muted) / 0.6);
+  color: rgb(var(--color-muted));
   float: left;
   height: 0;
   pointer-events: none;

@@ -84,11 +84,11 @@ export function AppShell() {
   return (
     <div className="min-h-full flex flex-col">
       <header className="sticky top-0 z-30 bg-surface/90 backdrop-blur border-b border-line">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center gap-3">
+        <div className="max-w-5xl mx-auto px-4 py-2.5 flex items-center gap-3">
           {/* Burger — only visible on small screens */}
           <button
             type="button"
-            className="md:hidden -ml-2 p-2 rounded-lg hover:bg-page active:bg-line"
+            className="lg:hidden -ml-2 size-10 inline-flex items-center justify-center rounded-lg hover:bg-page active:bg-line"
             aria-label={menuOpen ? 'Menü schließen' : 'Menü öffnen'}
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((o) => !o)}
@@ -111,7 +111,7 @@ export function AppShell() {
           </Link>
 
           {/* Desktop nav */}
-          <nav className="hidden md:flex gap-1 ml-4">
+          <nav className="hidden lg:flex gap-1 ml-4">
             {links.map(([to, label]) => (
               <NavLink
                 key={to}
@@ -139,7 +139,7 @@ export function AppShell() {
               onClick={() => setSearchOpen(true)}
               aria-label="Suchen"
               title="Suchen (Cmd+K)"
-              className="p-2 rounded-lg text-muted hover:bg-page hover:text-ink transition"
+              className="size-10 inline-flex items-center justify-center rounded-lg text-muted hover:bg-page hover:text-ink transition"
             >
               <Search size={18} />
             </button>
@@ -150,7 +150,7 @@ export function AppShell() {
 
         {/* Mobile dropdown */}
         {menuOpen && (
-          <div className="md:hidden border-t border-line bg-surface">
+          <div className="lg:hidden border-t border-line bg-surface">
             <nav className="max-w-5xl mx-auto px-2 py-2 flex flex-col">
               {links.map(([to, label]) => (
                 <NavLink
@@ -180,7 +180,7 @@ export function AppShell() {
           type="button"
           aria-hidden
           tabIndex={-1}
-          className="md:hidden fixed inset-0 top-[60px] z-20 bg-ink/20"
+          className="lg:hidden fixed inset-0 top-[60px] z-20 bg-ink/20"
           onClick={() => setMenuOpen(false)}
         />
       )}

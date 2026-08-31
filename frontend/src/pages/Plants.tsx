@@ -107,7 +107,14 @@ export function PlantsPage() {
           placeholder="Pflanze, Art oder Bereich suchen…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && load()}
+          // `q` filtert client-seitig in `visible` — Enter braucht keinen
+          // Roundtrip und schliesst nur die Tastatur (wie bei Rezepten).
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              e.currentTarget.blur();
+            }
+          }}
         />
         {/* Bereich filter chip bar — mirrors the recipes tag filter. */}
         <div className="flex gap-1 bg-surface border border-line rounded-xl p-1 overflow-x-auto">

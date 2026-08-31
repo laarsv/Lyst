@@ -112,7 +112,7 @@ export function AccountMenu({ name, onLogout }: { name: string | null; onLogout:
         aria-label="Konto-Menü"
         aria-haspopup="menu"
         aria-expanded={open}
-        className="size-9 inline-flex items-center justify-center rounded-full bg-brand-50 text-brand-700 text-sm font-semibold hover:bg-brand-100 transition"
+        className="size-10 inline-flex items-center justify-center rounded-full bg-brand-50 text-brand-700 text-sm font-semibold hover:bg-brand-100 transition"
       >
         {initials(name)}
       </button>
