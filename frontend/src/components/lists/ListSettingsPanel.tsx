@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useScrollLock } from '@/hooks/useScrollLock';
 import { Sparkles, Hand, X, Zap } from 'lucide-react';
 import type { CategorizationMode, ListSummary, ListType } from '@/types';
 import { ListsApi } from '@/api/endpoints';
@@ -43,13 +44,10 @@ export function ListSettingsPanel({
       if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prev;
-    };
+    return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
+
+  useScrollLock(open);
 
   return (
     <>

@@ -12,8 +12,10 @@
  *  instead of covering the viewport. The AppShell header uses `backdrop-blur`,
  *  which broke the account menu's sheet on Android exactly that way —
  *  NotificationBell already portals its own sheet for the same reason. */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
+import { useScrollLock } from '@/hooks/useScrollLock';
 
 interface Props {
   open: boolean;
@@ -33,6 +35,10 @@ export function BottomSheet({
   ariaLabel,
 }: Props) {
   const [shown, setShown] = useState(false);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+
+  useScrollLock(open);
+  useFocusTrap(panelRef, open);
 
   // Trigger the slide-in transition by toggling translate after first paint.
   useEffect(() => {
@@ -72,7 +78,9 @@ export function BottomSheet({
         onClick={onClose}
       />
       <div
-        className={`relative w-full max-w-[640px] bg-surface border-t border-line rounded-t-card pb-[max(env(safe-area-inset-bottom,0px),12px)] flex flex-col ${maxHeightClass} transition-transform duration-200 ${
+        ref={panelRef}
+        tabIndex={-1}
+        className={`relative outline-none w-full max-w-[640px] bg-surface border-t border-line rounded-t-card pb-[max(env(safe-area-inset-bottom,0px),12px)] flex flex-col ${maxHeightClass} transition-transform duration-200 ${
           shown ? 'translate-y-0' : 'translate-y-full'
         }`}
       >

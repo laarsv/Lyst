@@ -70,7 +70,7 @@ export function SearchModal({ open, onClose }: Props) {
     (results?.recipes.length ?? 0);
 
   return (
-    <Modal open={open} onClose={onClose} className="max-w-xl">
+    <Modal open={open} onClose={onClose} ariaLabel="Suche" className="max-w-xl">
       <div className="space-y-3">
         <div className="flex items-center gap-2">
           <span className="text-muted text-lg">⌕</span>

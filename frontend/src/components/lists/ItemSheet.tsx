@@ -23,6 +23,7 @@
  *  same softDelete the swipe gesture uses — undo toast included.
  */
 import { useEffect, useRef, useState } from 'react';
+import { useScrollLock } from '@/hooks/useScrollLock';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import type { ListItem, ListType } from '@/types';
@@ -87,14 +88,7 @@ export function ItemSheet({
   // Body lock for both presentations — the same component drives the
   // mobile bottom sheet AND the desktop centred modal, and both
   // benefit from a frozen background.
-  useEffect(() => {
-    if (!open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [open]);
+  useScrollLock(open);
 
   // Mobile-only: swipe-down on the sheet handle closes it. Cheap
   // touch-event listener — we only need the y-delta on release.

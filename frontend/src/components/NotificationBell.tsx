@@ -17,6 +17,7 @@ import { NotificationsApi, type NotificationRow } from '@/api/endpoints';
 import { useNotificationsStore } from '@/store/notifications';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
+import { useScrollLock } from '@/hooks/useScrollLock';
 
 // Same breakpoint ItemSheet uses — keeps "is mobile?" consistent app-wide.
 const MOBILE_MQ = '(max-width: 767.98px)';
@@ -92,15 +93,8 @@ export function NotificationBell() {
     };
   }, [open, isMobile]);
 
-  // Body scroll lock + swipe-down dismiss on mobile (mirrors ItemSheet).
-  useEffect(() => {
-    if (!open || !isMobile) return;
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [open, isMobile]);
+  // Scroll-Sperre nur fuer das mobile Sheet (Desktop ist ein Dropdown).
+  useScrollLock(open && isMobile);
 
   useEffect(() => {
     if (!open || !isMobile || !sheetRef.current) return;
