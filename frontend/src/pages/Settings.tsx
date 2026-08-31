@@ -8,6 +8,7 @@ import {
   setStartPage,
   type StartPage,
 } from '@/store/startPage';
+import { NAV_ITEMS, useNavPrefs } from '@/store/navPrefs';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
 
@@ -78,6 +79,7 @@ export function SettingsPage() {
         </div>
       </form>
       <StartPageSection />
+      <NavigationSection />
       <InstallSection />
       <form onSubmit={savePassword} className="card p-6 space-y-4">
         <h2 className="font-semibold">Passwort ändern</h2>
@@ -125,6 +127,54 @@ function StartPageSection() {
           </option>
         ))}
       </select>
+    </section>
+  );
+}
+
+function NavigationSection() {
+  const hidden = useNavPrefs((s) => s.hidden);
+  const toggle = useNavPrefs((s) => s.toggle);
+  const reset = useNavPrefs((s) => s.reset);
+  const shownCount = NAV_ITEMS.length - hidden.length;
+
+  return (
+    <section className="card p-6 space-y-3">
+      <div>
+        <h2 className="font-semibold">Navigation</h2>
+        <p className="text-sm text-muted">
+          Welche Bereiche direkt im Menü stehen. Abgeschaltete Bereiche bleiben
+          erreichbar — sie rutschen unter „Mehr“. Gilt für dieses Gerät.
+        </p>
+      </div>
+      <ul className="divide-y divide-line">
+        {NAV_ITEMS.map(([path, label]) => {
+          const on = !hidden.includes(path);
+          return (
+            <li key={path} className="flex items-center justify-between py-2.5">
+              <span className="text-sm">
+                {label}
+                {!on && <span className="text-muted"> — unter „Mehr“</span>}
+              </span>
+              <label className="inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="sr-only peer"
+                  checked={on}
+                  onChange={() => toggle(path)}
+                  aria-label={`${label} im Menü anzeigen`}
+                />
+                <div className="w-11 h-6 bg-line peer-checked:bg-brand rounded-full transition relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-[#fff] after:rounded-full after:h-5 after:w-5 after:transition peer-checked:after:translate-x-5" />
+              </label>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="flex items-center justify-between pt-1">
+        <span className="text-xs text-muted">{shownCount} von {NAV_ITEMS.length} im Menü</span>
+        <button type="button" className="btn-ghost text-sm" onClick={reset}>
+          Zurücksetzen
+        </button>
+      </div>
     </section>
   );
 }

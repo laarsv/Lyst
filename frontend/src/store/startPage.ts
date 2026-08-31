@@ -10,27 +10,12 @@
  * only a fresh app start (PWA launch, new tab) lands on the chosen page.
  */
 
-export type StartPage =
-  | '/'
-  | '/heute'
-  | '/tasks'
-  | '/recipes'
-  | '/plants'
-  | '/fitness'
-  | '/meal-planner'
-  | '/notes';
+import { NAV_ITEMS, type NavPath } from '@/store/navPrefs';
 
-/** Label pairs for the settings dropdown — order matches the nav. */
-export const START_PAGE_OPTIONS: [StartPage, string][] = [
-  ['/', 'Listen'],
-  ['/heute', 'Heute'],
-  ['/tasks', 'Aufgaben'],
-  ['/recipes', 'Rezepte'],
-  ['/plants', 'Pflanzen'],
-  ['/fitness', 'Fitness'],
-  ['/meal-planner', 'Wochenplan'],
-  ['/notes', 'Notizen'],
-];
+/** Same destinations as the nav — kept in ONE place so a new module can't
+ *  show up in the nav but stay unpickable as a start page. */
+export type StartPage = NavPath;
+export const START_PAGE_OPTIONS = NAV_ITEMS;
 
 const STORAGE_KEY = 'lyst-start-page';
 const SESSION_FLAG = 'lyst-start-page-applied';

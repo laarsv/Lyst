@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Menu, Search, X } from 'lucide-react';
 import { useAuthStore } from '@/store/auth';
@@ -7,24 +7,19 @@ import { SearchModal } from '@/components/SearchModal';
 import { SyncStatusBadge } from '@/components/SyncStatusBadge';
 import { NotificationBell } from '@/components/NotificationBell';
 import { AccountMenu } from '@/components/AccountMenu';
+import { NavMoreMenu } from '@/components/NavMoreMenu';
+import { splitNav, useNavPrefs } from '@/store/navPrefs';
 import { useOverviewRouteRefresh } from '@/hooks/useOverviewQuery';
 import { useUserWebSocket } from '@/hooks/useUserWebSocket';
 import clsx from 'clsx';
 
-const USER_LINKS: [string, string][] = [
-  ['/', 'Listen'],
-  ['/heute', 'Heute'],
-  ['/tasks', 'Aufgaben'],
-  ['/recipes', 'Rezepte'],
-  ['/plants', 'Pflanzen'],
-  ['/fitness', 'Fitness'],
-  ['/meal-planner', 'Wochenplan'],
-  ['/notes', 'Notizen'],
-  // "Konto" intentionally NOT here — it lives only in AccountMenu (avatar).
-  // The /settings route still exists; AccountMenu's "Konto" row navigates to it.
-];
+// The content destinations live in store/navPrefs (NAV_ITEMS) — the user
+// decides there which of them ride in the main nav and which move under
+// "Mehr". "Konto" is intentionally not among them: it lives only in
+// AccountMenu (avatar). The /settings route still exists; AccountMenu's
+// "Konto" row navigates to it.
 
-const ADMIN_LINKS: [string, string][] = [
+const ADMIN_LINKS: readonly (readonly [string, string])[] = [
   ['/admin', 'Benutzer'],
   ['/admin/settings', 'Einstellungen'],
 ];
@@ -78,7 +73,11 @@ export function AppShell() {
     }
   };
 
-  const links = role === 'admin' ? ADMIN_LINKS : USER_LINKS;
+  const hiddenNav = useNavPrefs((s) => s.hidden);
+  const { visible, overflow } = useMemo(() => splitNav(hiddenNav), [hiddenNav]);
+  const isAdmin = role === 'admin';
+  const links = isAdmin ? ADMIN_LINKS : visible;
+  const more = isAdmin ? [] : overflow;
   const linkEnd = (to: string) => to === '/' || to === '/admin';
 
   return (
@@ -127,6 +126,7 @@ export function AppShell() {
                 {label}
               </NavLink>
             ))}
+            <NavMoreMenu items={more} linkEnd={linkEnd} />
           </nav>
 
           <div className="flex items-center gap-2 ml-auto">
@@ -169,6 +169,28 @@ export function AppShell() {
                   {label}
                 </NavLink>
               ))}
+              {more.length > 0 && (
+                <>
+                  <div className="px-3 pt-3 pb-1 text-xs uppercase tracking-wide text-muted font-medium">
+                    Mehr
+                  </div>
+                  {more.map(([to, label]) => (
+                    <NavLink
+                      key={to}
+                      to={to}
+                      end={linkEnd(to)}
+                      className={({ isActive }) =>
+                        clsx(
+                          'px-3 py-3 rounded-lg text-base font-medium',
+                          isActive ? 'bg-brand-50 text-brand-700' : 'text-ink active:bg-page',
+                        )
+                      }
+                    >
+                      {label}
+                    </NavLink>
+                  ))}
+                </>
+              )}
             </nav>
           </div>
         )}
