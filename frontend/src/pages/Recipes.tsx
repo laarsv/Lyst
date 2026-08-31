@@ -8,9 +8,10 @@ import { ImportRecipeModal } from '@/components/recipes/ImportRecipeModal';
 import { SuggestRecipesModal } from '@/components/recipes/SuggestRecipesModal';
 import { ShareRecipeBookPanel } from '@/components/recipes/ShareRecipeBookPanel';
 import { MergeToListModal } from '@/components/recipes/MergeToListModal';
-import { IconAction } from '@/components/IconAction';
+import { ActionMenu } from '@/components/ActionMenu';
 import { useOverviewQuery } from '@/hooks/useOverviewQuery';
 import { toast } from '@/components/Toast';
+import { CardGridSkeleton, LoadingAnnouncement } from '@/components/Skeleton';
 import { getApiError } from '@/api/client';
 import { MEAL_TYPE_TAGS } from '@/data/recipeTags';
 
@@ -157,33 +158,42 @@ export function RecipesPage() {
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h1 className="text-2xl font-semibold">Rezepte</h1>
-        <div className="flex flex-wrap gap-1.5 items-center">
-          <IconAction
-            label="Einkaufsliste aus Rezepten"
-            icon={ShoppingCart}
-            onClick={() => setMergeOpen(true)}
+        {/* Die beiden haeufigsten Aktionen tragen ihren Namen; der Rest liegt
+            hinter "Mehr". Fuenf gleich aussehende Icons nebeneinander waren
+            per Tooltip nur mit Maus zu entziffern. */}
+        <div className="flex flex-wrap gap-2 items-center">
+          <ActionMenu
+            label="Weitere Aktionen"
+            items={[
+              {
+                label: 'Einkaufsliste aus Rezepten',
+                icon: ShoppingCart,
+                run: () => setMergeOpen(true),
+              },
+              { label: 'Rezeptbuch teilen', icon: Share2, run: () => setBookShareOpen(true) },
+              {
+                label: 'Was kann ich kochen? (KI)',
+                icon: Sparkles,
+                run: () => setSuggestOpen(true),
+              },
+            ]}
           />
-          <IconAction
-            label="Rezeptbuch teilen"
-            icon={Share2}
-            onClick={() => setBookShareOpen(true)}
-          />
-          <IconAction
-            label="Was kann ich kochen? (KI)"
-            icon={Sparkles}
-            onClick={() => setSuggestOpen(true)}
-          />
-          <IconAction
-            label="Importieren"
-            icon={Download}
+          <button
+            type="button"
+            className="btn-secondary inline-flex items-center gap-1.5"
             onClick={() => setImportOpen(true)}
-          />
-          <IconAction
-            label="Neues Rezept"
-            icon={Plus}
+          >
+            <Download size={18} />
+            Importieren
+          </button>
+          <button
+            type="button"
+            className="btn-primary inline-flex items-center gap-1.5"
             onClick={() => nav('/recipes/new')}
-            variant="primary"
-          />
+          >
+            <Plus size={18} />
+            Neues Rezept
+          </button>
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2 mb-6">
@@ -297,7 +307,10 @@ export function RecipesPage() {
         </div>
       </div>
       {loading ? (
-        <div className="text-muted/70">Lade…</div>
+        <>
+          <CardGridSkeleton />
+          <LoadingAnnouncement />
+        </>
       ) : visible.length === 0 ? (
         <div className="card p-12 text-center text-muted">
           Noch keine Rezepte.{' '}

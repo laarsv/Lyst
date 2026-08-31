@@ -9,6 +9,7 @@ import { getApiError } from '@/api/client';
 import { useNavigate } from 'react-router-dom';
 import { DEFAULT_PRESET_FOR_TYPE, LIST_TYPES as TYPES } from '@/data/presets';
 import { CreateListModal } from '@/components/lists/CreateListModal';
+import { CardGridSkeleton, LoadingAnnouncement } from '@/components/Skeleton';
 import { useConfirm } from '@/components/Dialogs';
 import { Loader2, Sparkles, Trash2 } from 'lucide-react';
 import type { AiGeneratedList } from '@/types';
@@ -165,7 +166,10 @@ export function DashboardPage() {
 
       {mode === 'lists' ? (
         loading ? (
-          <div className="text-muted/70">Lade…</div>
+          <>
+            <CardGridSkeleton />
+            <LoadingAnnouncement />
+          </>
         ) : filteredLists.length === 0 ? (
           <div className="card p-12 text-center text-muted">
             Noch keine Listen.{' '}
@@ -181,7 +185,10 @@ export function DashboardPage() {
           </div>
         )
       ) : !templatesLoaded ? (
-        <div className="text-muted/70">Lade…</div>
+        <>
+            <CardGridSkeleton />
+            <LoadingAnnouncement />
+          </>
       ) : filteredTemplates.length === 0 ? (
         <div className="card p-12 text-center text-muted">
           {templates.length === 0

@@ -20,6 +20,7 @@ import { BulkNutritionFill } from '@/components/recipes/BulkNutritionFill';
 import { SortableEditRow } from '@/components/recipes/SortableEditRow';
 import { UnitSelect } from '@/components/UnitSelect';
 import { toast } from '@/components/Toast';
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import { getApiError } from '@/api/client';
 import { invalidateOverview } from '@/hooks/useOverviewQuery';
 import { Apple, ImagePlus, Loader2, Sparkles, Trash2, Upload } from 'lucide-react';
@@ -187,6 +188,16 @@ export function RecipeEditPage() {
           .map((s) => ({ id: tempId(), persisted: false, description: s.description }))
       : [],
   );
+
+  // Ungespeicherte Eingaben nicht still verlieren (beide Abbrechen-Knoepfe,
+  // Reload). Der Browser-Zurueck-Button bleibt ungeschuetzt — siehe Hook.
+  const { leave } = useUnsavedChanges({
+    values: {
+      title, description, tips, servings, prep, cook, sourceUrl, tags,
+      imageUrl, ingredients, steps,
+    },
+    ready: !loading,
+  });
 
   // Load existing recipe
   useEffect(() => {
@@ -537,7 +548,7 @@ export function RecipeEditPage() {
           <button
             type="button"
             className="btn-ghost"
-            onClick={() => nav(isNew ? '/recipes' : `/recipes/${recipeId}`)}
+            onClick={() => void leave(isNew ? '/recipes' : `/recipes/${recipeId}`)}
           >
             Abbrechen
           </button>
@@ -844,7 +855,7 @@ export function RecipeEditPage() {
         <button
           type="button"
           className="btn-ghost"
-          onClick={() => nav(isNew ? '/recipes' : `/recipes/${recipeId}`)}
+          onClick={() => void leave(isNew ? '/recipes' : `/recipes/${recipeId}`)}
         >
           Abbrechen
         </button>

@@ -4,6 +4,7 @@ import { FitnessApi } from '@/api/endpoints';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
 import { BackLink } from '@/components/BackLink';
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import { invalidateOverview, useResourceQuery } from '@/hooks/useOverviewQuery';
 
 export function WorkoutEditPage() {
@@ -17,6 +18,13 @@ export function WorkoutEditPage() {
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  // Ungespeicherte Eingaben nicht still verlieren (Abbrechen, Zurueck-Link,
+  // Reload). Der Browser-Zurueck-Button bleibt ungeschuetzt — siehe Hook.
+  const { leave } = useUnsavedChanges({
+    values: { name, description },
+    ready: !loading,
+  });
+
 
   const fetchW = useCallback(async () => {
     if (!isEdit) return;
@@ -65,7 +73,12 @@ export function WorkoutEditPage() {
   return (
     <form onSubmit={save} className="max-w-xl flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
-        <BackLink to={isEdit ? `/fitness/workouts/${wId}` : '/fitness'} label="zu Fitness" />
+        <BackLink
+          onBeforeNavigate={() => {
+            void leave(isEdit ? `/fitness/workouts/${wId}` : '/fitness');
+            return false;
+          }}
+          to={isEdit ? `/fitness/workouts/${wId}` : '/fitness'} label="zu Fitness" />
         <h1 className="text-xl font-semibold">{isEdit ? 'Workout bearbeiten' : 'Neues Workout'}</h1>
       </div>
       <div className="card p-4 flex flex-col gap-3">
@@ -79,7 +92,7 @@ export function WorkoutEditPage() {
         </div>
       </div>
       <div className="flex justify-end gap-2">
-        <button type="button" className="btn-ghost" onClick={() => nav(isEdit ? `/fitness/workouts/${wId}` : '/fitness')}>
+        <button type="button" className="btn-ghost" onClick={() => void leave(isEdit ? `/fitness/workouts/${wId}` : '/fitness')}>
           Abbrechen
         </button>
         <button type="submit" className="btn-primary" disabled={saving}>

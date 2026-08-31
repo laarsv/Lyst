@@ -6,6 +6,7 @@ import type { ExerciseLocation, ExerciseType, TrackingType } from '@/types';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
 import { BackLink } from '@/components/BackLink';
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import { useResourceQuery, invalidateOverview } from '@/hooks/useOverviewQuery';
 import {
   EXERCISE_TYPE_LABELS,
@@ -36,6 +37,13 @@ export function ExerciseEditPage() {
   const [instructions, setInstructions] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [uploadPct, setUploadPct] = useState<number | null>(null);
+  // Ungespeicherte Eingaben nicht still verlieren (Abbrechen, Zurueck-Link,
+  // Reload). Der Browser-Zurueck-Button bleibt ungeschuetzt — siehe Hook.
+  const { leave } = useUnsavedChanges({
+    values: { name, muscle, type, location, tracking, instructions, imageUrl },
+    ready: !loading,
+  });
+
 
   const fetchEx = useCallback(async () => {
     if (!isEdit) return;
@@ -116,7 +124,12 @@ export function ExerciseEditPage() {
   return (
     <form onSubmit={save} className="max-w-xl flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
-        <BackLink to={isEdit ? `/fitness/exercises/${exId}` : '/fitness/exercises'} label="zu Übungen" />
+        <BackLink
+          onBeforeNavigate={() => {
+            void leave(isEdit ? `/fitness/exercises/${exId}` : '/fitness/exercises');
+            return false;
+          }}
+          to={isEdit ? `/fitness/exercises/${exId}` : '/fitness/exercises'} label="zu Übungen" />
         <h1 className="text-xl font-semibold">{isEdit ? 'Übung bearbeiten' : 'Neue Übung'}</h1>
       </div>
 
@@ -200,7 +213,7 @@ export function ExerciseEditPage() {
       </div>
 
       <div className="flex justify-end gap-2">
-        <button type="button" className="btn-ghost" onClick={() => nav(isEdit ? `/fitness/exercises/${exId}` : '/fitness/exercises')}>
+        <button type="button" className="btn-ghost" onClick={() => void leave(isEdit ? `/fitness/exercises/${exId}` : '/fitness/exercises')}>
           Abbrechen
         </button>
         <button type="submit" className="btn-primary" disabled={saving}>

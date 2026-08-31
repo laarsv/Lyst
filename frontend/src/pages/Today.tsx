@@ -19,6 +19,7 @@ import type { Dashboard, DashboardDueTask } from '@/types';
 import { useOverviewQuery } from '@/hooks/useOverviewQuery';
 import { mealLabel } from '@/lib/meals';
 import { toast } from '@/components/Toast';
+import { LoadingAnnouncement, RowsSkeleton } from '@/components/Skeleton';
 import { getApiError } from '@/api/client';
 import { QuickCreate } from '@/components/QuickCreate';
 
@@ -84,7 +85,14 @@ export function TodayPage() {
     }
   };
 
-  if (!data) return <div className="text-muted/70">Lade…</div>;
+  if (!data)
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-semibold">Heute</h1>
+        <RowsSkeleton />
+        <LoadingAnnouncement />
+      </div>
+    );
 
   const nothing =
     !data.open_session &&

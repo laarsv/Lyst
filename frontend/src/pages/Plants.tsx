@@ -7,6 +7,7 @@ import { PlantCard } from '@/components/plants/PlantCard';
 import { IconAction } from '@/components/IconAction';
 import { useOverviewQuery } from '@/hooks/useOverviewQuery';
 import { toast } from '@/components/Toast';
+import { CardGridSkeleton, LoadingAnnouncement } from '@/components/Skeleton';
 import { getApiError } from '@/api/client';
 import { dueLabel } from '@/lib/plants';
 import { BEREICH_TAGS } from '@/data/plantTags';
@@ -151,7 +152,10 @@ export function PlantsPage() {
       )}
 
       {loading ? (
-        <div className="text-muted/70">Lade…</div>
+        <>
+          <CardGridSkeleton />
+          <LoadingAnnouncement />
+        </>
       ) : visible.length === 0 ? (
         <div className="card p-12 text-center text-muted">
           Noch keine Pflanzen.{' '}

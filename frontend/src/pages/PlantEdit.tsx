@@ -6,6 +6,7 @@ import type { Plant, PlantLocation, PlantPrefill } from '@/types';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
 import { BackLink } from '@/components/BackLink';
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import { TagInput } from '@/components/TagInput';
 import { PlantImageUploader } from '@/components/plants/PlantImageUploader';
 import { invalidateOverview, useResourceQuery } from '@/hooks/useOverviewQuery';
@@ -52,6 +53,17 @@ export function PlantEditPage() {
 
   // Create-only date logs, pre-filled with today.
   const [wateredDate, setWateredDate] = useState(todayInputValue());
+
+  // Ungespeicherte Eingaben nicht still verlieren (Abbrechen, Zurueck-Link,
+  // Reload). Der Browser-Zurueck-Button bleibt ungeschuetzt — siehe Hook.
+  const { leave } = useUnsavedChanges({
+    values: {
+      name, species, location, wateringInterval, wateringNote, fertilize,
+      winterhardy, edible, heightCm, widthCm, notes, tags, imageUrl,
+      fertSeasonStart, fertSeasonEnd, pruneMonth, bloomStart, bloomEnd,
+    },
+    ready: !loading,
+  });
   const [fertilizedDate, setFertilizedDate] = useState(todayInputValue());
 
   // Create-only AI prefill (Ollama, advisory). Non-blocking: it runs while the
@@ -196,7 +208,12 @@ export function PlantEditPage() {
   return (
     <form onSubmit={save} className="max-w-2xl flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
-        <BackLink to={isEdit ? `/plants/${plantId}` : '/plants'} label="zu Pflanzen" />
+        <BackLink
+          onBeforeNavigate={() => {
+            void leave(isEdit ? `/plants/${plantId}` : '/plants');
+            return false;
+          }}
+          to={isEdit ? `/plants/${plantId}` : '/plants'} label="zu Pflanzen" />
         <h1 className="text-xl font-semibold">{isEdit ? 'Pflanze bearbeiten' : 'Neue Pflanze'}</h1>
       </div>
 
@@ -353,7 +370,7 @@ export function PlantEditPage() {
       </div>
 
       <div className="flex justify-end gap-2">
-        <button type="button" className="btn-ghost" onClick={() => nav(isEdit ? `/plants/${plantId}` : '/plants')}>
+        <button type="button" className="btn-ghost" onClick={() => void leave(isEdit ? `/plants/${plantId}` : '/plants')}>
           Abbrechen
         </button>
         <button type="submit" className="btn-primary" disabled={saving}>

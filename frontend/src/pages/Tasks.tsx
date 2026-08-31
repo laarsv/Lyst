@@ -16,6 +16,7 @@ import { CalendarClock, ChevronRight, ListChecks, NotebookPen, RotateCcw } from 
 import { ItemsApi, NoteTasksApi, TasksApi } from '@/api/endpoints';
 import type { AggregatedTask } from '@/types';
 import { toast } from '@/components/Toast';
+import { LoadingAnnouncement, RowsSkeleton } from '@/components/Skeleton';
 import { getApiError } from '@/api/client';
 import { useOverviewQuery } from '@/hooks/useOverviewQuery';
 import {
@@ -177,7 +178,10 @@ export function TasksPage() {
       </div>
 
       {loading ? (
-        <div className="text-muted/70 py-8 text-center">Lade…</div>
+        <>
+          <RowsSkeleton />
+          <LoadingAnnouncement />
+        </>
       ) : groups.length === 0 ? (
         <div className="card p-12 text-center text-muted">
           Keine Aufgaben. Lege in einer Liste oder Notiz eine Fälligkeit
