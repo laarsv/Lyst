@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useId} from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ImagePlus, Loader2, Trash2 } from 'lucide-react';
 import { FitnessApi } from '@/api/endpoints';
@@ -20,6 +20,7 @@ import {
 const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp'];
 
 export function ExerciseEditPage() {
+  const fid = useId();
   const { id } = useParams();
   const isEdit = id !== undefined;
   const exId = Number(id);
@@ -121,41 +122,41 @@ export function ExerciseEditPage() {
 
       <div className="card p-4 flex flex-col gap-3">
         <div>
-          <label className="label">Name *</label>
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus placeholder="z. B. Kniebeuge" />
+          <label className="label" htmlFor={`${fid}-name`}>Name *</label>
+          <input id={`${fid}-name`} className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus placeholder="z. B. Kniebeuge" />
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="label">Muskelgruppe</label>
-            <select className="input" value={muscle} onChange={(e) => setMuscle(e.target.value)}>
+            <label className="label" htmlFor={`${fid}-muskelgruppe`}>Muskelgruppe</label>
+            <select id={`${fid}-muskelgruppe`} className="input" value={muscle} onChange={(e) => setMuscle(e.target.value)}>
               {MUSCLE_GROUPS.map((m) => <option key={m} value={m}>{m}</option>)}
             </select>
           </div>
           <div>
-            <label className="label">Art</label>
-            <select className="input" value={type} onChange={(e) => setType(e.target.value as ExerciseType)}>
+            <label className="label" htmlFor={`${fid}-art`}>Art</label>
+            <select id={`${fid}-art`} className="input" value={type} onChange={(e) => setType(e.target.value as ExerciseType)}>
               {EXERCISE_TYPE_OPTIONS.map((t) => <option key={t} value={t}>{EXERCISE_TYPE_LABELS[t]}</option>)}
             </select>
           </div>
           <div>
-            <label className="label">Ort</label>
-            <select className="input" value={location} onChange={(e) => setLocation(e.target.value as ExerciseLocation)}>
+            <label className="label" htmlFor={`${fid}-ort`}>Ort</label>
+            <select id={`${fid}-ort`} className="input" value={location} onChange={(e) => setLocation(e.target.value as ExerciseLocation)}>
               {LOCATION_OPTIONS.map((l) => <option key={l} value={l}>{LOCATION_LABELS[l]}</option>)}
             </select>
           </div>
           <div>
-            <label className="label">Tracking</label>
-            <select className="input" value={tracking} onChange={(e) => setTracking(e.target.value as TrackingType)}>
+            <label className="label" htmlFor={`${fid}-tracking`}>Tracking</label>
+            <select id={`${fid}-tracking`} className="input" value={tracking} onChange={(e) => setTracking(e.target.value as TrackingType)}>
               {TRACKING_OPTIONS.map((t) => <option key={t} value={t}>{TRACKING_LABELS[t]}</option>)}
             </select>
           </div>
         </div>
         <div>
-          <label className="label">Anleitung</label>
-          <textarea className="input min-h-[80px]" value={instructions} onChange={(e) => setInstructions(e.target.value)} />
+          <label className="label" htmlFor={`${fid}-anleitung`}>Anleitung</label>
+          <textarea id={`${fid}-anleitung`} className="input min-h-[80px]" value={instructions} onChange={(e) => setInstructions(e.target.value)} />
         </div>
         <div>
-          <label className="label">Bild</label>
+          <div className="label">Bild</div>
           {isEdit ? (
             imageUrl && uploadPct === null ? (
               <div className="rounded-ctl border border-line overflow-hidden">

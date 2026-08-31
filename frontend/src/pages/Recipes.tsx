@@ -192,6 +192,7 @@ export function RecipesPage() {
             iOS (Tastatur schließt, Layout springt) die Ansicht weg. Enter
             schließt jetzt nur die Tastatur. */}
         <input
+          aria-label="Rezepte durchsuchen"
           className="input flex-1 min-w-[200px]"
           placeholder="Rezept oder Tag suchen…"
           value={q}

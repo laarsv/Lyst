@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent, useId} from 'react';
 import { MeApi } from '@/api/endpoints';
 import { useAuthStore } from '@/store/auth';
 import { useInstallStore } from '@/store/install';
@@ -13,6 +13,7 @@ import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
 
 export function SettingsPage() {
+  const fid = useId();
   const { name: storeName, email: storeEmail, setProfile } = useAuthStore();
   const [name, setName] = useState(storeName ?? '');
   const [email, setEmail] = useState(storeEmail ?? '');
@@ -67,12 +68,12 @@ export function SettingsPage() {
       <form onSubmit={saveProfile} className="card p-6 space-y-4">
         <h2 className="font-semibold">Profil</h2>
         <div>
-          <label className="label">Name</label>
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+          <label className="label" htmlFor={`${fid}-name`}>Name</label>
+          <input id={`${fid}-name`} className="input" value={name} onChange={(e) => setName(e.target.value)} />
         </div>
         <div>
-          <label className="label">E-Mail</label>
-          <input type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <label className="label" htmlFor={`${fid}-e-mail`}>E-Mail</label>
+          <input id={`${fid}-e-mail`} type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} />
         </div>
         <div className="flex justify-end">
           <button type="submit" className="btn-primary" disabled={loading}>Speichern</button>
@@ -84,12 +85,12 @@ export function SettingsPage() {
       <form onSubmit={savePassword} className="card p-6 space-y-4">
         <h2 className="font-semibold">Passwort ändern</h2>
         <div>
-          <label className="label">Aktuelles Passwort</label>
-          <input type="password" className="input" value={currentPw} onChange={(e) => setCurrentPw(e.target.value)} required />
+          <label className="label" htmlFor={`${fid}-aktuelles-passwort`}>Aktuelles Passwort</label>
+          <input id={`${fid}-aktuelles-passwort`} type="password" className="input" value={currentPw} onChange={(e) => setCurrentPw(e.target.value)} required />
         </div>
         <div>
-          <label className="label">Neues Passwort</label>
-          <input type="password" className="input" minLength={8} value={newPw} onChange={(e) => setNewPw(e.target.value)} required />
+          <label className="label" htmlFor={`${fid}-neues-passwort`}>Neues Passwort</label>
+          <input id={`${fid}-neues-passwort`} type="password" className="input" minLength={8} value={newPw} onChange={(e) => setNewPw(e.target.value)} required />
         </div>
         <div className="flex justify-end">
           <button type="submit" className="btn-primary" disabled={loading}>Aktualisieren</button>

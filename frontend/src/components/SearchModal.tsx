@@ -75,6 +75,7 @@ export function SearchModal({ open, onClose }: Props) {
         <div className="flex items-center gap-2">
           <span className="text-muted text-lg">⌕</span>
           <input
+            aria-label="Suchen"
             ref={inputRef}
             type="text"
             className="input flex-1"

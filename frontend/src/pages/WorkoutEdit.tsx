@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useId} from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { FitnessApi } from '@/api/endpoints';
 import { toast } from '@/components/Toast';
@@ -7,6 +7,7 @@ import { BackLink } from '@/components/BackLink';
 import { invalidateOverview, useResourceQuery } from '@/hooks/useOverviewQuery';
 
 export function WorkoutEditPage() {
+  const fid = useId();
   const { id } = useParams();
   const isEdit = id !== undefined;
   const wId = Number(id);
@@ -69,12 +70,12 @@ export function WorkoutEditPage() {
       </div>
       <div className="card p-4 flex flex-col gap-3">
         <div>
-          <label className="label">Name *</label>
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus placeholder="z. B. Push A" />
+          <label className="label" htmlFor={`${fid}-name`}>Name *</label>
+          <input id={`${fid}-name`} className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus placeholder="z. B. Push A" />
         </div>
         <div>
-          <label className="label">Beschreibung</label>
-          <textarea className="input min-h-[70px]" value={description} onChange={(e) => setDescription(e.target.value)} />
+          <label className="label" htmlFor={`${fid}-beschreibung`}>Beschreibung</label>
+          <textarea id={`${fid}-beschreibung`} className="input min-h-[70px]" value={description} onChange={(e) => setDescription(e.target.value)} />
         </div>
       </div>
       <div className="flex justify-end gap-2">

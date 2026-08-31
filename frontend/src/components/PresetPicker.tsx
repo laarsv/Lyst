@@ -201,6 +201,7 @@ function PickerBody({
               className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted/70 pointer-events-none"
             />
             <input
+              aria-label="Symbol suchen"
               type="text"
               value={query}
               onChange={(e) => onQueryChange(e.target.value)}

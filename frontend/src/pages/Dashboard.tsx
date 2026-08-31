@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useId} from 'react';
 import { AiListsApi, ListsApi } from '@/api/endpoints';
 import { useOverviewQuery } from '@/hooks/useOverviewQuery';
 import type { ListSummary, ListType } from '@/types';
@@ -300,6 +300,7 @@ function AiGenerateListModal({
   onClose: () => void;
   onCreated: (l: ListSummary) => void;
 }) {
+  const fid = useId();
   const [type, setType] = useState<ListType>('PACKING');
   const [goal, setGoal] = useState('');
   const [loading, setLoading] = useState(false);
@@ -374,8 +375,8 @@ function AiGenerateListModal({
         {!preview && (
           <>
             <div>
-              <label className="label">Typ</label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="label">Typ</div>
+              <div role="group" aria-label="Typ" className="grid grid-cols-2 gap-2">
                 {TYPES.map((t) => (
                   <button
                     type="button"
@@ -392,8 +393,9 @@ function AiGenerateListModal({
               </div>
             </div>
             <div>
-              <label className="label">Ziel</label>
+              <label className="label" htmlFor={`${fid}-ziel`}>Ziel</label>
               <textarea
+                id={`${fid}-ziel`}
                 className="input min-h-[72px] text-sm"
                 placeholder='z. B. "3 Tage Wandern im Herbst" oder "Umzug in neue Wohnung"'
                 value={goal}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useId} from 'react';
 import { AdminApi } from '@/api/endpoints';
 import type { AdminUser } from '@/types';
 import { Modal } from '@/components/Modal';
@@ -87,6 +87,7 @@ export function AdminUsersPage() {
 
       <div className="flex gap-2 mb-4">
         <input
+          aria-label="Benutzer durchsuchen"
           className="input flex-1"
           placeholder="Suche nach Name oder E-Mail"
           value={q}
@@ -240,6 +241,7 @@ function CreateUserModal({
   onClose: () => void;
   onCreated: (u: AdminUser, temp: string) => void;
 }) {
+  const fid = useId();
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
@@ -265,20 +267,20 @@ function CreateUserModal({
     <Modal open={open} onClose={onClose} title="Benutzer anlegen">
       <div className="space-y-3">
         <div>
-          <label className="label">Name</label>
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+          <label className="label" htmlFor={`${fid}-name`}>Name</label>
+          <input id={`${fid}-name`} className="input" value={name} onChange={(e) => setName(e.target.value)} />
         </div>
         <div>
-          <label className="label">E-Mail</label>
-          <input type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <label className="label" htmlFor={`${fid}-e-mail`}>E-Mail</label>
+          <input id={`${fid}-e-mail`} type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} />
         </div>
         <div>
-          <label className="label">Temporäres Passwort (optional)</label>
-          <input className="input" placeholder="leer = automatisch generieren" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <label className="label" htmlFor={`${fid}-tempora-res-passwort-optional`}>Temporäres Passwort (optional)</label>
+          <input id={`${fid}-tempora-res-passwort-optional`} className="input" placeholder="leer = automatisch generieren" value={password} onChange={(e) => setPassword(e.target.value)} />
         </div>
         <div>
-          <label className="label">Rolle</label>
-          <select className="input" value={role} onChange={(e) => setRole(e.target.value as 'admin' | 'user')}>
+          <label className="label" htmlFor={`${fid}-rolle`}>Rolle</label>
+          <select id={`${fid}-rolle`} className="input" value={role} onChange={(e) => setRole(e.target.value as 'admin' | 'user')}>
             <option value="user">Nutzer</option>
             <option value="admin">Admin</option>
           </select>
@@ -304,6 +306,7 @@ function InviteUserModal({
   onClose: () => void;
   onInvited: (u: AdminUser) => void;
 }) {
+  const fid = useId();
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [role, setRole] = useState<'admin' | 'user'>('user');
@@ -328,16 +331,16 @@ function InviteUserModal({
     <Modal open={open} onClose={onClose} title="Einladung senden">
       <div className="space-y-3">
         <div>
-          <label className="label">Name</label>
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+          <label className="label" htmlFor={`${fid}-name-2`}>Name</label>
+          <input id={`${fid}-name-2`} className="input" value={name} onChange={(e) => setName(e.target.value)} />
         </div>
         <div>
-          <label className="label">E-Mail</label>
-          <input type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <label className="label" htmlFor={`${fid}-e-mail-2`}>E-Mail</label>
+          <input id={`${fid}-e-mail-2`} type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} />
         </div>
         <div>
-          <label className="label">Rolle</label>
-          <select className="input" value={role} onChange={(e) => setRole(e.target.value as 'admin' | 'user')}>
+          <label className="label" htmlFor={`${fid}-rolle-2`}>Rolle</label>
+          <select id={`${fid}-rolle-2`} className="input" value={role} onChange={(e) => setRole(e.target.value as 'admin' | 'user')}>
             <option value="user">Nutzer</option>
             <option value="admin">Admin</option>
           </select>

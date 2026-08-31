@@ -141,6 +141,7 @@ export function ShareNotePanel({ open, onClose, note, onUpdate }: Props) {
           </p>
           <form onSubmit={submitEmail} className="flex flex-wrap gap-2">
             <input
+              aria-label="E-Mail-Adresse"
               type="email"
               required
               className="input flex-1 min-w-[160px] text-sm"

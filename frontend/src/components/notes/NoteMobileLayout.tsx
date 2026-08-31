@@ -181,6 +181,7 @@ export function NoteMobileLayout({
       <div className="flex items-center gap-2 px-3 pt-3 shrink-0">
         {titleEditing ? (
           <input
+            aria-label="Notiztitel"
             ref={titleInputRef}
             value={state.title}
             onChange={(e) => state.setTitle(e.target.value)}
@@ -289,6 +290,7 @@ export function NoteMobileLayout({
         {canEdit && (
           <>
             <input
+              aria-label="Neuer Tag"
               list="tag-suggestions-mobile"
               className="px-2 py-1 text-xs border border-line rounded-full bg-surface outline-none focus:border-brand min-w-[80px]"
               placeholder="+ tag"

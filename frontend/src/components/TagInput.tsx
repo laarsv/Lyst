@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useId} from 'react';
 import type { SuggestedTagGroup } from '@/data/recipeTags';
 
 /** Free-form tag input — extracted verbatim from the recipe-edit tag picker
@@ -25,6 +25,7 @@ export function TagInput({
   placeholder?: string;
   labelAction?: React.ReactNode;
 }) {
+  const fid = useId();
   const [input, setInput] = useState('');
   const flat = suggestionGroups.flatMap((g) => g.tags);
 
@@ -37,7 +38,7 @@ export function TagInput({
   return (
     <div>
       <div className="flex items-center justify-between mb-1.5">
-        <label className="label !mb-0">{label}</label>
+        <label className="label !mb-0" htmlFor={`${fid}-tag`}>{label}</label>
         {labelAction}
       </div>
       <div className="flex flex-wrap items-center gap-1 input min-h-[42px] py-2">
@@ -54,6 +55,7 @@ export function TagInput({
           </span>
         ))}
         <input
+          id={`${fid}-tag`}
           list={datalistId}
           className="flex-1 min-w-[100px] outline-none text-sm"
           placeholder={placeholder}

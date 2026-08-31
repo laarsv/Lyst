@@ -1,10 +1,11 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, useId} from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AuthApi } from '@/api/endpoints';
 import { useAuthStore } from '@/store/auth';
 import { getApiError } from '@/api/client';
 
 export function LoginPage() {
+  const fid = useId();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -51,8 +52,9 @@ export function LoginPage() {
         </div>
         <form onSubmit={onSubmit} className="space-y-4">
           <div>
-            <label className="label">E-Mail</label>
+            <label className="label" htmlFor={`${fid}-e-mail`}>E-Mail</label>
             <input
+              id={`${fid}-e-mail`}
               type="email"
               className="input"
               autoComplete="email"
@@ -62,8 +64,9 @@ export function LoginPage() {
             />
           </div>
           <div>
-            <label className="label">Passwort</label>
+            <label className="label" htmlFor={`${fid}-passwort`}>Passwort</label>
             <input
+              id={`${fid}-passwort`}
               type="password"
               className="input"
               autoComplete="current-password"

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useId} from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { NoteFoldersApi, NotesApi, SearchApi, TagsApi } from '@/api/endpoints';
 import type { Note, NoteFolder, Tag } from '@/types';
@@ -388,6 +388,7 @@ export function NotesPage() {
               className="absolute left-3 top-1/2 -translate-y-1/2 text-muted/70 pointer-events-none"
             />
             <input
+              aria-label="Notizen durchsuchen"
               className="input w-full pl-9 py-2 text-sm"
               placeholder="Suche…"
               value={q}
@@ -472,6 +473,7 @@ export function NotesPage() {
       <aside className="card p-3 flex flex-col gap-3 max-h-[78vh] sticky top-20">
         <div className="flex gap-2">
           <input
+            aria-label="Notizen durchsuchen"
             className="input flex-1 py-1.5 text-sm"
             placeholder="Suche…"
             value={q}
@@ -1023,6 +1025,7 @@ function NoteEditorPane({
         />
         <div className="flex-1 min-w-[180px] relative">
           <input
+            aria-label="Notiztitel"
             className="input w-full text-lg font-semibold pr-10"
             value={state.title}
             onChange={(e) => state.setTitle(e.target.value)}
@@ -1130,6 +1133,7 @@ function NoteEditorPane({
         {canEdit && (
           <>
             <input
+              aria-label="Neuer Tag"
               list="tag-suggestions"
               className="px-2 py-1 text-xs border border-line rounded-full bg-surface outline-none focus:border-brand"
               placeholder="+ tag"
@@ -1462,6 +1466,7 @@ function FolderModal({
   onClose: () => void;
   onSaved: (folder: NoteFolder, deleted: boolean) => void;
 }) {
+  const fid = useId();
   const [name, setName] = useState(edit?.name ?? '');
   const [color, setColor] = useState(edit?.color ?? '#00c896');
   const [busy, setBusy] = useState(false);
@@ -1515,8 +1520,9 @@ function FolderModal({
     <Modal open={open} onClose={onClose} title={edit ? 'Ordner bearbeiten' : 'Neuer Ordner'}>
       <div className="space-y-3">
         <div>
-          <label className="label">Name</label>
+          <label className="label" htmlFor={`${fid}-name`}>Name</label>
           <input
+            id={`${fid}-name`}
             className="input"
             value={name}
             autoFocus
@@ -1524,8 +1530,9 @@ function FolderModal({
           />
         </div>
         <div>
-          <label className="label">Farbe</label>
+          <label className="label" htmlFor={`${fid}-farbe`}>Farbe</label>
           <input
+            id={`${fid}-farbe`}
             type="color"
             className="h-[42px] w-16 rounded-xl border border-line cursor-pointer"
             value={color}

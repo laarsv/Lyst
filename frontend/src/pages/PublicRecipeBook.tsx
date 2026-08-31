@@ -61,6 +61,7 @@ export function PublicRecipeBookPage() {
 
       <div className="mb-6">
         <input
+          aria-label="Rezepte durchsuchen"
           type="search"
           className="input"
           placeholder="Rezept oder Tag suchen…"

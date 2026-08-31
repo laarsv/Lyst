@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent, useId} from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   DndContext,
@@ -87,6 +87,7 @@ const emptyNutrition = () => ({
 });
 
 export function RecipeEditPage() {
+  const fid = useId();
   const { id } = useParams();
   const isNew = !id;
   const recipeId = id ? Number(id) : null;
@@ -548,20 +549,22 @@ export function RecipeEditPage() {
 
       <section className="card p-5 space-y-3">
         <div>
-          <label className="label">Titel</label>
-          <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} required />
+          <label className="label" htmlFor={`${fid}-titel`}>Titel</label>
+          <input id={`${fid}-titel`} className="input" value={title} onChange={(e) => setTitle(e.target.value)} required />
         </div>
         <div>
-          <label className="label">Beschreibung</label>
+          <label className="label" htmlFor={`${fid}-beschreibung`}>Beschreibung</label>
           <textarea
+            id={`${fid}-beschreibung`}
             className="input min-h-[80px]"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
         </div>
         <div>
-          <label className="label">Tipp (optional)</label>
+          <label className="label" htmlFor={`${fid}-tipp-optional`}>Tipp (optional)</label>
           <textarea
+            id={`${fid}-tipp-optional`}
             className="input min-h-[80px]"
             value={tips}
             onChange={(e) => setTips(e.target.value)}
@@ -570,8 +573,9 @@ export function RecipeEditPage() {
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <div>
-            <label className="label">Portionen</label>
+            <label className="label" htmlFor={`${fid}-portionen`}>Portionen</label>
             <input
+              id={`${fid}-portionen`}
               type="number"
               min={1}
               className="input"
@@ -580,8 +584,9 @@ export function RecipeEditPage() {
             />
           </div>
           <div>
-            <label className="label">Vorbereitung (Min)</label>
+            <label className="label" htmlFor={`${fid}-vorbereitung-min`}>Vorbereitung (Min)</label>
             <input
+              id={`${fid}-vorbereitung-min`}
               type="number"
               min={0}
               className="input"
@@ -590,8 +595,9 @@ export function RecipeEditPage() {
             />
           </div>
           <div>
-            <label className="label">Kochen (Min)</label>
+            <label className="label" htmlFor={`${fid}-kochen-min`}>Kochen (Min)</label>
             <input
+              id={`${fid}-kochen-min`}
               type="number"
               min={0}
               className="input"
@@ -602,7 +608,7 @@ export function RecipeEditPage() {
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="label">Bild</label>
+            <div className="label">Bild</div>
             {recipeId ? (
               <RecipeImageUploader
                 recipeId={recipeId}
@@ -640,6 +646,7 @@ export function RecipeEditPage() {
               </div>
             )}
             <input
+              aria-label="Bild-URL"
               className="input mt-2 text-sm"
               value={imageUrl}
               onChange={(e) => setImageUrl(e.target.value)}
@@ -647,8 +654,8 @@ export function RecipeEditPage() {
             />
           </div>
           <div>
-            <label className="label">Quelle (URL)</label>
-            <input className="input" value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} placeholder="https://…" />
+            <label className="label" htmlFor={`${fid}-quelle-url`}>Quelle (URL)</label>
+            <input id={`${fid}-quelle-url`} className="input" value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} placeholder="https://…" />
           </div>
         </div>
         <div>
@@ -739,6 +746,7 @@ export function RecipeEditPage() {
                     <div className="flex flex-wrap gap-2 items-center">
                       <div className="flex-1 min-w-[160px] flex items-center gap-1.5">
                         <input
+                          aria-label="Zutat"
                           className="input flex-1 py-1.5"
                           placeholder="z.B. Mehl"
                           value={ing.name}
@@ -750,6 +758,7 @@ export function RecipeEditPage() {
                         />
                       </div>
                       <input
+                        aria-label="Menge"
                         className="input w-20 py-1.5"
                         placeholder="Menge"
                         inputMode="decimal"

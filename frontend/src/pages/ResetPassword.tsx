@@ -1,9 +1,10 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, useId} from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { AuthApi } from '@/api/endpoints';
 import { getApiError } from '@/api/client';
 
 export function ResetPasswordPage() {
+  const fid = useId();
   const [params] = useSearchParams();
   const token = params.get('token') ?? '';
   const [pw, setPw] = useState('');
@@ -39,8 +40,9 @@ export function ResetPasswordPage() {
         ) : (
           <form onSubmit={onSubmit} className="space-y-4">
             <div>
-              <label className="label">Neues Passwort</label>
+              <label className="label" htmlFor={`${fid}-neues-passwort`}>Neues Passwort</label>
               <input
+                id={`${fid}-neues-passwort`}
                 type="password"
                 className="input"
                 required
@@ -50,8 +52,9 @@ export function ResetPasswordPage() {
               />
             </div>
             <div>
-              <label className="label">Passwort wiederholen</label>
+              <label className="label" htmlFor={`${fid}-passwort-wiederholen`}>Passwort wiederholen</label>
               <input
+                id={`${fid}-passwort-wiederholen`}
                 type="password"
                 className="input"
                 required

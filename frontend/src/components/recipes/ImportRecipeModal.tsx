@@ -17,7 +17,7 @@
  *    app) into the textarea, AND a paste of formatted content gets
  *    flattened to plain text on paste so the textarea stays clean.
  */
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, useId} from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Modal } from '@/components/Modal';
 import { RecipesApi } from '@/api/endpoints';
@@ -43,6 +43,7 @@ function fmtElapsed(s: number): string {
 }
 
 export function ImportRecipeModal({ open, onClose }: Props) {
+  const fid = useId();
   const [mode, setMode] = useState<Mode>('url');
   const [url, setUrl] = useState('');
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
@@ -290,8 +291,9 @@ export function ImportRecipeModal({ open, onClose }: Props) {
                 Titel, Zutaten und Schritte.
               </p>
               <div>
-                <label className="label">URL</label>
+                <label className="label" htmlFor={`${fid}-url`}>URL</label>
                 <input
+                  id={`${fid}-url`}
                   type="url"
                   className="input"
                   placeholder="https://…"
@@ -314,8 +316,9 @@ export function ImportRecipeModal({ open, onClose }: Props) {
                 JPG/PNG/WebP.
               </p>
               <div>
-                <label className="label">Bilder</label>
+                <label className="label" htmlFor={`${fid}-bilder`}>Bilder</label>
                 <input
+                  id={`${fid}-bilder`}
                   ref={photoInputRef}
                   type="file"
                   accept="image/jpeg,image/png,image/webp"

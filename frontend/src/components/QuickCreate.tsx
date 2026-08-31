@@ -13,7 +13,7 @@
  *  go there — a note is created empty and opened in the editor, exactly what
  *  the "+" on the Notizen page does.
  */
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent, useId} from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CheckSquare, ChefHat, ListPlus, NotebookPen, Plus } from 'lucide-react';
 import { ItemsApi, ListsApi, NotesApi } from '@/api/endpoints';
@@ -134,6 +134,7 @@ export function QuickCreate() {
  *  Tasks have no table of their own — they are list items (or note tasks), so
  *  a target list is required rather than optional. */
 function QuickTaskModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const fid = useId();
   const [lists, setLists] = useState<ListSummary[]>([]);
   const [listId, setListId] = useState<number | null>(null);
   const [text, setText] = useState('');
@@ -183,8 +184,9 @@ function QuickTaskModal({ open, onClose }: { open: boolean; onClose: () => void 
       ) : (
         <form onSubmit={submit} className="space-y-3">
           <div>
-            <label className="label">Aufgabe</label>
+            <label className="label" htmlFor={`${fid}-aufgabe`}>Aufgabe</label>
             <input
+              id={`${fid}-aufgabe`}
               className="input"
               value={text}
               autoFocus
@@ -194,8 +196,9 @@ function QuickTaskModal({ open, onClose }: { open: boolean; onClose: () => void 
             />
           </div>
           <div>
-            <label className="label">In Liste</label>
+            <label className="label" htmlFor={`${fid}-in-liste`}>In Liste</label>
             <select
+              id={`${fid}-in-liste`}
               className="input"
               value={listId ?? ''}
               onChange={(e) => setListId(Number(e.target.value))}

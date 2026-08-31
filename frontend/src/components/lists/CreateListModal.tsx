@@ -5,7 +5,7 @@
  *  caller only has to render it; `onCreated` is for pages that also keep a
  *  local list state (the Listen overview does, Heute doesn't).
  */
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, useId} from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ListsApi } from '@/api/endpoints';
 import { getApiError } from '@/api/client';
@@ -24,6 +24,7 @@ export function CreateListModal({
   onClose: () => void;
   onCreated: (l: ListSummary) => void;
 }) {
+  const fid = useId();
   const [title, setTitle] = useState('');
   const [type, setType] = useState<ListType>('SHOPPING');
   // Seed icon/color from the same preset table the picker uses, so the
@@ -52,8 +53,9 @@ export function CreateListModal({
     <Modal open={open} onClose={onClose} title="Neue Liste">
       <form onSubmit={submit} className="space-y-3">
         <div>
-          <label className="label">Titel</label>
+          <label className="label" htmlFor={`${fid}-titel`}>Titel</label>
           <input
+            id={`${fid}-titel`}
             className="input"
             value={title}
             autoFocus
@@ -63,8 +65,8 @@ export function CreateListModal({
           />
         </div>
         <div>
-          <label className="label">Typ</label>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="label">Typ</div>
+          <div role="group" aria-label="Typ" className="grid grid-cols-2 gap-2">
             {TYPES.map((t) => (
               <button
                 type="button"
@@ -91,8 +93,8 @@ export function CreateListModal({
           </div>
         </div>
         <div>
-          <label className="label">Symbol &amp; Farbe</label>
-          <div className="flex items-center gap-3">
+          <div className="label">Symbol &amp; Farbe</div>
+          <div role="group" aria-label="Symbol & Farbe" className="flex items-center gap-3">
             <PresetPicker
               emoji={icon}
               color={color}

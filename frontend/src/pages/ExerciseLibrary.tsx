@@ -49,6 +49,7 @@ export function ExerciseLibraryPage() {
 
       <div className="flex flex-wrap gap-2 mb-5">
         <input
+          aria-label="Übungen durchsuchen"
           className="input flex-1 min-w-[160px]"
           placeholder="Übung suchen…"
           value={q}

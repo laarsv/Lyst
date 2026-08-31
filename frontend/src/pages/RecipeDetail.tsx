@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useId} from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeftRight, ChefHat, ChevronDown, Copy, Heart, Loader2, LogOut, Pencil, RefreshCw, Share2, ShoppingCart, Sparkles, Trash2, Users } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -817,6 +817,7 @@ function RecipeVariationModal({
   onClose: () => void;
   recipe: Recipe;
 }) {
+  const fid = useId();
   const [targets, setTargets] = useState<Set<VariantTarget>>(new Set());
   const [adjustment, setAdjustment] = useState('');
   const [loading, setLoading] = useState(false);
@@ -888,8 +889,9 @@ function RecipeVariationModal({
           </div>
         </div>
         <div>
-          <label className="label">Sonst noch was? (optional)</label>
+          <label className="label" htmlFor={`${fid}-sonst-noch-was-optional`}>Sonst noch was? (optional)</label>
           <textarea
+            id={`${fid}-sonst-noch-was-optional`}
             className="input min-h-[64px] text-sm"
             placeholder="z. B. halbiere die Kalorien · schärfer machen · fürs Kind ohne Pilze"
             value={adjustment}

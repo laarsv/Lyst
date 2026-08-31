@@ -497,6 +497,7 @@ function TestEmailSection() {
       </div>
       <div className="flex flex-wrap gap-2">
         <input
+          aria-label="E-Mail-Adresse für Testmail"
           type="email"
           className="input flex-1 min-w-[220px]"
           value={to}

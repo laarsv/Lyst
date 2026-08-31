@@ -308,7 +308,7 @@ function ItemFields({
             </Field>
           </div>
           <div className="flex-1 min-w-0">
-            <Field label="Einheit">
+            <FieldGroup label="Einheit">
               <UnitCombobox
                 value={unit || null}
                 onChange={(u) => {
@@ -320,12 +320,12 @@ function ItemFields({
                   }
                 }}
               />
-            </Field>
+            </FieldGroup>
           </div>
         </div>
 
         {categories && (
-          <Field label="Kategorie">
+          <FieldGroup label="Kategorie">
             <CategoryDropdown
               value={item.category}
               categories={categories}
@@ -333,7 +333,7 @@ function ItemFields({
               disabled={!canEdit}
               onChange={(cat) => onUpdate({ category: cat })}
             />
-          </Field>
+          </FieldGroup>
         )}
       </div>
 
@@ -423,6 +423,27 @@ function ItemFields({
   );
 }
 
+/** Das <label> UMSCHLIESST das Feld (implizite Verknuepfung, kein id noetig).
+ *  Zusammengesetzte Bedienelemente — Combobox, Dropdown — gehoeren in
+ *  FieldGroup: ein Label darf nur EIN Formularfeld umschliessen, und die
+ *  Buttons darin wuerden sonst zusaetzlich das Feld fokussieren. */
+function FieldGroup({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div role="group" aria-label={label}>
+      <div className="block text-[11px] uppercase tracking-wide text-muted mb-1">
+        {label}
+      </div>
+      {children}
+    </div>
+  );
+}
+
 function Field({
   label,
   children,
@@ -431,12 +452,12 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div>
-      <label className="block text-[11px] uppercase tracking-wide text-muted mb-1">
+    <label className="block">
+      <span className="block text-[11px] uppercase tracking-wide text-muted mb-1">
         {label}
-      </label>
+      </span>
       {children}
-    </div>
+    </label>
   );
 }
 

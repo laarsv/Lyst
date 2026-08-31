@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useId} from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Loader2, Sparkles } from 'lucide-react';
 import { PlantsApi } from '@/api/endpoints';
@@ -20,6 +20,7 @@ const toNum = (s: string): number | null => {
 };
 
 export function PlantEditPage() {
+  const fid = useId();
   const { id } = useParams();
   const isEdit = id !== undefined;
   const plantId = Number(id);
@@ -202,9 +203,10 @@ export function PlantEditPage() {
       {/* AI prefill — name → advisory suggestions (create only, non-blocking). */}
       {!isEdit && (
         <div className="card p-4 flex flex-col gap-2">
-          <label className="label !mb-0">Pflanze suchen (KI-Vorschlag)</label>
+          <label className="label !mb-0" htmlFor={`${fid}-ki-suche`}>Pflanze suchen (KI-Vorschlag)</label>
           <div className="flex gap-2">
             <input
+              id={`${fid}-ki-suche`}
               className="input flex-1"
               value={searchName}
               onChange={(e) => setSearchName(e.target.value)}
@@ -295,12 +297,12 @@ export function PlantEditPage() {
           <Toggle label="Düngen (jährlich zu Saisonbeginn erinnern)" checked={fertilize} onChange={setFertilize} />
           {fertilize && (
             <>
-              <Field label="Dünge-Saison (Monate)">
+              <FieldGroup label="Dünge-Saison (Monate)">
                 <div className="grid grid-cols-2 gap-3">
                   <MonthSelect label="von" value={fertSeasonStart} onChange={setFertSeasonStart} />
                   <MonthSelect label="bis" value={fertSeasonEnd} onChange={setFertSeasonEnd} />
                 </div>
-              </Field>
+              </FieldGroup>
               {!isEdit && (
                 <Field label="Zuletzt gedüngt">
                   <input className="input" type="date" value={fertilizedDate} onChange={(e) => setFertilizedDate(e.target.value)} />
@@ -342,9 +344,9 @@ export function PlantEditPage() {
         </Field>
         {/* Bild — only once the plant exists (needs an id to upload against). */}
         {isEdit ? (
-          <Field label="Bild">
+          <FieldGroup label="Bild">
             <PlantImageUploader plantId={plantId} currentUrl={imageUrl} onChanged={(url) => setImageUrl(url ?? '')} />
-          </Field>
+          </FieldGroup>
         ) : (
           <p className="text-xs text-muted">Ein Bild kannst du nach dem Speichern hinzufügen.</p>
         )}
@@ -363,10 +365,23 @@ export function PlantEditPage() {
 }
 
 /** Compact label + control wrapper (tighter than the standalone .label block). */
+/** Beschriftung + Feld. Das <label> UMSCHLIESST das Feld, damit die
+ *  Verbindung ohne id/htmlFor haelt — der Klick auf den Text fokussiert das
+ *  Feld, Screenreader lesen es vor. Fuer Gruppen (mehrere Felder, ein
+ *  Uploader) taugt das nicht: dafuer gibt es FieldGroup. */
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div>
-      <label className="block text-xs font-medium text-muted mb-1">{label}</label>
+    <label className="block">
+      <span className="block text-xs font-medium text-muted mb-1">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function FieldGroup({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div role="group" aria-label={label}>
+      <div className="block text-xs font-medium text-muted mb-1">{label}</div>
       {children}
     </div>
   );

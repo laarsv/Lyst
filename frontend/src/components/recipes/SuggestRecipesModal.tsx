@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useId} from 'react';
 import { Link } from 'react-router-dom';
 import { Modal } from '@/components/Modal';
 import { RecipesApi } from '@/api/endpoints';
@@ -16,6 +16,7 @@ interface Suggestion {
 }
 
 export function SuggestRecipesModal({ open, onClose }: Props) {
+  const fid = useId();
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<Suggestion[] | null>(null);
@@ -56,8 +57,9 @@ export function SuggestRecipesModal({ open, onClose }: Props) {
           die 3 passendsten heraus.
         </p>
         <div>
-          <label className="label">Vorhandene Zutaten</label>
+          <label className="label" htmlFor={`${fid}-vorhandene-zutaten`}>Vorhandene Zutaten</label>
           <textarea
+            id={`${fid}-vorhandene-zutaten`}
             className="input min-h-[80px]"
             placeholder="z.B. Eier, Speck, Parmesan, Spaghetti"
             value={text}

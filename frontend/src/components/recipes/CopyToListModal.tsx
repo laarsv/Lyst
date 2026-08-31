@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useId} from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ListsApi, RecipesApi } from '@/api/endpoints';
 import { Modal } from '@/components/Modal';
@@ -25,6 +25,7 @@ const FALLBACK_MAX = 20;
 const NORMAL_MAX = 999;
 
 export function CopyToListModal({ open, recipe, onClose }: Props) {
+  const fid = useId();
   const [shoppingLists, setShoppingLists] = useState<ListSummary[]>([]);
   const [mode, setMode] = useState<Mode>('new');
   const [selectedListId, setSelectedListId] = useState<number | null>(null);
@@ -115,7 +116,7 @@ export function CopyToListModal({ open, recipe, onClose }: Props) {
       <div className="space-y-4">
         {/* Servings */}
         <div className="flex items-center gap-3">
-          <label className="label !mb-0">Portionen</label>
+          <label className="label !mb-0" htmlFor={`${fid}-portionen`}>Portionen</label>
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -125,6 +126,7 @@ export function CopyToListModal({ open, recipe, onClose }: Props) {
               −
             </button>
             <input
+              id={`${fid}-portionen`}
               type="number"
               min={1}
               max={maxServings}
@@ -159,7 +161,7 @@ export function CopyToListModal({ open, recipe, onClose }: Props) {
         {/* Ingredients */}
         <div>
           <div className="flex items-center justify-between mb-1">
-            <label className="label !mb-0">Zutaten</label>
+            <div className="label !mb-0">Zutaten</div>
             <div className="flex gap-1 text-xs">
               <button
                 type="button"
@@ -207,8 +209,8 @@ export function CopyToListModal({ open, recipe, onClose }: Props) {
 
         {/* Target list */}
         <div>
-          <label className="label">Ziel</label>
-          <div className="flex gap-1 bg-surface border border-line rounded-xl p-1 mb-2">
+          <div className="label">Ziel</div>
+          <div role="group" aria-label="Ziel" className="flex gap-1 bg-surface border border-line rounded-xl p-1 mb-2">
             <button
               type="button"
               onClick={() => setMode('existing')}
@@ -245,6 +247,7 @@ export function CopyToListModal({ open, recipe, onClose }: Props) {
             </select>
           ) : (
             <input
+              aria-label="Titel der neuen Liste"
               className="input"
               placeholder="Titel der neuen Liste"
               value={newTitle}

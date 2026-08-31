@@ -245,6 +245,7 @@ function RecipeSidebar({
     <aside className="card p-3 flex flex-col gap-2 max-h-[70vh] overflow-hidden">
       <div className="font-semibold text-sm px-1">Rezepte</div>
       <input
+        aria-label="Rezepte durchsuchen"
         className="input py-1.5 text-sm"
         placeholder="Suchen…"
         value={q}

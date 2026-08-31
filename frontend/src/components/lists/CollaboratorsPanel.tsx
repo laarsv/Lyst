@@ -52,6 +52,7 @@ export function CollaboratorsPanel({ listId }: { listId: number }) {
       <h3 className="font-semibold mb-3">Mitnutzer</h3>
       <div className="flex flex-wrap gap-2 mb-4">
         <input
+          aria-label="E-Mail-Adresse"
           type="email"
           className="input flex-1 min-w-[150px]"
           placeholder="email@beispiel.de"

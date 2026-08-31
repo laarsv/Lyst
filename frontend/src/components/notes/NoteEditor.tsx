@@ -24,7 +24,7 @@
  *  The bleach allowlist on the backend matches the markup the editor
  *  emits, so a round-trip through save+reload is lossless.
  */
-import { useEffect, useImperativeHandle, useRef, useState, forwardRef } from 'react';
+import { useEffect, useImperativeHandle, useRef, useState, forwardRef, useId} from 'react';
 import { Editor, EditorContent, useEditor, useEditorState } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
@@ -935,6 +935,7 @@ function LinkDialog({
   onCancel: () => void;
   onConfirm: (url: string, text: string) => void;
 }) {
+  const fid = useId();
   const [url, setUrl] = useState(initialUrl);
   const [text, setText] = useState(initialText);
   return (
@@ -949,8 +950,9 @@ function LinkDialog({
       <div className="w-full max-w-sm bg-surface rounded-card border border-line p-4 space-y-3">
         <div className="font-semibold">Link einfügen</div>
         <div>
-          <label className="label">URL</label>
+          <label className="label" htmlFor={`${fid}-url`}>URL</label>
           <input
+            id={`${fid}-url`}
             className="input"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
@@ -959,8 +961,9 @@ function LinkDialog({
           />
         </div>
         <div>
-          <label className="label">Linktext (optional)</label>
+          <label className="label" htmlFor={`${fid}-linktext-optional`}>Linktext (optional)</label>
           <input
+            id={`${fid}-linktext-optional`}
             className="input"
             value={text}
             onChange={(e) => setText(e.target.value)}

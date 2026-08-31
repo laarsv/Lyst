@@ -1,9 +1,10 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, useId} from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { AuthApi } from '@/api/endpoints';
 import { getApiError } from '@/api/client';
 
 export function AcceptInvitePage() {
+  const fid = useId();
   const [params] = useSearchParams();
   const token = params.get('token') ?? '';
   const [name, setName] = useState('');
@@ -41,8 +42,9 @@ export function AcceptInvitePage() {
         ) : (
           <form onSubmit={onSubmit} className="space-y-4">
             <div>
-              <label className="label">Dein Name</label>
+              <label className="label" htmlFor={`${fid}-dein-name`}>Dein Name</label>
               <input
+                id={`${fid}-dein-name`}
                 type="text"
                 className="input"
                 required
@@ -51,8 +53,9 @@ export function AcceptInvitePage() {
               />
             </div>
             <div>
-              <label className="label">Passwort</label>
+              <label className="label" htmlFor={`${fid}-passwort`}>Passwort</label>
               <input
+                id={`${fid}-passwort`}
                 type="password"
                 className="input"
                 required
@@ -62,8 +65,9 @@ export function AcceptInvitePage() {
               />
             </div>
             <div>
-              <label className="label">Passwort wiederholen</label>
+              <label className="label" htmlFor={`${fid}-passwort-wiederholen`}>Passwort wiederholen</label>
               <input
+                id={`${fid}-passwort-wiederholen`}
                 type="password"
                 className="input"
                 required

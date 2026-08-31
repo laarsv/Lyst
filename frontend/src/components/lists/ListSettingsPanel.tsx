@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useId} from 'react';
 import { useScrollLock } from '@/hooks/useScrollLock';
 import { Sparkles, Hand, X, Zap } from 'lucide-react';
 import type { CategorizationMode, ListSummary, ListType } from '@/types';
@@ -146,6 +146,7 @@ function ListDetailsSection({
   list: ListSummary;
   onListUpdate: (patch: Partial<ListSummary>) => void;
 }) {
+  const fid = useId();
   const [title, setTitle] = useState(list.title);
   const [icon, setIcon] = useState(list.icon ?? '');
   const [color, setColor] = useState(list.color ?? '#00c896');
@@ -199,8 +200,9 @@ function ListDetailsSection({
   return (
     <div className="card p-4 space-y-3">
       <div>
-        <label className="label">Titel</label>
+        <label className="label" htmlFor={`${fid}-titel`}>Titel</label>
         <input
+          id={`${fid}-titel`}
           className="input"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
@@ -212,8 +214,8 @@ function ListDetailsSection({
         />
       </div>
       <div>
-        <label className="label">Symbol &amp; Farbe</label>
-        <div className="flex items-center gap-3">
+        <div className="label">Symbol &amp; Farbe</div>
+        <div role="group" aria-label="Symbol & Farbe" className="flex items-center gap-3">
           <PresetPicker
             emoji={icon}
             color={color}
@@ -228,8 +230,8 @@ function ListDetailsSection({
         </div>
       </div>
       <div>
-        <label className="label">Typ</label>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="label">Typ</div>
+        <div role="group" aria-label="Typ" className="grid grid-cols-2 gap-2">
           {TYPE_OPTIONS.map((t) => (
             <button
               type="button"

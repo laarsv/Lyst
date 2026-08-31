@@ -103,6 +103,7 @@ export function PlantsPage() {
 
       <div className="flex flex-wrap items-center gap-2 mb-6">
         <input
+          aria-label="Pflanzen durchsuchen"
           className="input flex-1 min-w-[200px]"
           placeholder="Pflanze, Art oder Bereich suchen…"
           value={q}

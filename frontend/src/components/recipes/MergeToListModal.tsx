@@ -141,6 +141,7 @@ export function MergeToListModal({ open, onClose }: Props) {
       {step === 'pick' ? (
         <div className="space-y-4">
           <input
+            aria-label="Rezepte durchsuchen"
             className="input"
             placeholder="Rezept suchen…"
             value={q}
@@ -196,8 +197,8 @@ export function MergeToListModal({ open, onClose }: Props) {
           </div>
 
           <div>
-            <label className="label">Ziel</label>
-            <div className="flex gap-1 bg-surface border border-line rounded-xl p-1 mb-2">
+            <div className="label">Ziel</div>
+            <div role="group" aria-label="Ziel" className="flex gap-1 bg-surface border border-line rounded-xl p-1 mb-2">
               <button
                 type="button"
                 onClick={() => setMode('existing')}
@@ -234,6 +235,7 @@ export function MergeToListModal({ open, onClose }: Props) {
               </select>
             ) : (
               <input
+                aria-label="Titel der neuen Liste"
                 className="input"
                 placeholder="Titel der neuen Liste"
                 value={newTitle}

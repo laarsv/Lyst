@@ -224,7 +224,7 @@ function ExercisePicker({ open, onClose, onPick }: { open: boolean; onClose: () 
 
   return (
     <Modal open={open} onClose={onClose} title="Übung hinzufügen" className="max-w-md">
-      <input className="input mb-3" placeholder="Suchen…" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
+      <input aria-label="Übungen durchsuchen" className="input mb-3" placeholder="Suchen…" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
       <ul className="max-h-[50vh] overflow-y-auto divide-y divide-line border border-line rounded-xl">
         {list.map((ex) => (
           <li key={ex.id}>

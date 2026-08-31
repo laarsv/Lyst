@@ -1,9 +1,10 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, useId} from 'react';
 import { Link } from 'react-router-dom';
 import { AuthApi } from '@/api/endpoints';
 import { getApiError } from '@/api/client';
 
 export function ForgotPasswordPage() {
+  const fid = useId();
   const [email, setEmail] = useState('');
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,8 +38,9 @@ export function ForgotPasswordPage() {
         ) : (
           <form onSubmit={onSubmit} className="space-y-4">
             <div>
-              <label className="label">E-Mail</label>
+              <label className="label" htmlFor={`${fid}-e-mail`}>E-Mail</label>
               <input
+                id={`${fid}-e-mail`}
                 type="email"
                 className="input"
                 required

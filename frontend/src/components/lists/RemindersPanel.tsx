@@ -68,6 +68,7 @@ export function RemindersPanel({ listId }: { listId: number }) {
         </button>
       </div>
       <input
+        aria-label="Notiz zur Erinnerung"
         className="input mb-4"
         placeholder="Optionale Notiz"
         value={msg}
