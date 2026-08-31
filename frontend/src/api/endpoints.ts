@@ -167,6 +167,8 @@ export const ListsApi = {
         { params: { force } },
       )
       .then(unwrap),
+  pin: (id: number) => api.post(`/lists/${id}/pin`),
+  unpin: (id: number) => api.delete(`/lists/${id}/pin`),
   remove: (id: number) => api.delete(`/lists/${id}`),
   duplicate: (id: number, payload: { title?: string; as_template?: boolean; template_name?: string }) =>
     api.post<{ data: ListSummary }>(`/lists/${id}/duplicate`, payload).then(unwrap),

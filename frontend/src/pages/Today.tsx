@@ -6,6 +6,7 @@ import {
   Circle,
   Droplet,
   Dumbbell,
+  Pin,
   UtensilsCrossed,
 } from 'lucide-react';
 import {
@@ -19,6 +20,7 @@ import { useOverviewQuery } from '@/hooks/useOverviewQuery';
 import { mealLabel } from '@/lib/meals';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
+import { QuickCreate } from '@/components/QuickCreate';
 
 /** "Heute" — only time-critical, actionable things. Blocks with no rows are
  *  NOT rendered (no empty-state cheer): a quiet day should be a short screen,
@@ -93,12 +95,46 @@ export function TodayPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Heute</h1>
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold">Heute</h1>
+        <QuickCreate />
+      </div>
 
       {nothing && (
         <div className="card p-10 text-center text-muted">
           Nichts Dringendes. 🎉
         </div>
+      )}
+
+      {data.pinned_lists.length > 0 && (
+        <Block icon={Pin} title="Angeheftet">
+          {data.pinned_lists.map((l) => {
+            const done = l.item_count > 0 && l.checked_count >= l.item_count;
+            return (
+              <Row key={l.id}>
+                <Link to={`/lists/${l.id}`} className="min-w-0 flex-1 flex items-center gap-3">
+                  <span
+                    aria-hidden
+                    className="size-9 shrink-0 rounded-xl flex items-center justify-center text-lg"
+                    style={{ backgroundColor: `${l.color || '#5e7a8a'}1f` }}
+                  >
+                    {l.icon || '📋'}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">{l.title}</span>
+                    <span className="block text-xs text-muted">
+                      {l.item_count === 0
+                        ? 'Noch leer'
+                        : done
+                          ? 'Alles erledigt ✓'
+                          : `${l.checked_count} / ${l.item_count} erledigt`}
+                    </span>
+                  </span>
+                </Link>
+              </Row>
+            );
+          })}
+        </Block>
       )}
 
       {data.open_session && (

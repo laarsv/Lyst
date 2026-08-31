@@ -29,6 +29,8 @@ import { formatPreview, hasParse, parseItem } from '@/utils/parseItemInput';
 import {
   ChevronRight,
   ListPlus,
+  Pin,
+  PinOff,
   RotateCcw,
   BookmarkPlus,
   Trash2,
@@ -467,6 +469,23 @@ export function ListDetailPage() {
     }
   };
 
+  const togglePin = async () => {
+    if (!list) return;
+    const next = !list.is_pinned;
+    // Optimistisch: der Pin ist reine Ansichtssache, ein Roundtrip-Flackern
+    // waere hier auffaelliger als der seltene Fehlerfall.
+    setList({ ...list, is_pinned: next });
+    try {
+      await (next ? ListsApi.pin(list.id) : ListsApi.unpin(list.id));
+      invalidateOverview('dashboard');
+      invalidateOverview('lists');
+      toast.success(next ? 'Auf „Heute" angeheftet' : 'Von „Heute" gelöst');
+    } catch (e) {
+      setList({ ...list, is_pinned: !next });
+      toast.error(getApiError(e));
+    }
+  };
+
   const saveAsTemplate = async () => {
     const name = await promptDialog({
       title: 'Vorlage speichern',
@@ -543,6 +562,12 @@ export function ListDetailPage() {
             </div>
           </div>
           <div className="flex flex-wrap gap-1.5">
+            <IconAction
+              label={list.is_pinned ? 'Von „Heute" lösen' : 'Auf „Heute" anheften'}
+              icon={list.is_pinned ? PinOff : Pin}
+              onClick={togglePin}
+              variant={list.is_pinned ? 'primary' : 'default'}
+            />
             {canEdit && (
               <IconAction
                 label="Mehrere hinzufügen"

@@ -68,6 +68,8 @@ export interface ListSummary {
   checked_count: number;
   is_owner: boolean;
   permission: CollaboratorPermission | null;
+  /** Auf dem eigenen "Heute"-Bildschirm angeheftet (pro Nutzer). */
+  is_pinned: boolean;
   share_state: ShareState | null;
 }
 
@@ -1052,7 +1054,17 @@ export interface DashboardReminder {
   message: string | null;
 }
 
+export interface DashboardPinnedList {
+  id: number;
+  title: string;
+  color: string | null;
+  icon: string | null;
+  item_count: number;
+  checked_count: number;
+}
+
 export interface Dashboard {
+  pinned_lists: DashboardPinnedList[];
   open_session: DashboardOpenSession | null;
   due_plants: DashboardDuePlant[];
   due_tasks: DashboardDueTask[];

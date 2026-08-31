@@ -12,6 +12,8 @@
  *  colour that visually pairs with it, write 3–6 short aliases. Order
  *  inside a group matters — first item is shown first in the picker. */
 
+import type { ListType } from '@/types';
+
 export interface Preset {
   emoji: string;
   color: string;
@@ -164,6 +166,16 @@ export const ALL_PRESETS: Preset[] = PRESET_GROUPS.flatMap((g) => g.presets);
  *  exactly: SHOPPING → 🛒 #00c896, PACKING → 🎒 #2e7d6b, CHECKLIST → ✅
  *  #00c896, CUSTOM → 📋 #5e7a8a. Used when seeding the picker for a new
  *  list — users can still override before saving. */
+/** The four list types as the create/filter UI shows them. Icon + colour
+ *  mirror DEFAULT_PRESET_FOR_TYPE below, so a type card previews exactly what
+ *  the new list will look like. */
+export const LIST_TYPES: { v: ListType; label: string; icon: string; color: string }[] = [
+  { v: 'SHOPPING', label: 'Einkauf', icon: '🛒', color: '#00c896' },
+  { v: 'PACKING', label: 'Packliste', icon: '🎒', color: '#2e7d6b' },
+  { v: 'CHECKLIST', label: 'Checkliste', icon: '✅', color: '#00c896' },
+  { v: 'CUSTOM', label: 'Eigene', icon: '📋', color: '#5e7a8a' },
+];
+
 export const DEFAULT_PRESET_FOR_TYPE: Record<string, Preset> = {
   SHOPPING: { emoji: '🛒', color: '#00c896', aliases: [] },
   PACKING: { emoji: '🎒', color: '#2e7d6b', aliases: [] },
