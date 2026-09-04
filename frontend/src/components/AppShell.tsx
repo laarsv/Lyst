@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Menu, Search, X } from 'lucide-react';
+import { ChevronDown, Menu, Search, X } from 'lucide-react';
 import { useAuthStore } from '@/store/auth';
 import { AuthApi } from '@/api/endpoints';
 import { SearchModal } from '@/components/SearchModal';
@@ -29,6 +29,7 @@ export function AppShell() {
   const nav = useNavigate();
   const loc = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
 
   // Close the mobile menu whenever the route changes (e.g. user picks a link)
@@ -79,6 +80,16 @@ export function AppShell() {
   const links = isAdmin ? ADMIN_LINKS : visible;
   const more = isAdmin ? [] : overflow;
   const linkEnd = (to: string) => to === '/' || to === '/admin';
+
+  // "Mehr" oeffnet eingeklappt — ausser die Seite, auf der man steht, liegt
+  // selbst darin: dann waere sonst nicht zu sehen, wo man gerade ist.
+  useEffect(() => {
+    if (!menuOpen) return;
+    setMoreOpen(
+      more.some(([to]) => (linkEnd(to) ? loc.pathname === to : loc.pathname.startsWith(to))),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [menuOpen]);
 
   return (
     <div className="min-h-full flex flex-col">
@@ -171,24 +182,42 @@ export function AppShell() {
               ))}
               {more.length > 0 && (
                 <>
-                  <div className="px-3 pt-3 pb-1 text-xs uppercase tracking-wide text-muted font-medium">
+                  <button
+                    type="button"
+                    onClick={() => setMoreOpen((v) => !v)}
+                    aria-expanded={moreOpen}
+                    className="mt-1 px-3 py-3 rounded-lg flex items-center justify-between gap-2 text-left text-base font-medium text-muted active:bg-page"
+                  >
                     Mehr
-                  </div>
-                  {more.map(([to, label]) => (
-                    <NavLink
-                      key={to}
-                      to={to}
-                      end={linkEnd(to)}
-                      className={({ isActive }) =>
-                        clsx(
-                          'px-3 py-3 rounded-lg text-base font-medium',
-                          isActive ? 'bg-brand-50 text-brand-700' : 'text-ink active:bg-page',
-                        )
-                      }
-                    >
-                      {label}
-                    </NavLink>
-                  ))}
+                    <ChevronDown
+                      size={18}
+                      aria-hidden
+                      className={clsx('shrink-0 transition', moreOpen && 'rotate-180')}
+                    />
+                  </button>
+                  {/* Bedingt gerendert statt `hidden`: Tailwinds
+                      [hidden]-Regel und .flex haben dieselbe Spezifitaet, und
+                      .flex steht spaeter im Bundle — das Attribut allein
+                      wuerde die Gruppe nicht verstecken. */}
+                  {moreOpen && (
+                    <div className="flex flex-col">
+                      {more.map(([to, label]) => (
+                        <NavLink
+                          key={to}
+                          to={to}
+                          end={linkEnd(to)}
+                          className={({ isActive }) =>
+                            clsx(
+                              'px-3 py-3 rounded-lg text-base font-medium',
+                              isActive ? 'bg-brand-50 text-brand-700' : 'text-ink active:bg-page',
+                            )
+                          }
+                        >
+                          {label}
+                        </NavLink>
+                      ))}
+                    </div>
+                  )}
                 </>
               )}
             </nav>
