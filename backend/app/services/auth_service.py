@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -9,9 +10,11 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
-from app.email.sender import send_email
+from app.email.sender import mail_enabled, send_email
 from app.email.templates import password_reset_email, welcome_email
 from app.models.user import User
+
+logger = logging.getLogger(__name__)
 
 
 async def authenticate(db: AsyncSession, email: str, password: str) -> User | None:
@@ -35,8 +38,15 @@ async def request_password_reset(db: AsyncSession, email: str) -> None:
         return
     token = create_reset_token(str(user.id))
     reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token}"
+    # Der Endpunkt meldet aus Prinzip immer Erfolg (kein User-Enumeration),
+    # deshalb ist das Log die EINZIGE Stelle, an der ein Fehlversand sichtbar
+    # wird — vorher fiel das Ergebnis von send_email hier stillschweigend weg.
+    if not mail_enabled():
+        logger.warning("Email disabled — reset link for %s: %s", user.email, reset_url)
+        return
     subject, html = password_reset_email(user.name, reset_url)
-    await send_email(user.email, subject, html)
+    if not await send_email(user.email, subject, html):
+        logger.error("Password reset mail to %s was NOT delivered", user.email)
 
 
 async def confirm_password_reset(db: AsyncSession, user_id: int, new_password: str) -> User:

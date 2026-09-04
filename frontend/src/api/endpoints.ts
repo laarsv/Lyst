@@ -110,10 +110,17 @@ export const AdminApi = {
       .post<{ data: { user: User; temp_password: string } }>('/admin/users', payload)
       .then(unwrap),
   inviteUser: (payload: { email: string; name: string; role: 'admin' | 'user' }) =>
-    api.post<{ data: User }>('/admin/users/invite', payload).then(unwrap),
+    api
+      .post<{ data: User & { mailed: boolean } }>('/admin/users/invite', payload)
+      .then(unwrap),
   updateUser: (id: number, payload: Partial<{ name: string; email: string; is_active: boolean; role: 'admin' | 'user' }>) =>
     api.patch<{ data: User }>(`/admin/users/${id}`, payload).then(unwrap),
-  resetPassword: (id: number) => api.post(`/admin/users/${id}/reset-password`),
+  resetPassword: (id: number) =>
+    api
+      .post<{ data: { mailed: boolean; message: string } }>(
+        `/admin/users/${id}/reset-password`,
+      )
+      .then(unwrap),
   deleteUser: (id: number) => api.delete(`/admin/users/${id}`),
   getLlmSettings: () =>
     api.get<{ data: LlmSettings }>('/admin/llm').then(unwrap),

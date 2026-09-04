@@ -1,3 +1,4 @@
+import logging
 import secrets
 import string
 
@@ -10,10 +11,12 @@ from app.core.security import (
     create_reset_token,
     hash_password,
 )
-from app.email.sender import send_email
+from app.email.sender import mail_enabled, send_email
 from app.email.templates import invite_email, password_reset_email
 from app.models.list import List as ListModel
 from app.models.user import User, UserRole
+
+logger = logging.getLogger(__name__)
 
 
 def generate_temp_password(length: int = 14) -> str:
@@ -61,13 +64,14 @@ class MailDeliveryError(RuntimeError):
     instead of a silently broken invite/reset."""
 
 
-async def invite_user(db: AsyncSession, email: str, name: str, role: UserRole) -> User:
+async def invite_user(
+    db: AsyncSession, email: str, name: str, role: UserRole
+) -> tuple[User, bool]:
+    """Returns (user, mailed). `mailed` is False when mail is switched off —
+    the invite link is then only in the backend log."""
     existing = await db.execute(select(User).where(User.email == email.lower()))
     if existing.scalar_one_or_none():
         raise ValueError("Email already registered")
-    # Pre-flight: refuse before touching the DB if mail can't physically go out.
-    if not settings.BREVO_API_KEY:
-        raise MailDeliveryError("BREVO_API_KEY ist nicht gesetzt — Einladung kann nicht versendet werden")
 
     # Stub user that will be activated when the invite is accepted. We commit
     # it *before* sending so the JWT can resolve to a user row when clicked,
@@ -87,6 +91,14 @@ async def invite_user(db: AsyncSession, email: str, name: str, role: UserRole) -
 
     token = create_invite_token(email.lower())
     invite_url = f"{settings.FRONTEND_URL}/accept-invite?token={token}"
+
+    # Mail switched off: keep the account and log the link, so an air-gapped
+    # instance can still onboard people out-of-band (docs/EMAIL.md). Refusing
+    # here used to make inviting impossible without Brevo.
+    if not mail_enabled():
+        logger.warning("Email disabled — invite link for %s: %s", email, invite_url)
+        return user, False
+
     subject, html = invite_email(name, invite_url)
     sent = await send_email(email, subject, html)
     if not sent:
@@ -95,7 +107,7 @@ async def invite_user(db: AsyncSession, email: str, name: str, role: UserRole) -
         raise MailDeliveryError(
             "Brevo hat den Versand abgelehnt — Backend-Log prüfen. Einladung wurde nicht gespeichert."
         )
-    return user
+    return user, True
 
 
 async def update_user(
@@ -133,16 +145,19 @@ async def delete_user(db: AsyncSession, user_id: int) -> None:
     await db.commit()
 
 
-async def admin_reset_password(db: AsyncSession, user_id: int) -> None:
+async def admin_reset_password(db: AsyncSession, user_id: int) -> bool:
+    """Returns True when the mail actually went out; False when mail is off
+    and the link only reached the log."""
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise ValueError("User not found")
-    if not settings.BREVO_API_KEY:
-        raise MailDeliveryError("BREVO_API_KEY ist nicht gesetzt — Reset-Mail kann nicht versendet werden")
     token = create_reset_token(str(user.id))
     reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token}"
+    if not mail_enabled():
+        logger.warning("Email disabled — reset link for %s: %s", user.email, reset_url)
+        return False
     subject, html = password_reset_email(user.name, reset_url)
-    sent = await send_email(user.email, subject, html)
-    if not sent:
+    if not await send_email(user.email, subject, html):
         raise MailDeliveryError("Brevo hat den Versand abgelehnt — Backend-Log prüfen")
+    return True

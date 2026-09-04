@@ -97,12 +97,15 @@ async def post_user(payload: UserCreate, db: AsyncSession = Depends(get_db)):
 @router.post("/users/invite", status_code=status.HTTP_201_CREATED)
 async def post_invite(payload: UserInvite, db: AsyncSession = Depends(get_db)):
     try:
-        user = await invite_user(db, payload.email, payload.name, payload.role)
+        user, mailed = await invite_user(db, payload.email, payload.name, payload.role)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except MailDeliveryError as e:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
-    return ok(UserOut.model_validate(user).model_dump(mode="json"))
+    # `mailed=false` heisst: Konto steht, aber der Einladungslink ging nur ins
+    # Backend-Log (E-Mail ist aus). Ohne das Feld meldet die Oberflaeche eine
+    # verschickte Einladung, die nie jemanden erreicht.
+    return ok({**UserOut.model_validate(user).model_dump(mode="json"), "mailed": mailed})
 
 
 @router.patch("/users/{user_id}")
@@ -124,12 +127,21 @@ async def patch_user(user_id: int, payload: UserUpdate, db: AsyncSession = Depen
 @router.post("/users/{user_id}/reset-password")
 async def post_reset(user_id: int, db: AsyncSession = Depends(get_db)):
     try:
-        await admin_reset_password(db, user_id)
+        mailed = await admin_reset_password(db, user_id)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except MailDeliveryError as e:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
-    return ok({"message": "Reset email sent"})
+    return ok(
+        {
+            "mailed": mailed,
+            "message": (
+                "Reset-Link per E-Mail gesendet"
+                if mailed
+                else "E-Mail ist deaktiviert — der Reset-Link steht im Backend-Log"
+            ),
+        }
+    )
 
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_200_OK)

@@ -46,8 +46,11 @@ export function AdminUsersPage() {
 
   const onResetPw = async (u: AdminUser) => {
     try {
-      await AdminApi.resetPassword(u.id);
-      toast.success(`Reset-Link an ${u.email} gesendet.`);
+      const res = await AdminApi.resetPassword(u.id);
+      // Nicht blind "gesendet" melden: bei abgeschalteter E-Mail steht der
+      // Link nur im Backend-Log.
+      if (res.mailed) toast.success(`Reset-Link an ${u.email} gesendet.`);
+      else toast.error(res.message);
     } catch (e) {
       toast.error(getApiError(e));
     }
@@ -317,8 +320,15 @@ function InviteUserModal({
     setError(null);
     setLoading(true);
     try {
-      const u = await AdminApi.inviteUser({ email, name, role });
-      onInvited(u as AdminUser);
+      const { mailed, ...u } = await AdminApi.inviteUser({ email, name, role });
+      // Frisch eingeladen heisst: noch keine Listen — das explizit setzen
+      // statt den Typ zu casten.
+      onInvited({ ...u, list_count: 0 });
+      if (mailed) toast.success(`Einladung an ${email} gesendet.`);
+      else
+        toast.error(
+          'Konto angelegt, aber E-Mail ist deaktiviert — der Einladungslink steht im Backend-Log.',
+        );
       setEmail(''); setName(''); setRole('user');
     } catch (e) {
       setError(getApiError(e));
