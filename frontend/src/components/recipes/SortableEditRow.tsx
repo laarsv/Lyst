@@ -1,6 +1,6 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 interface Props {
   id: number | string;
@@ -10,6 +10,12 @@ interface Props {
 
 export function SortableEditRow({ id, children, onDelete }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const [confirming, setConfirming] = useState(false);
+  useEffect(() => {
+    if (!confirming) return;
+    const t = setTimeout(() => setConfirming(false), 3000);
+    return () => clearTimeout(t);
+  }, [confirming]);
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -25,17 +31,26 @@ export function SortableEditRow({ id, children, onDelete }: Props) {
         type="button"
         {...attributes}
         {...listeners}
-        className="cursor-grab text-muted/60 hover:text-muted px-1 py-1 select-none"
+        className="cursor-grab text-muted/60 hover:text-muted select-none touch-none size-7 inline-flex items-center justify-center"
         aria-label="Verschieben"
       >
         ⋮⋮
       </button>
       <div className="flex-1 min-w-0">{children}</div>
-      {onDelete && (
+      {onDelete && confirming && (
         <button
           type="button"
           onClick={onDelete}
-          className="opacity-0 group-hover:opacity-100 transition text-muted/70 hover:text-danger px-1"
+          className="shrink-0 self-center rounded-lg bg-danger px-2 py-1 text-xs font-medium text-white"
+        >
+          Löschen
+        </button>
+      )}
+      {onDelete && !confirming && (
+        <button
+          type="button"
+          onClick={() => setConfirming(true)}
+          className="[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 transition text-muted/70 hover:text-danger px-1"
           aria-label="Löschen"
         >
           ×
