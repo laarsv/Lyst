@@ -35,7 +35,7 @@ export function SortableEditRow({ id, children, onDelete }: Props) {
         <button
           type="button"
           onClick={onDelete}
-          className="opacity-0 group-hover:opacity-100 transition text-muted/70 hover:text-danger px-1"
+          className="[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 transition text-muted/70 hover:text-danger px-1"
           aria-label="Löschen"
         >
           ×
