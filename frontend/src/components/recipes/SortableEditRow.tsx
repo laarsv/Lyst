@@ -25,7 +25,7 @@ export function SortableEditRow({ id, children, onDelete }: Props) {
         type="button"
         {...attributes}
         {...listeners}
-        className="cursor-grab text-muted/60 hover:text-muted px-1 py-1 select-none"
+        className="cursor-grab text-muted/60 hover:text-muted select-none touch-none size-7 inline-flex items-center justify-center"
         aria-label="Verschieben"
       >
         ⋮⋮
