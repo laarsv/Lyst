@@ -11,6 +11,7 @@ import {
 import { NAV_ITEMS, useNavPrefs } from '@/store/navPrefs';
 import { toast } from '@/components/Toast';
 import { getApiError } from '@/api/client';
+import { PicnicMappingsSection } from '@/components/PicnicMappingsSection';
 
 export function SettingsPage() {
   const fid = useId();
@@ -82,6 +83,7 @@ export function SettingsPage() {
       <StartPageSection />
       <NavigationSection />
       <InstallSection />
+      <PicnicMappingsSection />
       <form onSubmit={savePassword} className="card p-6 space-y-4">
         <h2 className="font-semibold">Passwort ändern</h2>
         <div>
