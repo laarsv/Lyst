@@ -82,6 +82,27 @@ services:
     # internal Docker network. To debug the API directly from the host, add:
     #   ports: ["127.0.0.1:8000:8000"]
 
+  # Optional + unofficial: Picnic grocery integration (fills the Picnic cart from a
+  # Lyst list — it never places an order). Off by default; enable with
+  # COMPOSE_PROFILES=picnic in .env. No published port: only the backend reaches it
+  # over the internal Docker network. One-time login (SMS 2FA), then the session
+  # key lives in the picnic-data volume:
+  #   docker compose exec -it picnic-sidecar node login.mjs
+  picnic-sidecar:
+    profiles: ["picnic"]
+    build:
+      context: ./picnic-sidecar
+    init: true
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      # Not marked required here so the stack still starts for everyone without
+      # Picnic; the sidecar itself refuses to start when this is empty.
+      PICNIC_SIDECAR_TOKEN: ${PICNIC_SIDECAR_TOKEN:-}
+      PICNIC_COUNTRY_CODE: ${PICNIC_COUNTRY_CODE:-DE}
+    volumes:
+      - picnic-data:/data
+
   frontend:
     build:
       context: ./frontend
@@ -102,3 +123,4 @@ services:
 
 volumes:
   lyst-db-data:
+  picnic-data:
