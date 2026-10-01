@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hmac
 import logging
+import re
 import time
 from collections import deque
 
@@ -23,18 +24,24 @@ from fastapi import (
     UploadFile,
     status,
 )
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
+from app.models.list import CategorizationMode, List as ListModel, ListType
 from app.models.user import User
 from app.schemas.recipe import EmlImportResult
+from app.services.item_service import bulk_create_items
 from app.services.picnic_import_service import import_one_eml
+from app.services.realtime_events import emit_list_item_event
+from app.services.ws_manager import manager as ws_manager
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/recipes", tags=["integration"])
+list_router = APIRouter(prefix="/integration", tags=["integration"])
 
 _MAX_EML_BYTES = 10 * 1024 * 1024
 
@@ -127,3 +134,61 @@ async def post_import_eml(
         title=outcome.title,
         message=outcome.message,
     )
+
+
+class VoiceItemsIn(BaseModel):
+    text: str = Field(min_length=1, max_length=500)
+    list: str | None = Field(default=None, max_length=255)
+
+
+class VoiceItemsOut(BaseModel):
+    list_title: str
+    added: list[str]
+
+
+# Dictation like "Milch und Eier, Butter" -> three items.
+_SPLIT_RE = re.compile(r"\s*(?:,|;|\n|\bund\b)\s*", re.IGNORECASE)
+
+
+@list_router.post("/list-items", dependencies=[Depends(_require_integration_key)])
+async def post_list_items(
+    payload: VoiceItemsIn,
+    background: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+) -> VoiceItemsOut:
+    """Add dictated items to one of the owner's lists (Siri / Home Assistant).
+    `list` is matched by title (case-insensitive substring); omitted → the
+    owner's first SHOPPING list. Items go through the same insert + realtime
+    path as the normal add, so open clients update live."""
+    from app.routers.items import _categorize_in_background, _item_out
+
+    owner = await _resolve_owner(db)
+    texts = [t.strip() for t in _SPLIT_RE.split(payload.text) if t.strip()]
+    if not texts:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Kein Text erkannt")
+
+    stmt = select(ListModel).where(
+        ListModel.owner_id == owner.id, ListModel.is_template.is_(False)
+    )
+    wanted = (payload.list or "").strip()
+    if wanted:
+        stmt = stmt.where(ListModel.title.ilike(f"%{wanted}%"))
+    else:
+        stmt = stmt.where(ListModel.type == ListType.SHOPPING)
+    target = (await db.execute(stmt.order_by(ListModel.id).limit(1))).scalar_one_or_none()
+    if target is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Liste '{wanted}' nicht gefunden" if wanted else "Keine Einkaufsliste gefunden",
+        )
+
+    items = await bulk_create_items(db, target.id, lines=texts)
+    for it in items:
+        out = _item_out(it)
+        await ws_manager.broadcast(target.id, {"type": "item_created", "payload": out})
+        await emit_list_item_event(
+            db, target.id, it.id, "list.item.created", actor_id=owner.id, payload=out
+        )
+        if target.categorization_mode == CategorizationMode.AUTO:
+            background.add_task(_categorize_in_background, target.id, it.id, target.type)
+    return VoiceItemsOut(list_title=target.title, added=[it.text for it in items])
