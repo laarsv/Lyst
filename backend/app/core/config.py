@@ -101,6 +101,12 @@ class Settings(BaseSettings):
         ),
     )
 
+    # --- Picnic sidecar (optional, unofficial; see picnic-sidecar/) ---
+    # The integration is enabled iff the shared token is set. Same variable name as
+    # the sidecar's own PICNIC_SIDECAR_TOKEN so one .env value configures both.
+    PICNIC_SIDECAR_URL: str = "http://picnic-sidecar:8081"
+    PICNIC_SIDECAR_TOKEN: str = ""
+
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.BACKEND_CORS_ORIGINS.split(",") if o.strip()]
