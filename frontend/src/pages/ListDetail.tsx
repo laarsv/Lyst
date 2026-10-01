@@ -9,7 +9,7 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core';
 import { SortableContext, arrayMove, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { AiListsApi, ItemsApi, ListsApi, ShareApi } from '@/api/endpoints';
+import { AiListsApi, ItemsApi, ListsApi, PicnicApi, ShareApi } from '@/api/endpoints';
 import { useAuthStore } from '@/store/auth';
 import type { ListItem, ListSummary, ListType } from '@/types';
 import { SortableItem } from '@/components/lists/SortableItem';
@@ -40,9 +40,11 @@ import {
   Loader2,
   Eye,
   EyeOff,
+  ShoppingCart,
 } from 'lucide-react';
 import { AiSuggestionModal } from '@/components/AiSuggestionModal';
 import { MergeDuplicatesModal } from '@/components/lists/MergeDuplicatesModal';
+import { PicnicCartModal } from '@/components/lists/PicnicCartModal';
 import { Combine } from 'lucide-react';
 import { categoryIconMapForType } from '@/data/listCategories';
 
@@ -72,6 +74,20 @@ export function ListDetailPage() {
   const save = useSaveIndicator();
   const [missingOpen, setMissingOpen] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
+  // Optional Picnic integration: the button only exists when the backend has it configured.
+  const [picnicOpen, setPicnicOpen] = useState(false);
+  const [picnicConfigured, setPicnicConfigured] = useState(false);
+  const isShopping = list?.type === 'SHOPPING';
+  useEffect(() => {
+    if (!isShopping) return;
+    let cancelled = false;
+    PicnicApi.status()
+      .then((s) => !cancelled && setPicnicConfigured(s.configured))
+      .catch(() => !cancelled && setPicnicConfigured(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [isShopping]);
 
   const canEdit = useMemo(
     () => !!list && (list.is_owner || list.permission === 'EDIT'),
@@ -589,6 +605,9 @@ export function ListDetailPage() {
                 onClick={() => setMergeOpen(true)}
               />
             )}
+            {isShopping && picnicConfigured && (
+              <IconAction label="Zu Picnic" icon={ShoppingCart} onClick={() => setPicnicOpen(true)} />
+            )}
             {canEdit && (
               <IconAction label="Zurücksetzen" icon={RotateCcw} onClick={reset} />
             )}
@@ -757,6 +776,10 @@ export function ListDetailPage() {
         items={items}
         onMerged={refreshItems}
       />
+
+      {isShopping && picnicConfigured && (
+        <PicnicCartModal open={picnicOpen} onClose={() => setPicnicOpen(false)} listId={listId} />
+      )}
 
       {/* Feature 2: AI "Fehlt was?" — auto-fetches on open since there's
           no prompt to type, then lets the user pick which suggestions to add. */}
