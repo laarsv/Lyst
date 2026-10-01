@@ -1071,3 +1071,71 @@ export interface Dashboard {
   today_meals: DashboardTodayMeal[];
   upcoming_reminders: DashboardReminder[];
 }
+
+// ---- Picnic integration (optional; backend /api/picnic) --------------------
+export interface PicnicStatus {
+  configured: boolean;
+  connected: boolean;
+}
+
+/** Why a candidate ranks where it does: remembered mapping, name match that was
+ *  bought before, name match, or just another search hit. */
+export type PicnicCandidateReason = 'mapping' | 'match_bought' | 'match' | 'other';
+
+export interface PicnicCandidate {
+  id: string;
+  name: string;
+  /** null for a remembered product that wasn't among this search's results. */
+  price_cents: number | null;
+  unit: string | null;
+  bought: number;
+  reason: PicnicCandidateReason;
+}
+
+export interface PicnicPreviewItem {
+  item_id: number;
+  text: string;
+  term: string;
+  count: number;
+  candidates: PicnicCandidate[];
+  /** Product id to pre-select; null means the user has to choose. */
+  preselected: string | null;
+  error: string | null;
+}
+
+export interface PicnicPreview {
+  list_id: number;
+  items: PicnicPreviewItem[];
+  /** The list had more open items than one preview looks up. */
+  truncated: boolean;
+}
+
+export interface PicnicCartItemInput {
+  product_id: string;
+  product_name: string;
+  count: number;
+  /** The list term this choice answers; required when `remember` is true. */
+  term?: string | null;
+  remember?: boolean;
+}
+
+export interface PicnicCartLine {
+  id: string;
+  name: string;
+  count: number;
+  price_cents: number | null;
+}
+
+export interface PicnicCartResult {
+  added: number;
+  remembered: number;
+  cart: { lines: PicnicCartLine[]; total_cents: number };
+}
+
+export interface PicnicMapping {
+  id: number;
+  term: string;
+  product_id: string;
+  product_name: string;
+  created_at: string;
+}

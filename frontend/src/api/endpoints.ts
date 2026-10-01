@@ -49,6 +49,11 @@ import type {
   PlantDue,
   PlantLocation,
   PlantPrefill,
+  PicnicCartItemInput,
+  PicnicCartResult,
+  PicnicMapping,
+  PicnicPreview,
+  PicnicStatus,
   PublicListData,
   PublicNoteData,
   InternalShare,
@@ -1047,4 +1052,17 @@ export const NotificationsApi = {
  *  backend routers/dashboard.py for why it isn't split up). */
 export const DashboardApi = {
   get: () => api.get<{ data: Dashboard }>('/dashboard').then(unwrap),
+};
+
+/** Optional Picnic integration. `preview` is read-only; nothing reaches the Picnic cart
+ *  until `addToCart` is called with explicit product choices. */
+export const PicnicApi = {
+  status: () => api.get<{ data: PicnicStatus }>('/picnic/status').then(unwrap),
+  preview: (listId: number) =>
+    api.post<{ data: PicnicPreview }>('/picnic/preview', { list_id: listId }).then(unwrap),
+  addToCart: (items: PicnicCartItemInput[]) =>
+    api.post<{ data: PicnicCartResult }>('/picnic/cart', { items }).then(unwrap),
+  mappings: () => api.get<{ data: PicnicMapping[] }>('/picnic/mappings').then(unwrap),
+  deleteMapping: (id: number) =>
+    api.delete<{ data: { message: string } }>(`/picnic/mappings/${id}`).then(unwrap),
 };
