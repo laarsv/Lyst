@@ -43,7 +43,12 @@ class PicnicNotConnected(PicnicError):
 
 
 class PicnicUnavailable(PicnicError):
-    """Sidecar unreachable, or Picnic itself returned an error."""
+    """Picnic (via the sidecar) returned an error — may be specific to one request."""
+
+
+class PicnicSidecarUnavailable(PicnicUnavailable):
+    """The sidecar itself is unusable (unreachable, timed out, token rejected), so every
+    request would fail the same way — callers must abort instead of degrading per item."""
 
 
 def is_configured() -> bool:
@@ -76,10 +81,13 @@ async def _call(
             )
     except httpx.HTTPError as exc:
         logger.warning("picnic sidecar unreachable: %s", exc.__class__.__name__)
-        raise PicnicUnavailable("Picnic-Dienst nicht erreichbar") from exc
+        raise PicnicSidecarUnavailable("Picnic-Dienst nicht erreichbar") from exc
 
     if resp.status_code == 409:
         raise PicnicNotConnected()
+    if resp.status_code in (401, 403):
+        logger.warning("picnic sidecar rejected the token (%s)", resp.status_code)
+        raise PicnicSidecarUnavailable("Picnic-Dienst lehnt das Token ab (PICNIC_SIDECAR_TOKEN prüfen)")
     if resp.status_code >= 400:
         try:
             detail = resp.json().get("message") or resp.json().get("error")
@@ -239,8 +247,9 @@ async def delete_mapping(db: AsyncSession, mapping_id: int) -> bool:
 # --------------------------------------------------------------------------- #
 async def build_preview(db: AsyncSession, items: list[ListItem]) -> list[dict]:
     """One entry per item: {item_id, text, term, count, candidates, preselected, error}.
-    Not-connected / not-configured abort the whole preview; a failed search for a single
-    term only blanks that item (error set), so one bad lookup never loses the rest."""
+    Not-configured / not-connected / sidecar-unusable abort the whole preview; a Picnic
+    error for a single term only blanks that item (error set), so one bad lookup never
+    loses the rest."""
     parsed = [(it, *parse_item(it.text, it.quantity, it.unit)) for it in items]
     terms = {term for _, term, _ in parsed if term}
 
@@ -255,7 +264,7 @@ async def build_preview(db: AsyncSession, items: list[ListItem]) -> list[dict]:
         async with sem:
             try:
                 return await search(term), None
-            except (PicnicNotConfigured, PicnicNotConnected):
+            except (PicnicNotConfigured, PicnicNotConnected, PicnicSidecarUnavailable):
                 raise
             except PicnicError as exc:
                 return [], str(exc)

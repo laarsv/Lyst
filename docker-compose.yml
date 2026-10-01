@@ -67,6 +67,9 @@ services:
       FDC_API_KEY: ${FDC_API_KEY:-}
       LYST_PICNIC_IMPORT_OWNER_EMAIL: ${LYST_PICNIC_IMPORT_OWNER_EMAIL:-}
       LYST_INTEGRATION_API_KEY: ${LYST_INTEGRATION_API_KEY:-}
+      # Optional Picnic integration: enabled iff the token is set (see picnic-sidecar).
+      PICNIC_SIDECAR_URL: ${PICNIC_SIDECAR_URL:-http://picnic-sidecar:8081}
+      PICNIC_SIDECAR_TOKEN: ${PICNIC_SIDECAR_TOKEN:-}
     # Lets the backend reach services that are exposed on the host's published
     # ports (e.g. an Ollama instance running on the host) via the hostname
     # `host.docker.internal`. Required on Linux/Proxmox-LXC; Docker Desktop

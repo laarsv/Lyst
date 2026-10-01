@@ -14,7 +14,7 @@ from app.core.limiter import limiter
 from app.routers import (
     admin, auth, dashboard, fitness_exercises, fitness_sessions, fitness_workouts,
     integration, items,
-    lists, me, meal_plans, note_folders, note_tasks, notes, notifications, plants,
+    lists, me, meal_plans, note_folders, note_tasks, notes, notifications, picnic, plants,
     recipes, recipes_ai, recipes_import, recipes_nutrition, recipes_share,
     reminders, search, share, snapshots, tags, tasks, ws,
 )
@@ -104,6 +104,7 @@ app.include_router(integration.router, prefix=PREFIX)
 app.include_router(integration.list_router, prefix=PREFIX)
 app.include_router(meal_plans.router, prefix=PREFIX)
 app.include_router(plants.router, prefix=PREFIX)
+app.include_router(picnic.router, prefix=PREFIX)
 app.include_router(fitness_exercises.router, prefix=PREFIX)
 app.include_router(fitness_workouts.router, prefix=PREFIX)
 app.include_router(fitness_sessions.router, prefix=PREFIX)
