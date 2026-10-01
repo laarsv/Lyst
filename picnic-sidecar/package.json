@@ -1,0 +1,11 @@
+{
+  "name": "lyst-picnic-sidecar",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "spike": "node --env-file=.env spike.mjs"
+  },
+  "dependencies": {
+    "picnic-api": "^4.10.0"
+  }
+}
