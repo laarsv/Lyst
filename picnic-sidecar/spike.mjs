@@ -54,6 +54,11 @@ if (!ok) {
     console.error("PICNIC_USERNAME / PICNIC_PASSWORD fehlen in .env");
     process.exit(1);
   }
+  // Non-secret sanity info so a bad .env (truncated at '#', stray quotes/spaces) is visible.
+  console.log(
+    `· Land=${PICNIC_COUNTRY_CODE}, Benutzername ${PICNIC_USERNAME.length} Zeichen (@: ${PICNIC_USERNAME.includes("@")}), ` +
+      `Passwort ${PICNIC_PASSWORD.length} Zeichen, Rand-Leerzeichen: ${PICNIC_USERNAME !== PICNIC_USERNAME.trim() || PICNIC_PASSWORD !== PICNIC_PASSWORD.trim()}`,
+  );
   const res = await client.auth.login(PICNIC_USERNAME, PICNIC_PASSWORD);
   console.log(`✓ Login ok (2FA nötig: ${res.second_factor_authentication_required})`);
   if (res.second_factor_authentication_required) {
