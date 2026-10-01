@@ -1,6 +1,7 @@
-// Picnic spike — read-only: login (+2FA), product search, view cart.
-// Run: cp .env.example .env, fill it in, then `npm install && npm run spike [-- "suchbegriff"]`.
-// Pass --add to also put the top search hit into the cart (1x); remove it in the Picnic app after.
+// Picnic spike — read-only: login (+2FA), purchase history, product search ranked by
+// what you already bought, view cart.
+// Run: cp .env.example .env, fill it in, then `npm install && npm run spike [-- "Milch" "Eier"]`.
+// Pass --add to also put the top-ranked hit of the FIRST query into the cart (1x); remove it in the Picnic app after.
 import { createInterface } from "node:readline/promises";
 import { readFile, writeFile, chmod } from "node:fs/promises";
 import PicnicClient from "picnic-api";
@@ -9,7 +10,9 @@ const SESSION_FILE = ".picnic-session.json";
 const { PICNIC_USERNAME, PICNIC_PASSWORD, PICNIC_COUNTRY_CODE = "DE" } = process.env;
 const args = process.argv.slice(2);
 const doAdd = args.includes("--add");
-const query = args.find((a) => !a.startsWith("--")) ?? "Milch";
+const queries = args.filter((a) => !a.startsWith("--"));
+if (!queries.length) queries.push("Milch");
+const HISTORY_DELIVERIES = 12; // most recent completed deliveries to scan
 
 async function saveKey(authKey) {
   await writeFile(SESSION_FILE, JSON.stringify({ authKey }), { mode: 0o600 });
@@ -72,16 +75,49 @@ if (!ok) {
   }
 }
 
-const hits = await client.catalog.search(query);
-console.log(`\nSuche "${query}": ${hits.length} Treffer`);
-for (const h of hits.slice(0, 5)) {
-  console.log(`  ${h.id}  ${h.name}  ${(h.display_price / 100).toFixed(2)} €  (${h.unit_quantity})`);
+// --- purchase history: product id -> { name, count } over the recent completed deliveries ---
+const bought = new Map();
+const deliveries = await client.delivery.getDeliveries(["COMPLETED"]);
+const recent = deliveries
+  .sort((a, b) => String(b.creation_time).localeCompare(String(a.creation_time)))
+  .slice(0, HISTORY_DELIVERIES);
+for (const d of recent) {
+  const detail = await client.delivery.getDelivery(d.delivery_id);
+  for (const order of detail.orders ?? []) {
+    for (const line of order.items ?? []) {
+      for (const art of line.items ?? []) {
+        const e = bought.get(art.id) ?? { name: art.name, count: 0 };
+        e.count += 1;
+        bought.set(art.id, e);
+      }
+    }
+  }
+}
+console.log(`\nHistorie: ${recent.length} von ${deliveries.length} Lieferungen gelesen, ${bought.size} verschiedene Produkte`);
+const top = [...bought.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 15);
+for (const [id, e] of top) console.log(`  ${e.count}x  ${id}  ${e.name}`);
+
+// --- search, ranked: already-bought products first (most often first), then Picnic's own order ---
+const rank = (hits) =>
+  hits
+    .map((h, i) => ({ h, i, n: bought.get(h.id)?.count ?? 0 }))
+    .sort((a, b) => b.n - a.n || a.i - b.i);
+
+let firstRanked = null;
+for (const query of queries) {
+  const ranked = rank(await client.catalog.search(query));
+  firstRanked ??= ranked[0]?.h;
+  console.log(`\nSuche "${query}": ${ranked.length} Treffer`);
+  for (const { h, i, n } of ranked.slice(0, 5)) {
+    const mark = n ? `${n}x gekauft` : "";
+    console.log(`  ${h.id}  ${h.name}  ${(h.display_price / 100).toFixed(2)} €  (${h.unit_quantity})  [Picnic-Platz ${i + 1}] ${mark}`);
+  }
 }
 
 const cart = await client.cart.getCart();
 console.log(`\nWarenkorb: ${cart.items?.length ?? 0} Positionen, Summe ${(cart.total_price ?? 0) / 100} €`);
 
-if (doAdd && hits[0]) {
-  await client.cart.addProductToCart(hits[0].id, 1);
-  console.log(`✓ "${hits[0].name}" 1x in den Warenkorb gelegt — bitte in der Picnic-App wieder entfernen`);
+if (doAdd && firstRanked) {
+  await client.cart.addProductToCart(firstRanked.id, 1);
+  console.log(`✓ "${firstRanked.name}" 1x in den Warenkorb gelegt — bitte in der Picnic-App wieder entfernen`);
 }
