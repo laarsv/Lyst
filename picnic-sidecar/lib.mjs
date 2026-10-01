@@ -49,16 +49,32 @@ export async function getClient() {
 export function resetClient() {
   cached = null;
   history = null;
+  validUntil = 0;
 }
 
-/** True iff the stored key still works. A cart read is the cheapest authenticated call. */
+// Opening a list page checks the status, so remember a successful probe briefly instead of
+// hitting Picnic every time. Failures are never cached: a re-login is picked up immediately.
+const VALID_TTL_MS = 60 * 1000;
+let validUntil = 0;
+
+/** True iff the stored key still works. A cart read is the cheapest authenticated call.
+ *  A failure retries once with the session file re-read, so a re-login done by login.mjs
+ *  (another process) takes effect without restarting the server. */
 export async function sessionIsValid() {
+  if (Date.now() < validUntil) return true;
+  const probe = async () => (await getClient()).cart.getCart();
   try {
-    await (await getClient()).cart.getCart();
-    return true;
+    await probe();
   } catch {
-    return false;
+    resetClient();
+    try {
+      await probe();
+    } catch {
+      return false;
+    }
   }
+  validUntil = Date.now() + VALID_TTL_MS;
+  return true;
 }
 
 let history = null; // { at, counts: Map<productId, number>, inflight?: Promise }
