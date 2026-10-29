@@ -1,6 +1,7 @@
 from functools import lru_cache
+from typing import Literal
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,9 +21,20 @@ class Settings(BaseSettings):
     RESET_TOKEN_EXPIRE_HOURS: int = 1
     INVITE_TOKEN_EXPIRE_HOURS: int = 48
 
-    BREVO_API_KEY: str = ""
-    BREVO_FROM_EMAIL: str = "info@vrwb.de"
-    BREVO_FROM_NAME: str = "Lyst"
+    # Outgoing mail over SMTP (invites, password resets, mentions, reminders).
+    # Mail counts as configured once SMTP_HOST, SMTP_USER and SMTP_PASSWORD are
+    # all set; otherwise it is off (see app/email/sender.py). Port 587 uses
+    # STARTTLS, port 465 uses TLS from the first byte; SMTP_SECURITY=auto picks
+    # by port. Many hosts block outbound 25 and 465, so prefer 587.
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: SecretStr = SecretStr("")
+    SMTP_SECURITY: Literal["auto", "starttls", "ssl"] = "auto"
+    # Sender address; empty = SMTP_USER. Most providers only allow addresses
+    # that belong to the SMTP account.
+    SMTP_FROM_EMAIL: str = "info@vrwb.de"
+    SMTP_FROM_NAME: str = "Lyst"
 
     FRONTEND_URL: str = "http://localhost:5173"
     BACKEND_CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
@@ -106,6 +118,18 @@ class Settings(BaseSettings):
     # the sidecar's own PICNIC_SIDECAR_TOKEN so one .env value configures both.
     PICNIC_SIDECAR_URL: str = "http://picnic-sidecar:8081"
     PICNIC_SIDECAR_TOKEN: str = ""
+
+    @property
+    def mail_configured(self) -> bool:
+        return bool(
+            self.SMTP_HOST.strip()
+            and self.SMTP_USER.strip()
+            and self.SMTP_PASSWORD.get_secret_value()
+        )
+
+    @property
+    def mail_sender_email(self) -> str:
+        return self.SMTP_FROM_EMAIL.strip() or self.SMTP_USER.strip()
 
     @property
     def cors_origins(self) -> list[str]:

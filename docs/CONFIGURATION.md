@@ -47,17 +47,23 @@ Variables are grouped the same way as in `.env.example`: **Database**,
 
 ---
 
-## Email — Brevo (optional)
+## Email — SMTP (optional)
 
-If left blank, all email features degrade gracefully: invitation links and
-password-reset links are printed to the backend log instead of sent. See
+Mail goes out over SMTP with any provider or mail server. Mail is on once
+`SMTP_HOST`, `SMTP_USER` and `SMTP_PASSWORD` are all set. If left blank,
+all email features degrade gracefully: invitation links and password-reset
+links are printed to the backend log instead of sent. See
 [EMAIL.md](./EMAIL.md) for how to set this up.
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `BREVO_API_KEY` | no | empty (mail disabled) | Brevo API key from <https://app.brevo.com/settings/keys/api>. |
-| `BREVO_FROM_EMAIL` | no | `info@vrwb.de` | Sender address, e.g. `info@your-domain.app`. Must be a verified sender/domain in your Brevo account. |
-| `BREVO_FROM_NAME` | no | `Lyst` | Display name shown as the sender in the inbox. |
+| `SMTP_HOST` | no | empty (mail disabled) | SMTP server name. |
+| `SMTP_PORT` | no | `587` | SMTP port. 587 (STARTTLS) is recommended; many hosts block outbound 25 and 465. |
+| `SMTP_USER` | no | empty (mail disabled) | SMTP login name. |
+| `SMTP_PASSWORD` | no | empty (mail disabled) | SMTP login password. Secret, never logged. |
+| `SMTP_SECURITY` | no | `auto` | `auto` (TLS from the first byte on port 465, STARTTLS otherwise), `starttls` or `ssl`. The server certificate and host name are always verified. |
+| `SMTP_FROM_EMAIL` | no | `info@vrwb.de` | Sender address, e.g. `info@your-domain.app`. Must be an address your SMTP account may send from. Empty in the backend = `SMTP_USER`. |
+| `SMTP_FROM_NAME` | no | `Lyst` | Display name shown as the sender in the inbox. |
 
 ---
 
@@ -159,9 +165,12 @@ INITIAL_ADMIN_EMAIL=admin@your-domain.app
 INITIAL_ADMIN_PASSWORD=<a strong password>
 FRONTEND_URL=https://lyst.your-domain.app
 BACKEND_CORS_ORIGINS=https://lyst.your-domain.app
-BREVO_API_KEY=xkeysib-xxxxxxxxxxxxxxxxxxxxxxxx
-BREVO_FROM_EMAIL=info@your-domain.app
-BREVO_FROM_NAME=Lyst
+SMTP_HOST=smtp.your-provider.example
+SMTP_PORT=587
+SMTP_USER=lyst@your-domain.app
+SMTP_PASSWORD=<the account's password>
+SMTP_FROM_EMAIL=lyst@your-domain.app
+SMTP_FROM_NAME=Lyst
 ```
 
 ### External Postgres (e.g. managed)
@@ -208,7 +217,9 @@ OLLAMA_BASE_URL=http://ollama:11434
 Just leave the optional sections empty:
 
 ```ini
-BREVO_API_KEY=
+SMTP_HOST=
+SMTP_USER=
+SMTP_PASSWORD=
 ANTHROPIC_API_KEY=
 # OLLAMA_BASE_URL pointing at an unreachable host is fine — AI features
 # return a clean error in the UI, nothing else breaks.

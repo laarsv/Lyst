@@ -2,6 +2,24 @@
 
 Alle nennenswerten Änderungen pro Release. Datumsangaben sind ISO 8601.
 
+## Unveröffentlicht
+
+Mailversand über SMTP statt Brevo.
+
+### Breaking
+
+- **Brevo entfernt** — Lyst versendet Mails (Einladung, Passwort-Reset,
+  Erinnerungen, Erwähnungen, Aufgaben, Teilen) jetzt über SMTP, mit jedem
+  Anbieter oder Mailserver. Die Variablen `BREVO_API_KEY`, `BREVO_FROM_EMAIL`
+  und `BREVO_FROM_NAME` entfallen. Neu: `SMTP_HOST`, `SMTP_PORT` (587),
+  `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_SECURITY` (`auto`), `SMTP_FROM_EMAIL`
+  (ersetzt `BREVO_FROM_EMAIL`), `SMTP_FROM_NAME` (ersetzt `BREVO_FROM_NAME`).
+  Mail ist aktiv, sobald Host, Nutzer und Passwort gesetzt sind. Wer Mail
+  nutzt, muss die `.env` anpassen (siehe `docs/EMAIL.md`); ohne Anpassung
+  ist Mail aus und die Links erscheinen im Backend-Log.
+- Mails haben jetzt einen Text- und einen HTML-Teil; Zertifikat und Hostname
+  des Mailservers werden immer geprüft.
+
 ## v1.7.1 — 2026-07-10
 
 Länger eingeloggt bleiben — rollende Sitzung.

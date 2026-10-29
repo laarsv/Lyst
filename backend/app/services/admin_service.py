@@ -75,7 +75,7 @@ async def invite_user(
 
     # Stub user that will be activated when the invite is accepted. We commit
     # it *before* sending so the JWT can resolve to a user row when clicked,
-    # but we roll it back if Brevo rejects the send — otherwise we'd leave a
+    # but we roll it back if the mail server rejects the send — otherwise we'd leave a
     # dead inactive account that the admin thinks they invited.
     user = User(
         email=email.lower(),
@@ -94,7 +94,7 @@ async def invite_user(
 
     # Mail switched off: keep the account and log the link, so an air-gapped
     # instance can still onboard people out-of-band (docs/EMAIL.md). Refusing
-    # here used to make inviting impossible without Brevo.
+    # here used to make inviting impossible without a mail setup.
     if not mail_enabled():
         logger.warning("Email disabled — invite link for %s: %s", email, invite_url)
         return user, False
@@ -105,7 +105,7 @@ async def invite_user(
         await db.delete(user)
         await db.commit()
         raise MailDeliveryError(
-            "Brevo hat den Versand abgelehnt — Backend-Log prüfen. Einladung wurde nicht gespeichert."
+            "Der SMTP-Server hat den Versand abgelehnt oder war nicht erreichbar — Backend-Log prüfen. Einladung wurde nicht gespeichert."
         )
     return user, True
 
@@ -159,5 +159,7 @@ async def admin_reset_password(db: AsyncSession, user_id: int) -> bool:
         return False
     subject, html = password_reset_email(user.name, reset_url)
     if not await send_email(user.email, subject, html):
-        raise MailDeliveryError("Brevo hat den Versand abgelehnt — Backend-Log prüfen")
+        raise MailDeliveryError(
+            "Der SMTP-Server hat den Versand abgelehnt oder war nicht erreichbar — Backend-Log prüfen"
+        )
     return True

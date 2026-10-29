@@ -135,8 +135,18 @@ The backend's CMD seeds the initial admin user on every cold start.
 
 ## Tests
 
-The project doesn't ship a test suite yet. Contributing one is high on
-the wish-list — start with:
+The project ships a small backend test suite for the mail transport
+(`backend/tests/test_email_sender.py`, a fake SMTP server, no network).
+Run it with the Python version from the backend `Dockerfile`:
+
+```bash
+cd backend
+pip install -r requirements.txt pytest
+python -m pytest
+```
+
+The rest of the suite is still missing. Contributing more is high on the
+wish-list — start with:
 
 - `backend/`: `pytest` + `httpx.AsyncClient` for endpoint tests, fixture
   for an in-memory or per-test Postgres.
@@ -198,7 +208,7 @@ backend/
     schemas/        Pydantic models for request/response
     routers/        FastAPI APIRouters — one per resource
     services/       business logic, db queries, ws manager
-    email/          Brevo wrapper + HTML templates
+    email/          SMTP sender + HTML templates
     main.py         FastAPI app, lifespan, scheduler
   alembic/          migrations
   Dockerfile
