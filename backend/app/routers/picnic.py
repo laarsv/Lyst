@@ -51,15 +51,30 @@ def _http_error(exc: PicnicError) -> HTTPException:
     return HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
 
+async def require_picnic_user(user: User = Depends(require_user)) -> User:
+    """The sidecar drives ONE shared Picnic account, so access is limited to the
+    accounts in PICNIC_ALLOWED_EMAILS (empty = everyone)."""
+    if not picnic_service.is_allowed(user.email):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Picnic ist für dieses Konto nicht freigegeben.",
+        )
+    return user
+
+
 @router.get("/status")
-async def get_status(_user: User = Depends(require_user)):
+async def get_status(user: User = Depends(require_user)):
+    # Not allowed reads as "not configured", so the UI hides the button and the Settings
+    # section the same way it does when the integration is switched off.
+    if not picnic_service.is_allowed(user.email):
+        return ok(PicnicStatusOut(configured=False, connected=False).model_dump())
     return ok(PicnicStatusOut(**await picnic_service.get_status()).model_dump())
 
 
 @router.post("/preview")
 async def post_preview(
     payload: PicnicPreviewIn,
-    user: User = Depends(require_user),
+    user: User = Depends(require_picnic_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Match the list's open items to Picnic products. Read-only; changes nothing."""
@@ -84,7 +99,7 @@ async def post_preview(
 @router.post("/cart")
 async def post_cart(
     payload: PicnicCartIn,
-    user: User = Depends(require_user),
+    user: User = Depends(require_picnic_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Put the confirmed products into the Picnic cart; optionally remember the choices."""
@@ -121,7 +136,7 @@ async def post_cart(
 
 @router.get("/mappings")
 async def get_mappings(
-    _user: User = Depends(require_user),
+    _user: User = Depends(require_picnic_user),
     db: AsyncSession = Depends(get_db),
 ):
     rows = await picnic_service.list_mappings(db)
@@ -131,7 +146,7 @@ async def get_mappings(
 @router.delete("/mappings/{mapping_id}")
 async def delete_mapping(
     mapping_id: int,
-    _user: User = Depends(require_user),
+    _user: User = Depends(require_picnic_user),
     db: AsyncSession = Depends(get_db),
 ):
     if not await picnic_service.delete_mapping(db, mapping_id):

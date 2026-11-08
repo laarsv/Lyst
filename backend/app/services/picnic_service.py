@@ -55,6 +55,12 @@ def is_configured() -> bool:
     return bool(settings.PICNIC_SIDECAR_TOKEN)
 
 
+def is_allowed(email: str) -> bool:
+    """May this account use Picnic? An empty PICNIC_ALLOWED_EMAILS means every account."""
+    allowed = settings.picnic_allowed_emails
+    return not allowed or email.strip().lower() in allowed
+
+
 # --------------------------------------------------------------------------- #
 # Sidecar client
 # --------------------------------------------------------------------------- #

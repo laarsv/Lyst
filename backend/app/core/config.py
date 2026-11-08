@@ -106,10 +106,18 @@ class Settings(BaseSettings):
     # the sidecar's own PICNIC_SIDECAR_TOKEN so one .env value configures both.
     PICNIC_SIDECAR_URL: str = "http://picnic-sidecar:8081"
     PICNIC_SIDECAR_TOKEN: str = ""
+    # The sidecar drives ONE shared Picnic account, so every Lyst account could otherwise
+    # fill its cart and edit its remembered mappings. Comma-separated account e-mails that
+    # may use Picnic; empty = every account (the old behaviour).
+    PICNIC_ALLOWED_EMAILS: str = ""
 
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.BACKEND_CORS_ORIGINS.split(",") if o.strip()]
+
+    @property
+    def picnic_allowed_emails(self) -> set[str]:
+        return {e.strip().lower() for e in self.PICNIC_ALLOWED_EMAILS.split(",") if e.strip()}
 
 
 @lru_cache
