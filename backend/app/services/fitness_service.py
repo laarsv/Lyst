@@ -1,8 +1,9 @@
-"""Fitness module service — exercises (shared), workouts + sessions (private).
+"""Fitness module service — exercises, workouts + sessions (all private per owner).
 
 Ownership rules:
-  - exercises: EVERYONE reads ALL (global seeds owner_id NULL + any user's).
-    Edit/delete only your own; seeds are read-only for all.
+  - exercises: you see the global seeds (owner_id NULL) plus your OWN exercises, never
+    another user's. Edit/delete only your own; seeds are read-only for all. Every
+    lookup goes through `_visible_to` so a foreign exercise id reads as 404.
   - workouts / workout_sessions / set_logs: strictly private per owner.
 """
 from datetime import datetime, timezone
@@ -36,20 +37,25 @@ def _utcnow() -> datetime:
 
 
 # =============================================================================
-#  Exercises (shared library)
+#  Exercises (global seeds + your own)
 # =============================================================================
+
+def _visible_to(user_id: int):
+    """Exercises this user may see: the global seeds and their own."""
+    return or_(Exercise.owner_id.is_(None), Exercise.owner_id == user_id)
+
 
 async def list_exercises(
     db: AsyncSession,
+    user_id: int,
     *,
     q: str | None = None,
     muscle_group: str | None = None,
     type_: str | None = None,
     location: str | None = None,
 ) -> list[Exercise]:
-    """All exercises (global + everyone's), filtered. No owner filter — the
-    library is shared."""
-    stmt = select(Exercise).order_by(Exercise.name)
+    """Global seeds + the user's own exercises, filtered."""
+    stmt = select(Exercise).where(_visible_to(user_id)).order_by(Exercise.name)
     if q:
         stmt = stmt.where(func.lower(Exercise.name).like(f"%{q.lower()}%"))
     if muscle_group:
@@ -63,9 +69,11 @@ async def list_exercises(
     return list((await db.execute(stmt)).scalars().all())
 
 
-async def get_exercise(db: AsyncSession, exercise_id: int) -> Exercise:
+async def get_exercise(db: AsyncSession, exercise_id: int, user_id: int) -> Exercise:
     ex = (
-        await db.execute(select(Exercise).where(Exercise.id == exercise_id))
+        await db.execute(
+            select(Exercise).where(Exercise.id == exercise_id, _visible_to(user_id))
+        )
     ).scalar_one_or_none()
     if not ex:
         raise FitnessError(404, "Übung nicht gefunden")
@@ -163,9 +171,11 @@ async def delete_workout(db: AsyncSession, w: Workout) -> None:
     await db.commit()
 
 
-async def add_workout_exercise(db: AsyncSession, workout_id: int, **fields) -> WorkoutExercise:
-    # Validate the referenced exercise exists (shared library — any owner).
-    await get_exercise(db, fields["exercise_id"])
+async def add_workout_exercise(
+    db: AsyncSession, workout_id: int, user_id: int, **fields
+) -> WorkoutExercise:
+    # The exercise must be a global seed or one of the user's own.
+    await get_exercise(db, fields["exercise_id"], user_id)
     pos = (
         await db.execute(
             select(func.coalesce(func.max(WorkoutExercise.position), -1) + 1).where(
@@ -318,7 +328,7 @@ def _validate_set_fields(
 
 
 async def add_set_log(db: AsyncSession, session: WorkoutSession, **fields) -> SetLog:
-    ex = await get_exercise(db, fields["exercise_id"])
+    ex = await get_exercise(db, fields["exercise_id"], session.owner_id)
     _validate_set_fields(
         ex.tracking_type,
         fields.get("reps_done"),
@@ -341,7 +351,9 @@ async def get_set_log(db: AsyncSession, session_id: int, set_id: int) -> SetLog 
 
 
 async def update_set_log(db: AsyncSession, sl: SetLog, **fields) -> SetLog:
-    ex = await get_exercise(db, sl.exercise_id)
+    # The set already belongs to the user's own session, so its exercise is loaded by id:
+    # a log made back when the library was shared must stay editable.
+    ex = await db.get(Exercise, sl.exercise_id)
     merged_reps = fields.get("reps_done", sl.reps_done) if "reps_done" in fields else sl.reps_done
     merged_weight = fields.get("weight_done", sl.weight_done) if "weight_done" in fields else sl.weight_done
     merged_dur = fields.get("duration_done", sl.duration_done) if "duration_done" in fields else sl.duration_done

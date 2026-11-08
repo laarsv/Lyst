@@ -207,7 +207,7 @@ async def get_history(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        ex = await get_exercise(db, exercise_id)
+        ex = await get_exercise(db, exercise_id, user.id)
     except FitnessError as e:
         raise HTTPException(status_code=e.status, detail=e.message)
     points = await history(db, user.id, exercise_id)

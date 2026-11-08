@@ -117,7 +117,7 @@ async def post_workout_exercise(
 ):
     await _owned_workout(db, workout_id, user.id)
     try:
-        we = await add_workout_exercise(db, workout_id, **payload.model_dump())
+        we = await add_workout_exercise(db, workout_id, user.id, **payload.model_dump())
     except FitnessError as e:
         raise HTTPException(status_code=e.status, detail=e.message)
     return ok(WorkoutExerciseOut.model_validate(we).model_dump(mode="json"))

@@ -1,7 +1,7 @@
 """Fitness — exercise library endpoints (mounted under /fitness).
 
-The library is SHARED: every user reads every exercise (global seeds with
-owner_id NULL + any user's). Create makes your own; edit/delete only your own.
+Each user sees the global seeds (owner_id NULL) plus their OWN exercises — another
+user's exercise is a 404. Create makes your own; edit/delete only your own.
 """
 import logging
 import pathlib
@@ -48,7 +48,9 @@ async def get_exercises(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    rows = await list_exercises(db, q=q, muscle_group=muscle_group, type_=type, location=location)
+    rows = await list_exercises(
+        db, user.id, q=q, muscle_group=muscle_group, type_=type, location=location
+    )
     return ok([exercise_out(e, user.id) for e in rows])
 
 
@@ -69,7 +71,7 @@ async def get_exercise_route(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        ex = await get_exercise(db, exercise_id)
+        ex = await get_exercise(db, exercise_id, user.id)
     except FitnessError as e:
         raise HTTPException(status_code=e.status, detail=e.message)
     return ok(exercise_out(ex, user.id))
@@ -83,7 +85,7 @@ async def patch_exercise(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        ex = await get_exercise(db, exercise_id)
+        ex = await get_exercise(db, exercise_id, user.id)
         ex = await update_exercise(db, ex, user.id, **payload.model_dump(exclude_unset=True))
     except FitnessError as e:
         raise HTTPException(status_code=e.status, detail=e.message)
@@ -97,7 +99,7 @@ async def del_exercise(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        ex = await get_exercise(db, exercise_id)
+        ex = await get_exercise(db, exercise_id, user.id)
         await delete_exercise(db, ex, user.id)
     except FitnessError as e:
         raise HTTPException(status_code=e.status, detail=e.message)
@@ -132,7 +134,7 @@ async def post_exercise_image(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        ex = await get_exercise(db, exercise_id)
+        ex = await get_exercise(db, exercise_id, user.id)
     except FitnessError as e:
         raise HTTPException(status_code=e.status, detail=e.message)
     if ex.owner_id is None or ex.owner_id != user.id:
@@ -180,7 +182,7 @@ async def del_exercise_image(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        ex = await get_exercise(db, exercise_id)
+        ex = await get_exercise(db, exercise_id, user.id)
     except FitnessError as e:
         raise HTTPException(status_code=e.status, detail=e.message)
     if ex.owner_id is None or ex.owner_id != user.id:

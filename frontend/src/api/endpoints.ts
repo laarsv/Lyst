@@ -895,7 +895,7 @@ type ExerciseWrite = {
 };
 
 export const FitnessApi = {
-  // ----- Exercises (shared library) -----
+  // ----- Exercises (global seeds + your own) -----
   listExercises: (params?: { q?: string; muscle_group?: string; type?: string; location?: string }) =>
     api.get<{ data: Exercise[] }>('/fitness/exercises', { params }).then(unwrap),
   getExercise: (id: number) => api.get<{ data: Exercise }>(`/fitness/exercises/${id}`).then(unwrap),

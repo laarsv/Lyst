@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.models.fitness import ExerciseLocation, ExerciseType, TrackingType
 
 
-# ---------- Exercises (shared library) ----------
+# ---------- Exercises (global seeds + your own) ----------
 
 class ExerciseBase(BaseModel):
     name: str = Field(min_length=1, max_length=255)
@@ -37,8 +37,8 @@ class ExerciseOut(ExerciseBase):
     owner_id: int | None = None
     created_at: datetime
     updated_at: datetime
-    # Convenience flags the frontend uses to gate edit/delete (global seeds and
-    # other users' exercises are read-only).
+    # Convenience flags the frontend uses to gate edit/delete (global seeds are
+    # read-only; other users' exercises are never returned at all).
     is_global: bool = False
     editable: bool = False
 

@@ -36,9 +36,9 @@ class TrackingType(str, enum.Enum):
 
 
 class Exercise(Base, TimestampMixin):
-    """Shared exercise library. owner_id NULL = global seed (everyone sees it,
-    nobody edits it). A non-null owner_id is a user-created exercise — visible
-    to ALL users (read), editable/deletable only by its owner."""
+    """Exercise library. owner_id NULL = global seed (everyone sees it, nobody
+    edits it). A non-null owner_id is a user-created exercise — visible and
+    editable/deletable only by its owner."""
     __tablename__ = "exercises"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
