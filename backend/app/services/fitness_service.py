@@ -171,6 +171,19 @@ async def delete_workout(db: AsyncSession, w: Workout) -> None:
     await db.commit()
 
 
+async def _reload_workout_exercise(db: AsyncSession, we_id: int) -> WorkoutExercise:
+    """The slot with its `exercise` loaded — WorkoutExerciseOut serialises it, and a
+    lazy load there would raise MissingGreenlet (async session)."""
+    return (
+        await db.execute(
+            select(WorkoutExercise)
+            .options(selectinload(WorkoutExercise.exercise))
+            .where(WorkoutExercise.id == we_id)
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one()
+
+
 async def add_workout_exercise(
     db: AsyncSession, workout_id: int, user_id: int, **fields
 ) -> WorkoutExercise:
@@ -186,8 +199,7 @@ async def add_workout_exercise(
     we = WorkoutExercise(workout_id=workout_id, position=pos, **fields)
     db.add(we)
     await db.commit()
-    await db.refresh(we)
-    return we
+    return await _reload_workout_exercise(db, we.id)
 
 
 async def get_workout_exercise(db: AsyncSession, workout_id: int, we_id: int) -> WorkoutExercise | None:
@@ -205,8 +217,7 @@ async def update_workout_exercise(db: AsyncSession, we: WorkoutExercise, **field
         if v is not None or k in {"target_sets", "target_reps", "target_weight", "notes"}:
             setattr(we, k, v)
     await db.commit()
-    await db.refresh(we)
-    return we
+    return await _reload_workout_exercise(db, we.id)
 
 
 async def delete_workout_exercise(db: AsyncSession, we: WorkoutExercise) -> None:
