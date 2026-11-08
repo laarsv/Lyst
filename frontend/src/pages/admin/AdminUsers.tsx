@@ -6,6 +6,7 @@ import { toast } from '@/components/Toast';
 import { useConfirm } from '@/components/Dialogs';
 import { getApiError } from '@/api/client';
 import { useAuthStore } from '@/store/auth';
+import { RegistrationLinksModal } from '@/components/RegistrationLinksModal';
 
 export function AdminUsersPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -13,6 +14,7 @@ export function AdminUsersPage() {
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [linksOpen, setLinksOpen] = useState(false);
   const [tempPwInfo, setTempPwInfo] = useState<{ email: string; temp: string } | null>(null);
   const myId = useAuthStore((s) => s.userId);
   const confirmDialog = useConfirm();
@@ -83,6 +85,7 @@ export function AdminUsersPage() {
           <p className="text-sm text-muted">Verwalte Konten, lade Personen ein und setze Passwörter zurück.</p>
         </div>
         <div className="flex gap-2">
+          <button className="btn-secondary" onClick={() => setLinksOpen(true)}>Registrierungslink</button>
           <button className="btn-secondary" onClick={() => setInviteOpen(true)}>Einladen</button>
           <button className="btn-primary" onClick={() => setCreateOpen(true)}>Anlegen</button>
         </div>
@@ -215,6 +218,7 @@ export function AdminUsersPage() {
           toast.success(`Einladung an ${u.email} gesendet.`);
         }}
       />
+      <RegistrationLinksModal open={linksOpen} onClose={() => setLinksOpen(false)} />
       <Modal open={!!tempPwInfo} onClose={() => setTempPwInfo(null)} title="Konto angelegt">
         {tempPwInfo && (
           <div className="space-y-3 text-sm">

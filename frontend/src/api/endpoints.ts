@@ -58,6 +58,7 @@ import type {
   PublicNoteData,
   InternalShare,
   Recipe,
+  RegistrationLink,
   PublicRecipeBookData,
   PublicRecipeData,
   RecipeIngredient,
@@ -90,6 +91,12 @@ export const AuthApi = {
     api.post('/auth/reset-password/confirm', { token, new_password }),
   acceptInvite: (token: string, name: string, password: string) =>
     api.post('/auth/accept-invite', { token, name, password }),
+  registrationLinkValid: (token: string) =>
+    api
+      .get<{ data: { valid: boolean } }>(`/auth/registration/${encodeURIComponent(token)}`)
+      .then(unwrap),
+  register: (payload: { token: string; name: string; email: string; password: string }) =>
+    api.post('/auth/register', payload),
 };
 
 export const MeApi = {
@@ -127,6 +134,11 @@ export const AdminApi = {
       )
       .then(unwrap),
   deleteUser: (id: number) => api.delete(`/admin/users/${id}`),
+  listRegistrationLinks: () =>
+    api.get<{ data: RegistrationLink[] }>('/admin/registration-links').then(unwrap),
+  createRegistrationLink: (payload: { expires_in_days: number; max_uses: number }) =>
+    api.post<{ data: RegistrationLink }>('/admin/registration-links', payload).then(unwrap),
+  deleteRegistrationLink: (id: number) => api.delete(`/admin/registration-links/${id}`),
   getLlmSettings: () =>
     api.get<{ data: LlmSettings }>('/admin/llm').then(unwrap),
   setLlmProvider: (provider: LlmProvider) =>

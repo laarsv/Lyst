@@ -14,6 +14,7 @@ from app.models.note_version import NoteVersion
 from app.models.notification import Notification
 from app.models.plant import Plant, PlantLocation
 from app.models.picnic_mapping import PicnicMapping
+from app.models.registration_link import RegistrationLink
 from app.models.fitness import (
     Exercise,
     ExerciseLocation,
@@ -66,6 +67,7 @@ __all__ = [
     "TaskItem",
     "Notification",
     "PicnicMapping",
+    "RegistrationLink",
     "Plant",
     "PlantLocation",
     "Exercise",

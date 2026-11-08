@@ -19,12 +19,14 @@ from app.schemas.auth import (
     PasswordResetRequest,
     TokenResponse,
 )
+from app.schemas.registration import RegisterRequest
 from app.services.auth_service import (
     accept_invite,
     authenticate,
     confirm_password_reset,
     request_password_reset,
 )
+from app.services.registration_service import is_link_usable, register_with_link
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -154,3 +156,30 @@ async def accept_invite_route(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     return ok({"email": user.email, "message": "Account activated"})
+
+
+@router.get("/registration/{token}")
+@limiter.limit("30/minute")
+async def registration_link_check(
+    request: Request,
+    token: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Lets the sign-up page say "link invalid" before the person fills in the form."""
+    return ok({"valid": await is_link_usable(db, token)})
+
+
+@router.post("/register", status_code=status.HTTP_201_CREATED)
+@limiter.limit("10/minute")
+async def register_route(
+    request: Request,
+    payload: RegisterRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        user = await register_with_link(
+            db, payload.token, payload.email, payload.name, payload.password
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return ok({"email": user.email, "message": "Account created"})

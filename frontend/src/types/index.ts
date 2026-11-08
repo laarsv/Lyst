@@ -18,6 +18,17 @@ export interface AdminUser extends User {
   list_count: number;
 }
 
+/** A shareable sign-up link made by an admin (see Admin → Registrierungslink). */
+export interface RegistrationLink {
+  id: number;
+  token: string;
+  max_uses: number;
+  used_count: number;
+  expires_at: string;
+  created_at: string;
+  status: 'active' | 'expired' | 'exhausted';
+}
+
 export interface AuthResponse {
   access_token: string;
   token_type: string;

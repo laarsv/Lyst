@@ -5,6 +5,7 @@ import { LoginPage } from '@/pages/Login';
 import { ForgotPasswordPage } from '@/pages/ForgotPassword';
 import { ResetPasswordPage } from '@/pages/ResetPassword';
 import { AcceptInvitePage } from '@/pages/AcceptInvite';
+import { RegisterPage } from '@/pages/Register';
 import { DashboardPage } from '@/pages/Dashboard';
 import { TodayPage } from '@/pages/Today';
 import { ListDetailPage } from '@/pages/ListDetail';
@@ -62,6 +63,7 @@ export default function App() {
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/accept-invite" element={<AcceptInvitePage />} />
+        <Route path="/register" element={<RegisterPage />} />
         <Route path="/s/:token" element={<PublicSharePage />} />
         <Route path="/share/recipe/:token" element={<PublicRecipePage />} />
         <Route path="/share/recipe-book/:token" element={<PublicRecipeBookPage />} />

@@ -60,7 +60,7 @@ household or small group running on a Mini PC, NAS, or any cheap VPS.
 - Installierbar als PWA (Desktop + iOS + Android)
 - Offline-Schreiben mit IndexedDB-Queue, Auto-Sync sobald online
 - Dark Mode, deutschsprachige UI durchgängig
-- Mehrbenutzer mit Admin-Bereich, JWT-Auth, Einladungen per E-Mail
+- Mehrbenutzer mit Admin-Bereich, JWT-Auth, Einladungen per E-Mail oder ein Registrierungslink für ganze Gruppen
 
 ## Tech stack
 

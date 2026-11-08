@@ -9,6 +9,7 @@ from app.core.responses import ok
 from app.email.sender import send_email
 from app.email.templates import test_email
 from app.models.user import User
+from app.schemas.registration import RegistrationLinkCreate, RegistrationLinkOut
 from app.schemas.user import (
     AdminUserOut,
     UserCreate,
@@ -27,6 +28,7 @@ from app.services.admin_service import (
     list_users,
     update_user,
 )
+from app.services.registration_service import create_link, delete_link, list_links
 from app.services.import_service import (
     ANTHROPIC_MODELS,
     RecipeImportError,
@@ -106,6 +108,31 @@ async def post_invite(payload: UserInvite, db: AsyncSession = Depends(get_db)):
     # Backend-Log (E-Mail ist aus). Ohne das Feld meldet die Oberflaeche eine
     # verschickte Einladung, die nie jemanden erreicht.
     return ok({**UserOut.model_validate(user).model_dump(mode="json"), "mailed": mailed})
+
+
+@router.get("/registration-links")
+async def get_registration_links(db: AsyncSession = Depends(get_db)):
+    links = await list_links(db)
+    return ok([RegistrationLinkOut.model_validate(link).model_dump(mode="json") for link in links])
+
+
+@router.post("/registration-links", status_code=status.HTTP_201_CREATED)
+async def post_registration_link(
+    payload: RegistrationLinkCreate,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    link = await create_link(
+        db, admin.id, expires_in_days=payload.expires_in_days, max_uses=payload.max_uses
+    )
+    return ok(RegistrationLinkOut.model_validate(link).model_dump(mode="json"))
+
+
+@router.delete("/registration-links/{link_id}")
+async def del_registration_link(link_id: int, db: AsyncSession = Depends(get_db)):
+    if not await delete_link(db, link_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link nicht gefunden")
+    return ok({"message": "Deleted"})
 
 
 @router.patch("/users/{user_id}")
