@@ -86,6 +86,19 @@ export function AdminSettingsPage() {
     }
   };
 
+  const setAnthropicKey = async (key: string | null) => {
+    setBusy(true);
+    try {
+      await AdminApi.setAnthropicApiKey(key);
+      toast.success(key ? 'API-Key gespeichert' : 'API-Key entfernt');
+      await load();
+    } catch (e) {
+      toast.error(getApiError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div>
       <div className="mb-6">
@@ -135,7 +148,12 @@ export function AdminSettingsPage() {
                 onReload={load}
               />
             ) : (
-              <AnthropicSection data={data.anthropic} onSelect={setAnthropic} busy={busy} />
+              <AnthropicSection
+                data={data.anthropic}
+                onSelect={setAnthropic}
+                onSaveKey={setAnthropicKey}
+                busy={busy}
+              />
             )}
           </>
         ) : null}
@@ -400,19 +418,74 @@ function ModelPicker({
 function AnthropicSection({
   data,
   onSelect,
+  onSaveKey,
   busy,
 }: {
   data: LlmSettings['anthropic'];
   onSelect: (model: string | null) => Promise<void>;
+  onSaveKey: (key: string | null) => Promise<void>;
   busy: boolean;
 }) {
+  const [keyInput, setKeyInput] = useState('');
+
   return (
     <div>
+      <div className="border border-line rounded-xl p-3 mb-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <div className="font-medium text-sm">API-Key</div>
+          <div className="text-xs text-muted">
+            {data.api_key_source === 'admin' && <>Aus dem Admin-Portal · <code>{data.api_key_hint}</code></>}
+            {data.api_key_source === 'env' && (
+              <>
+                Aus <code className="bg-page px-1 py-0.5 rounded">.env</code> · <code>{data.api_key_hint}</code>
+              </>
+            )}
+            {!data.has_api_key && 'Kein Key hinterlegt'}
+          </div>
+        </div>
+        <form
+          className="flex flex-wrap gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (keyInput.trim()) void onSaveKey(keyInput.trim());
+          }}
+        >
+          <input
+            aria-label="Anthropic-API-Key"
+            type="password"
+            autoComplete="new-password"
+            spellCheck={false}
+            className="input flex-1 min-w-[220px]"
+            value={keyInput}
+            onChange={(e) => setKeyInput(e.target.value)}
+            placeholder={data.has_api_key ? 'Neuen Key eintragen' : 'sk-ant-…'}
+            disabled={busy}
+          />
+          <button type="submit" className="btn-primary" disabled={busy || !keyInput.trim()}>
+            Speichern
+          </button>
+          {data.api_key_source === 'admin' && (
+            <button type="button" className="btn-secondary" disabled={busy} onClick={() => onSaveKey(null)}>
+              Entfernen
+            </button>
+          )}
+        </form>
+        <p className="mt-2 text-xs text-muted">
+          Der Key wird nur gespeichert, wenn Anthropic ihn akzeptiert, und verschlüsselt abgelegt.
+          {data.api_key_source === 'admin' && ' „Entfernen“ nutzt wieder den Key aus der .env, falls dort einer steht.'}
+        </p>
+      </div>
       {!data.has_api_key && (
         <div className="text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-3 mb-3">
-          <strong>ANTHROPIC_API_KEY ist nicht gesetzt.</strong> Du kannst hier ein Modell auswählen,
-          aber der Importer wird einen Fehler zurückgeben bis der Key in <code className="bg-amber-100 px-1 py-0.5 rounded">.env</code> ergänzt
-          und das Backend neu gestartet ist.
+          <strong>Kein API-Key hinterlegt.</strong> Du kannst ein Modell auswählen, aber der Importer
+          gibt einen Fehler zurück, bis oben ein Key eingetragen ist. Die Liste unten ist dann nur
+          eine Auswahl der gängigen Modelle.
+        </div>
+      )}
+      {data.error && (
+        <div className="text-sm text-danger bg-danger-50 border border-danger/30 rounded-lg p-3 mb-3">
+          <strong>Modellliste konnte nicht geladen werden:</strong> {data.error}. Angezeigt wird eine Auswahl der
+          gängigen Modelle.
         </div>
       )}
       <ul className="divide-y divide-line border border-line rounded-xl">
@@ -430,7 +503,7 @@ function AnthropicSection({
               />
               <div className="flex-1 min-w-0">
                 <div className="font-medium">{m.name}</div>
-                <div className="text-xs text-muted">{m.description}</div>
+                {m.description && <div className="text-xs text-muted">{m.description}</div>}
                 <code className="text-[10px] text-muted/70">{m.id}</code>
               </div>
               {isSelected && (

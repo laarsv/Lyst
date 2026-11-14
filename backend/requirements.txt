@@ -16,7 +16,11 @@ apscheduler==3.10.4
 qrcode[pil]==7.4.2
 httpx==0.27.2
 beautifulsoup4==4.12.3
-anthropic==0.40.0
+anthropic==2.8.0
+# Fernet-encrypts the admin-entered Anthropic API key at rest (settings_service).
+# Already installed transitively via python-jose[cryptography]; pinned because
+# the app now imports it directly.
+cryptography==50.0.2
 # Rich-text editor backend (alembic 0016): bleach sanitises HTML that the
 # TipTap frontend sends, markdown-it-py + mdit-py-plugins run the one-off
 # Markdown -> HTML conversion for pre-existing notes.

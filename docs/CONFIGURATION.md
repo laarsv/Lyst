@@ -84,11 +84,18 @@ features return a polite error; the rest of the app is unaffected. See
 Cloud LLM as an alternative to Ollama for recipe import and suggestions.
 Pay-per-token. Leave the API key empty to keep Claude disabled.
 
+Both the key and the model can also be set in the admin portal (Einstellungen →
+Claude); the `.env` values are only the defaults. The key entered there is
+stored **encrypted** (derived from `SECRET_KEY` — rotating `SECRET_KEY` makes it
+undecryptable, so it falls back to `ANTHROPIC_API_KEY` and has to be entered
+again) and wins over the `.env` key. The model picker is loaded live from
+Anthropic, so new Claude models are selectable as soon as they ship.
+
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `ANTHROPIC_API_KEY` | no | empty (Claude disabled) | Get one at <https://console.anthropic.com/settings/keys>. |
-| `ANTHROPIC_MODEL` | no | `claude-haiku-4-5` | Model id. Curated picker in the admin UI lists current options. |
-| `ANTHROPIC_TIMEOUT_SECONDS` | no | `60` | Hard timeout for Anthropic API calls. |
+| `ANTHROPIC_API_KEY` | no | empty (Claude disabled) | Get one at <https://console.anthropic.com/settings/keys>. Overridable in the admin portal. |
+| `ANTHROPIC_MODEL` | no | `claude-haiku-5-5` | Model id. Overridable in the admin portal, whose picker lists what Anthropic currently offers. |
+| `ANTHROPIC_TIMEOUT_SECONDS` | no | `120` | Hard timeout for Anthropic API calls. |
 
 ---
 

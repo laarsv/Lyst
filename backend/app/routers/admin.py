@@ -30,8 +30,9 @@ from app.services.admin_service import (
 )
 from app.services.registration_service import create_link, delete_link, list_links
 from app.services.import_service import (
-    ANTHROPIC_MODELS,
     RecipeImportError,
+    build_anthropic_model_picker,
+    list_anthropic_models,
     list_ollama_models,
 )
 from app.services.ollama import OllamaError, list_loaded_models
@@ -42,6 +43,8 @@ from app.services.settings_service import (
     KEY_OLLAMA_VISION_MODEL,
     get_llm_provider,
     get_setting,
+    resolve_anthropic_api_key,
+    set_anthropic_api_key,
     set_setting,
 )
 
@@ -198,6 +201,10 @@ class ModelSetting(BaseModel):
     model: str | None = Field(default=None, max_length=128)
 
 
+class ApiKeySetting(BaseModel):
+    api_key: str | None = Field(default=None, max_length=512)
+
+
 @router.get("/llm")
 async def get_llm_settings(db: AsyncSession = Depends(get_db)):
     """Unified LLM settings dump: active provider plus per-provider config.
@@ -219,8 +226,12 @@ async def get_llm_settings(db: AsyncSession = Depends(get_db)):
     ollama_override = await get_setting(db, KEY_OLLAMA_MODEL)
     vision_override = await get_setting(db, KEY_OLLAMA_VISION_MODEL)
 
-    # Anthropic section
+    # Anthropic section — the model list comes live from Anthropic, so new
+    # Claude models show up without a release.
     anthropic_override = await get_setting(db, KEY_ANTHROPIC_MODEL)
+    anthropic_selected = anthropic_override or env_settings.ANTHROPIC_MODEL
+    api_key, api_key_source = await resolve_anthropic_api_key(db)
+    anthropic_models, anthropic_error = await build_anthropic_model_picker(api_key, anthropic_selected)
 
     return ok(
         {
@@ -237,11 +248,15 @@ async def get_llm_settings(db: AsyncSession = Depends(get_db)):
                 "error": ollama_error,
             },
             "anthropic": {
-                "models": ANTHROPIC_MODELS,
-                "selected": anthropic_override or env_settings.ANTHROPIC_MODEL,
+                "models": anthropic_models,
+                "selected": anthropic_selected,
                 "is_override": anthropic_override is not None,
                 "env_default": env_settings.ANTHROPIC_MODEL,
-                "has_api_key": bool(env_settings.ANTHROPIC_API_KEY),
+                "has_api_key": bool(api_key),
+                "api_key_source": api_key_source,  # "admin" | "env" | null
+                # Never the key itself — only its last 4 characters.
+                "api_key_hint": f"…{api_key[-4:]}" if api_key else None,
+                "error": anthropic_error,
             },
         }
     )
@@ -279,6 +294,24 @@ async def put_anthropic_model(payload: ModelSetting, db: AsyncSession = Depends(
     value = payload.model.strip() if payload.model and payload.model.strip() else None
     await set_setting(db, KEY_ANTHROPIC_MODEL, value)
     return ok({"selected": value or env_settings.ANTHROPIC_MODEL, "is_override": value is not None})
+
+
+@router.put("/llm/anthropic-api-key")
+async def put_anthropic_api_key(payload: ApiKeySetting, db: AsyncSession = Depends(get_db)):
+    """Set the Anthropic API key (stored encrypted) or clear it with
+    api_key=null, which falls back to ANTHROPIC_API_KEY from .env. A new key is
+    saved only if Anthropic accepts it — the model-list call doubles as the
+    check, so a typo never replaces a working key."""
+    key = payload.api_key.strip() if payload.api_key else ""
+    if key:
+        if len(key) < 20 or any(c.isspace() for c in key):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="API-Key hat ein ungültiges Format")
+        try:
+            await list_anthropic_models(key)
+        except RecipeImportError as e:
+            raise HTTPException(status_code=e.status, detail=e.message)
+    await set_anthropic_api_key(db, key or None)
+    return ok({"stored": bool(key)})
 
 
 # ---------- Ollama runtime status (which models are loaded right now) ----------

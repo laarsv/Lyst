@@ -883,6 +883,12 @@ export interface AnthropicInfo {
   is_override: boolean;
   env_default: string;
   has_api_key: boolean;
+  /** Where the active key comes from: entered in the admin portal, or .env. */
+  api_key_source: 'admin' | 'env' | null;
+  /** Last 4 characters only — the key itself never leaves the backend. */
+  api_key_hint: string | null;
+  /** Set when the live model list could not be loaded (fallback list shown). */
+  error: string | null;
 }
 
 export interface LlmSettings {

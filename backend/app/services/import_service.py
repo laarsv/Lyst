@@ -33,6 +33,7 @@ from app.services.ollama import (
     list_installed_models,
 )
 from app.services.settings_service import (
+    get_anthropic_api_key,
     get_anthropic_model,
     get_llm_provider,
     get_ollama_model,
@@ -217,68 +218,141 @@ async def list_ollama_models() -> list[dict[str, Any]]:
 
 # ---------- Anthropic provider ----------
 
-# Curated list — extending it just means picking a current model id from
-# https://docs.claude.com/en/docs/about-claude/models. Hardcoded over the
-# /v1/models endpoint so admins don't accidentally pick a deprecated id.
-ANTHROPIC_MODELS: list[dict[str, str]] = [
+# The picker is fed live from Anthropic's GET /v1/models (see
+# `build_anthropic_model_picker`), so a new Claude model is selectable the
+# moment Anthropic ships it — no code change. This curated list is only the
+# fallback while no API key is set or Anthropic is unreachable.
+ANTHROPIC_FALLBACK_MODELS: list[dict[str, str]] = [
     {
-        "id": "claude-haiku-4-5",
-        "name": "Claude Haiku 4.5",
+        "id": "claude-haiku-5-5",
+        "name": "Claude Haiku 5.5",
         "description": "Schnell & günstig — für den Rezept-Importer mehr als ausreichend.",
     },
     {
-        "id": "claude-sonnet-4-6",
-        "name": "Claude Sonnet 4.6",
-        "description": "Ausgewogene Qualität, etwa 5× teurer als Haiku.",
+        "id": "claude-sonnet-5-5",
+        "name": "Claude Sonnet 5.5",
+        "description": "Ausgewogene Qualität bei mittleren Kosten.",
     },
     {
-        "id": "claude-opus-4-7",
-        "name": "Claude Opus 4.7",
+        "id": "claude-opus-5-5",
+        "name": "Claude Opus 5.5",
         "description": "Höchste Qualität, deutlich teurer und langsamer.",
     },
 ]
 
+# One-line hint per model family for models the API reports without any
+# description of their own. Unknown families get no hint.
+_ANTHROPIC_FAMILY_HINTS = (
+    ("haiku", "Schnell & günstig."),
+    ("sonnet", "Ausgewogene Qualität bei mittleren Kosten."),
+    ("opus", "Hohe Qualität, teurer und langsamer."),
+    ("fable", "Spitzenmodell: höchste Qualität, höchste Kosten."),
+    ("mythos", "Spitzenmodell, nur für verifizierte Organisationen."),
+)
 
-async def _call_anthropic(text: str, model: str) -> dict[str, Any]:
-    if not settings.ANTHROPIC_API_KEY:
-        raise RecipeImportError(503, "ANTHROPIC_API_KEY ist nicht gesetzt")
+_NO_ANTHROPIC_KEY = "Anthropic-API-Key fehlt — in Admin → Einstellungen hinterlegen"
+
+
+def _anthropic_model_entry(model_id: str, display_name: str | None = None) -> dict[str, str]:
+    hint = next((h for family, h in _ANTHROPIC_FAMILY_HINTS if family in model_id), "")
+    return {"id": model_id, "name": display_name or model_id, "description": hint}
+
+
+def _anthropic_error(e: anthropic.APIError, model: str | None = None) -> RecipeImportError:
+    """Maps an SDK error to the importer's error type. A rejected key is a 502
+    (upstream refused us), deliberately NOT 401 — the browser would read a 401
+    as an expired session and try to refresh its login."""
+    if isinstance(e, anthropic.APITimeoutError):
+        return RecipeImportError(504, "KI-Service hat zu lange gebraucht")
+    if isinstance(e, anthropic.AuthenticationError):
+        return RecipeImportError(502, "Anthropic-API-Key ungültig")
+    if isinstance(e, anthropic.PermissionDeniedError):
+        return RecipeImportError(502, "Anthropic-API-Key hat keine Berechtigung")
+    if isinstance(e, anthropic.RateLimitError):
+        return RecipeImportError(429, "Anthropic Rate-Limit erreicht")
+    if isinstance(e, anthropic.NotFoundError) and model:
+        return RecipeImportError(400, f"Unbekanntes Anthropic-Modell: {model}")
+    return RecipeImportError(502, "KI-Anbieter-Fehler")
+
+
+async def list_anthropic_models(api_key: str) -> list[dict[str, str]]:
+    """Live model list from Anthropic (GET /v1/models), newest first. The call
+    is free, which also makes it the cheapest way to check that a key works."""
+    async with anthropic.AsyncAnthropic(api_key=api_key, timeout=10.0, max_retries=1) as client:
+        try:
+            found = [m async for m in client.models.list(limit=100)]
+        except anthropic.APIError as e:
+            logger.error("Anthropic model list failed: %s", e)
+            raise _anthropic_error(e) from e
+    found.sort(key=lambda m: m.created_at, reverse=True)
+    return [_anthropic_model_entry(m.id, m.display_name) for m in found if m.id.startswith("claude-")]
+
+
+async def build_anthropic_model_picker(
+    api_key: str, selected: str
+) -> tuple[list[dict[str, str]], str | None]:
+    """Models for the admin picker plus an optional error text: the live list
+    when a key works, else the curated fallback. The selected model is always
+    in the result — an alias such as `claude-haiku-4-5` isn't listed under that
+    id, so it is looked up directly; only an id Anthropic really doesn't know
+    is flagged."""
+    models, error, live = list(ANTHROPIC_FALLBACK_MODELS), None, False
+    if api_key:
+        try:
+            models, live = await list_anthropic_models(api_key), True
+        except RecipeImportError as e:
+            error = e.message
+
+    if not any(m["id"] == selected for m in models):
+        entry = {"id": selected, "name": selected, "description": "Aktuell konfiguriert."}
+        if live:
+            try:
+                async with anthropic.AsyncAnthropic(api_key=api_key, timeout=10.0, max_retries=1) as client:
+                    info = await client.models.retrieve(selected)
+                entry = _anthropic_model_entry(info.id, info.display_name)
+            except anthropic.NotFoundError:
+                entry["description"] = "Anthropic kennt dieses Modell nicht — bitte ein anderes wählen."
+            except anthropic.APIError:
+                pass  # keep the plain "configured" entry
+        models.insert(0, entry)
+    return models, error
+
+
+def _anthropic_text(response: anthropic.types.Message) -> str:
+    """Text of a Messages response. Newer Claude models can decline a request
+    (`refusal`) or spend `max_tokens` on thinking — report both instead of
+    handing half a JSON document to the parser."""
+    if response.stop_reason == "refusal":
+        raise RecipeImportError(422, "Claude hat die Anfrage abgelehnt")
+    if response.stop_reason == "max_tokens":
+        raise RecipeImportError(502, "Claude-Antwort wurde abgeschnitten")
+    return "".join(b.text for b in response.content if b.type == "text")
+
+
+async def _call_anthropic(text: str, model: str, api_key: str) -> dict[str, Any]:
+    if not api_key:
+        raise RecipeImportError(503, _NO_ANTHROPIC_KEY)
     client = anthropic.AsyncAnthropic(
-        api_key=settings.ANTHROPIC_API_KEY,
+        api_key=api_key,
         timeout=float(settings.ANTHROPIC_TIMEOUT_SECONDS),
     )
+    # No temperature: current Claude models reject any non-default sampling
+    # value with a 400 (Haiku 5.5: only 1). max_tokens leaves room for the
+    # adaptive thinking those models run by default.
     try:
         response = await client.messages.create(
             model=model,
-            max_tokens=2048,
-            temperature=0.1,
+            max_tokens=8192,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": text}],
         )
-    except anthropic.APITimeoutError as e:
-        logger.error("Anthropic timeout: %s", e)
-        raise RecipeImportError(504, "KI-Service hat zu lange gebraucht") from e
-    except anthropic.AuthenticationError as e:
-        logger.error("Anthropic auth failed: %s", e)
-        raise RecipeImportError(401, "ANTHROPIC_API_KEY ungültig") from e
-    except anthropic.RateLimitError as e:
-        logger.error("Anthropic rate limit: %s", e)
-        raise RecipeImportError(429, "Anthropic Rate-Limit erreicht") from e
-    except anthropic.NotFoundError as e:
-        logger.error("Anthropic model unknown: %s", e)
-        raise RecipeImportError(400, f"Unbekanntes Anthropic-Modell: {model}") from e
     except anthropic.APIError as e:
-        logger.error("Anthropic error: %s", e)
-        raise RecipeImportError(502, "KI-Anbieter-Fehler") from e
+        logger.error("Anthropic error (model=%s): %s", model, e)
+        raise _anthropic_error(e, model) from e
 
-    # Concatenate any text blocks the model returned and parse via the
-    # shared forgiving extractor.
     from app.services.ollama import extract_json as _extract
-    parts: list[str] = []
-    for block in response.content:
-        if getattr(block, "type", None) == "text":
-            parts.append(block.text)
     try:
-        return _extract("".join(parts))
+        return _extract(_anthropic_text(response))
     except json.JSONDecodeError as e:
         raise RecipeImportError(500, "Rezept konnte nicht extrahiert werden") from e
 
@@ -368,7 +442,7 @@ async def _extract_recipe_from_text(
     provider = await get_llm_provider(db)
     if provider == "anthropic":
         model = await get_anthropic_model(db)
-        parsed = await _call_anthropic(text, model)
+        parsed = await _call_anthropic(text, model, await get_anthropic_api_key(db))
     else:
         model = await get_ollama_model(db)
         try:
@@ -668,25 +742,24 @@ async def suggest_recipes_from_ingredients(
     provider = await get_llm_provider(db)
     if provider == "anthropic":
         model = await get_anthropic_model(db)
-        if not settings.ANTHROPIC_API_KEY:
-            raise RecipeImportError(503, "ANTHROPIC_API_KEY ist nicht gesetzt")
+        api_key = await get_anthropic_api_key(db)
+        if not api_key:
+            raise RecipeImportError(503, _NO_ANTHROPIC_KEY)
         client = anthropic.AsyncAnthropic(
-            api_key=settings.ANTHROPIC_API_KEY,
+            api_key=api_key,
             timeout=float(settings.ANTHROPIC_TIMEOUT_SECONDS),
         )
         try:
             response = await client.messages.create(
                 model=model,
-                max_tokens=1024,
-                temperature=0.2,
+                max_tokens=4096,
                 system=SUGGEST_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": user_text}],
             )
-        except anthropic.APITimeoutError as e:
-            raise RecipeImportError(504, "KI-Service hat zu lange gebraucht") from e
         except anthropic.APIError as e:
-            raise RecipeImportError(502, f"KI-Anbieter-Fehler: {e}") from e
-        raw = "".join(b.text for b in response.content if getattr(b, "type", None) == "text")
+            logger.error("Anthropic error (model=%s): %s", model, e)
+            raise _anthropic_error(e, model) from e
+        raw = _anthropic_text(response)
         # Anthropic path: parse via the same forgiving extractor we use for
         # Ollama. No retry available here — Anthropic obeys system prompts
         # well enough that we don't loop.

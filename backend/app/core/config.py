@@ -59,10 +59,11 @@ class Settings(BaseSettings):
 
     # Anthropic Claude API (alternative LLM provider for the recipe importer).
     # Empty key = provider not available; admin can still pick it but the call
-    # will return a clear error.
+    # will return a clear error. Both values are only DEFAULTS: the admin portal
+    # can override the key and the model at runtime (settings_service).
     ANTHROPIC_API_KEY: str = ""
-    ANTHROPIC_MODEL: str = "claude-haiku-4-5"
-    ANTHROPIC_TIMEOUT_SECONDS: int = 60
+    ANTHROPIC_MODEL: str = "claude-haiku-5-5"
+    ANTHROPIC_TIMEOUT_SECONDS: int = 120  # thinking-capable models (Sonnet/Opus) can take a while
 
     # Open Food Facts integration for ingredient nutrition lookup.
     # When false: the Nährwerte sheet skips the OFF call and only offers

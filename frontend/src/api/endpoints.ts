@@ -158,6 +158,10 @@ export const AdminApi = {
     api
       .put<{ data: { selected: string; is_override: boolean } }>('/admin/llm/anthropic-model', { model })
       .then(unwrap),
+  setAnthropicApiKey: (apiKey: string | null) =>
+    api
+      .put<{ data: { stored: boolean } }>('/admin/llm/anthropic-api-key', { api_key: apiKey })
+      .then(unwrap),
   sendTestEmail: (to?: string) =>
     api
       .post<{ data: { to: string; message: string } }>('/admin/test-email', { to: to || null })
